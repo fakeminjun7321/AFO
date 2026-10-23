@@ -52,7 +52,8 @@ Return: commit, diff summary, evidence, verification level, unresolved risks
 ## 실제 병렬화 계획
 
 - 요구 조사와 플랫폼 검토는 독립적으로 진행할 수 있습니다.
-- 기반/계약 이후 core-builder는 스캔→분류→계획을, desktop-builder는 그 계약을 사용하는 UI를 병렬 구현합니다.
+- 기반/계약 이후 core-builder는 스캔→기본 분류→개인화 규칙(#18)→계획을, desktop-builder는 그 계약을 사용하는 UI를 병렬 구현합니다. 참고 읽기·프로필·저장 계약은 #4의 공용 타입에 먼저 반영합니다.
+- #18의 엔진·규칙 저장은 core-builder, 참고 선택·규칙 편집 UI는 #9 desktop-builder 경로로 나눕니다. 같은 계약/경로를 동시에 고치지 않으며 실제 개인화 연동은 #14에서 확인합니다.
 - UI의 fixture/mock는 화면 개발용이라고 표시합니다. 파일 실행 완료 이슈의 증거로 쓰지 않습니다.
 - 파일 실행, 승인 경계 변경, 복구 작업은 같은 경로를 다루므로 순서대로 진행합니다. verifier는 고정된 snapshot을 검사합니다.
 - 실제 삭제·OS 휴지통 검증은 같은 기기·루트에서 한 작업만 수행합니다. CI도 고유 temp 루트로 격리합니다.

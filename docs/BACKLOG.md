@@ -1,6 +1,6 @@
 # AFO 핵심 작업 목록
 
-상위 계획: [#1](https://github.com/fakeminjun7321/AFO/issues/1). 핵심 과제 **15개**, 마일스톤 **5개**입니다. 모든 과제는 아직 열린 계획이며 구현·검증 완료를 뜻하지 않습니다.
+상위 계획: [#1](https://github.com/fakeminjun7321/AFO/issues/1). 핵심 과제 **16개**, 마일스톤 **5개**입니다. 모든 과제는 아직 열린 계획이며 구현·검증 완료를 뜻하지 않습니다.
 
 ## 바로 볼 작업
 
@@ -19,7 +19,8 @@
 | [#5](https://github.com/fakeminjun7321/AFO/issues/5) | 개발 하네스 구성·역할 격리·작은 과제 파일럿 검증 | M1 | #4 | 개발자 A: 조정 담당 제안 |
 | [#6](https://github.com/fakeminjun7321/AFO/issues/6) | 선택 폴더의 안전한 스캔·제외 규칙·취소 구현 | M2 | #4, #5 | 개발자 A / core-builder 제안 |
 | [#7](https://github.com/fakeminjun7321/AFO/issues/7) | 규칙 기반 분류·내용 해시 중복 탐지 | M2 | #6 | 개발자 A / core-builder 제안 |
-| [#8](https://github.com/fakeminjun7321/AFO/issues/8) | 정리 계획·충돌 처리·한 번의 배치 승인 계약 | M2 | #7 | 개발자 A / core-builder 제안 |
+| [#18](https://github.com/fakeminjun7321/AFO/issues/18) | 내 정리 방식 참고: 개인 분류 규칙 추출·저장·재사용 | M2 | #7 | 엔진·로컬 저장은 A, 화면은 #9 B 담당 제안 |
+| [#8](https://github.com/fakeminjun7321/AFO/issues/8) | 정리 계획·충돌 처리·한 번의 배치 승인 계약 | M2 | #7, #18 | 개발자 A / core-builder 제안 |
 | [#9](https://github.com/fakeminjun7321/AFO/issues/9) | 폴더 선택→분석→미리보기→승인→결과 UI | M2 | #4, #5 | 개발자 B / desktop-builder 제안 |
 | [#10](https://github.com/fakeminjun7321/AFO/issues/10) | 승인된 폴더 생성·파일 이동·저널·이동 되돌리기 | M2 | #8 | 개발자 A / core-builder 제안 |
 | [#11](https://github.com/fakeminjun7321/AFO/issues/11) | 승인한 파일의 실제 OS 휴지통 이동 | M2 | #10 | 개발자 A / core-builder 제안 |
@@ -42,6 +43,7 @@ flowchart TD
   n5["#5 harness"]
   n6["#6 scanner"]
   n7["#7 classification"]
+  n18["#18 personal rules"]
   n8["#8 planner"]
   n9["#9 ui"]
   n10["#10 move"]
@@ -57,6 +59,8 @@ flowchart TD
   n5 --> n6
   n6 --> n7
   n7 --> n8
+  n7 --> n18
+  n18 --> n8
   n4 --> n9
   n5 --> n9
   n8 --> n10

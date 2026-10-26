@@ -6,3 +6,6 @@ node_modules/
 .venv/
 __pycache__/
 *.pyc
+dist/
+.afo/
+*.afo-profile.json

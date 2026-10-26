@@ -1,10 +1,12 @@
 # AFO 설계와 파일 작업 계약
 
-상태: 제안. 코드·API·테스트 미구현. 플랫폼 기술검증 결과로 ADR을 확정합니다.
+상태: 전체 앱 설계는 제안입니다. #19에서 읽기 전용 스캔·분류·개인 규칙·미리보기 계약과 CLI를 먼저 구현합니다.
+실제 실행 승인·이동/삭제/저널, 데스크톱 UI는 미구현이며 플랫폼 기술검증 결과로 그 계약을 확정합니다.
 
 ## 기술 선택
 
-우선안은 Electron + TypeScript + React/Vite, 엔진 단위 검증은 Vitest, 데스크톱 UI 자동 검증은 Playwright 계열 지원 가능성을 기술검증한 뒤 결정합니다.
+우선안은 Electron + TypeScript + React/Vite이며 데스크톱 UI 자동 검증은 Playwright 계열 지원 가능성을 기술검증한 뒤 결정합니다.
+#19의 독립 엔진 단계는 Node.js 24 기본 test runner를 사용해 추가 테스트 프레임워크 없이 검증합니다. TypeScript 5.9.3과 Zod 4.6.7을 고정했습니다. UI 도입 시 Vitest 사용 여부를 다시 정합니다.
 패키지 관리자는 npm으로 통일하고 lockfile 하나를 관리하는 구성을 제안합니다. 정확한 버전은 기반 작업에서 공식 호환성을 확인한 뒤 고정합니다.
 Electron은 UI와 파일 엔진에 TypeScript를 공유하고 OS 휴지통 API를 활용하기 위해 우선 제안합니다. Tauri는 비교 대안이며 팀의 Rust 숙련도·별도 도구체인·빌드 부담과 함께 기술검증에서 비교합니다. Electron의 메모리·배포 크기 비용도 평가합니다.
 
@@ -30,6 +32,8 @@ main의 `contextIsolation`, renderer sandbox, Node 통합 비활성화, CSP, IPC
 ## 데이터 계약
 
 필수 값이 없으면 오류입니다. 예시 구조는 설계용이며 아직 구현된 API가 아닙니다.
+
+#19의 실제 읽기 전용 계약은 `packages/contracts/src/index.ts`입니다. `readOnly: true`는 결과의 선언이며 OS 권한 강제 장치가 아닙니다. 아래의 RootGrant/Approval/Journal 등 쓰기 실행용 객체는 후속 설계이고, 현재 `RootSchema`·`ScanSchema`·`ProfileSchema`·`PreviewSchema`와 구분합니다.
 
 | 객체 | 필수 의미 |
 | --- | --- |

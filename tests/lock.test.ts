@@ -10,11 +10,12 @@ import { createInterface } from 'node:readline';
 import { AfoError } from '../packages/contracts/src/index.js';
 import type { ErrorCode } from '../packages/contracts/src/index.js';
 import { LOCK_RELEASE_WARNING, readRootLock, rootLockFile, withRootLock } from '../packages/filesystem/src/lock.js';
+import { issueRootGrant } from '../packages/filesystem/src/grants.js';
 import { createFixture } from './helpers.js';
 
 const code = (expected: ErrorCode) => (error: unknown): boolean => error instanceof AfoError && error.code === expected;
-const ID = 'a'.repeat(64);
-const OTHER_ID = 'b'.repeat(64);
+const ID = { device: '1', inode: '1' };
+const OTHER_ID = { device: '1', inode: '2' };
 const LOCK_MODULE = new URL('../packages/filesystem/src/lock.js', import.meta.url).href;
 const LOCKED_EXIT = 3;
 // Child: acquires, prints ACQUIRED, optionally holds until a stdin line, prints RELEASED. LOCKED_BY_OTHER exits 3.
@@ -24,7 +25,7 @@ const line = () => new Promise((resolve) => process.stdin.once('data', resolve))
 if (mode === 'idle') { await say('READY'); await line(); process.exit(0); }
 const { withRootLock } = await import(moduleUrl);
 try {
-  await withRootLock(stateDir, id, async () => { await say('ACQUIRED ' + process.pid); if (mode === 'hold') await line(); });
+  await withRootLock(stateDir, JSON.parse(id), async () => { await say('ACQUIRED ' + process.pid); if (mode === 'hold') await line(); });
   await say('RELEASED'); process.exit(0);
 } catch (error) { await say('ERROR ' + (error?.code ?? String(error))); process.exit(error?.code === 'LOCKED_BY_OTHER' ? 3 : 1); }
 `;
@@ -39,8 +40,8 @@ async function setup(t: TestContext): Promise<{ state: string; script: string }>
   return { state: path.join(root, 'state'), script };
 }
 
-function child(t: TestContext, script: string, state: string, id: string, mode: 'hold' | 'once' | 'idle'): Child {
-  const proc = spawn(process.execPath, [script, LOCK_MODULE, state, id, mode], { stdio: ['pipe', 'pipe', 'pipe'] });
+function child(t: TestContext, script: string, state: string, id: { device: string; inode: string }, mode: 'hold' | 'once' | 'idle'): Child {
+  const proc = spawn(process.execPath, [script, LOCK_MODULE, state, JSON.stringify(id), mode], { stdio: ['pipe', 'pipe', 'pipe'] });
   t.after(() => { if (proc.exitCode === null && proc.signalCode === null) proc.kill('SIGKILL'); });
   const lines: string[] = [];
   let stderr = '';
@@ -103,6 +104,32 @@ test('different roots do not block each other', { timeout: 15_000 }, async (t) =
   assert.equal(await withRootLock(state, OTHER_ID, async () => 'other root'), 'other root');
   a.send();
   assert.equal((await a.closed).code, 0);
+});
+
+test('independently issued grants in real processes share one physical-root lock', { timeout: 15_000 }, async (t) => {
+  const { state, script } = await setup(t);
+  const { root } = await createFixture({ 'a.txt': 'synthetic' }, t);
+  const first = await issueRootGrant(root); const second = await issueRootGrant(root);
+  assert.notEqual(first.id, second.id);
+  assert.equal(rootLockFile(state, first), rootLockFile(state, second));
+  const issuedScript = path.join(path.dirname(script), 'issued-child.mjs');
+  await writeFile(issuedScript, `
+    const { issueRootGrant } = await import(${JSON.stringify(new URL('../packages/filesystem/src/grants.js', import.meta.url).href)});
+    const { withRootLock } = await import(${JSON.stringify(LOCK_MODULE)});
+    const grant = await issueRootGrant(process.argv[2]);
+    try { await withRootLock(process.argv[3], grant, async () => {}); process.exitCode = 0; }
+    catch (error) { process.exitCode = error.code === 'LOCKED_BY_OTHER' ? 3 : 1; }
+  `);
+  const invoke = async (): Promise<number | null> => {
+    const proc = spawn(process.execPath, [issuedScript, root, state], { stdio: 'pipe' });
+    t.after(() => { if (proc.exitCode === null && proc.signalCode === null) proc.kill('SIGKILL'); });
+    const [exit] = await once(proc, 'close'); return exit as number | null;
+  };
+  await withRootLock(state, first, async () => {
+    await assert.rejects(withRootLock(state, second, async () => assert.fail('same root re-entered')), code('LOCKED_BY_OTHER'));
+    assert.equal(await invoke(), LOCKED_EXIT);
+  });
+  assert.equal(await invoke(), 0);
 });
 
 test('same process: the lock is not re-entrant and a concurrent second call never runs its fn', async (t) => {
@@ -264,15 +291,23 @@ test('release never deletes a lock whose token changed while fn ran', async (t) 
   assert.equal(await readFile(file, 'utf8'), foreign);
 });
 
-test('invalid root grant IDs are rejected before touching disk', async (t) => {
+test('invalid root identities and old grant IDs are rejected before touching disk', async (t) => {
   const { state } = await setup(t);
   for (const bad of ['../x', 'A'.repeat(64), 'a'.repeat(63), 'a'.repeat(65), '', 'g'.repeat(64), `${'a'.repeat(62)}/x`, `../${'a'.repeat(61)}`]) {
     let ran = false;
-    await assert.rejects(withRootLock(state, bad, async () => { ran = true; }), code('ROOT_FORBIDDEN'), bad);
-    await assert.rejects(readRootLock(state, bad), code('ROOT_FORBIDDEN'), bad);
+    await assert.rejects(withRootLock(state, bad as never, async () => { ran = true; }), code('ROOT_FORBIDDEN'), bad);
+    await assert.rejects(readRootLock(state, bad as never), code('ROOT_FORBIDDEN'), bad);
     assert.equal(ran, false, bad);
   }
   assert.deepEqual(await readdir(state), []);
   assert.deepEqual(await readRootLock(state, ID), { state: 'free', holder: null });
   assert.deepEqual(await readdir(state), []);
+});
+
+test('read-only lock inspection rejects a regular file in the state path on every OS', async (t) => {
+  const { state } = await setup(t);
+  await writeFile(path.join(state, 'locks'), 'file');
+  await assert.rejects(readRootLock(state, ID), code('STATE_CORRUPT'));
+  await assert.rejects(readRootLock(path.join(state, 'locks', 'not-created'), ID),
+    (error: unknown) => code('STATE_CORRUPT')(error) || (error as NodeJS.ErrnoException).code === 'ENOTDIR');
 });

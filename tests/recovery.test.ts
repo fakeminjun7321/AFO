@@ -299,8 +299,8 @@ async function lockedScenario(t: TestContext) {
   await journal(state, plan.operations.map((op, i) => entry(plan, i, op.id, 'intent')));
   return { root, state };
 }
-const writeLock = async (state: string, pid: number, host: string): Promise<string> => {
-  const file = rootLockFile(state, GRANT);
+const writeLock = async (state: string, root: string, pid: number, host: string): Promise<string> => {
+  const file = rootLockFile(state, await grantOf(root));
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, `${JSON.stringify({ formatVersion: 1, pid, hostname: host, startedAt: '2026-10-26T01:00:00.000Z', token: 'a'.repeat(32) })}\n`);
   return file;
@@ -308,7 +308,7 @@ const writeLock = async (state: string, pid: number, host: string): Promise<stri
 
 test('a root lock held by a running process makes the run active and every open op unknown', async (t) => {
   const { root, state } = await lockedScenario(t);
-  const [run] = await withRootLock(state, GRANT, () => inspect([root, state])); // manifests include the lock file bytes
+  const [run] = await withRootLock(state, await grantOf(root), () => inspect([root, state])); // manifests include the lock file bytes
   assert.equal(run!.status, 'active');
   assert.deepEqual(run!.lock && [run!.lock.state, run!.lock.pid], ['held', process.pid]);
   assert.match(run!.lock!.startedAt ?? '', /^\d{4}-\d\d-\d\dT/u);
@@ -316,7 +316,7 @@ test('a root lock held by a running process makes the run active and every open 
     [['unknown', 'LOCKED_BY_OTHER', 'linked-both'], ['unknown', 'LOCKED_BY_OTHER', 'not-started']]);
   assert.ok(run!.unfinished.every((u) => /진행 중일 수 있습니다.*끝난 뒤 다시 확인.*아무것도 바꾸지 않았습니다/u.test(u.action)));
   assert.match(run!.problem ?? '', /진행 중일 수 있습니다/u);
-  await assert.rejects(readFile(rootLockFile(state, GRANT)), { code: 'ENOENT' }, 'withRootLock released its own lock afterwards');
+  await assert.rejects(readFile(rootLockFile(state, await grantOf(root))), { code: 'ENOENT' }, 'withRootLock released its own lock afterwards');
 });
 
 test('a stale lock from a dead process is reported but left in place; the journal decides the status', async (t) => {
@@ -324,7 +324,7 @@ test('a stale lock from a dead process is reported but left in place; the journa
   const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
   const pid = child.pid!;
   await new Promise<void>((resolve) => child.on('exit', () => resolve()));
-  const file = await writeLock(state, pid, hostname());
+  const file = await writeLock(state, root, pid, hostname());
   const bytes = await readFile(file);
   const [run] = await inspect([root, state]);
   assert.deepEqual(run!.lock, { state: 'stale', pid, startedAt: '2026-10-26T01:00:00.000Z' });
@@ -336,7 +336,7 @@ test('a stale lock from a dead process is reported but left in place; the journa
 
 test('a lock from another host makes the run active; unreadable or damaged locks never throw', async (t) => {
   const { root, state } = await lockedScenario(t);
-  const file = await writeLock(state, 1, 'afo-test-other-host');
+  const file = await writeLock(state, root, 1, 'afo-test-other-host');
   let [run] = await inspect([root, state]);
   assert.equal(run!.status, 'active'); assert.equal(run!.lock?.state, 'foreign-host');
   assert.ok(run!.unfinished.every((u) => u.state === 'unknown' && u.detail === 'LOCKED_BY_OTHER' && u.observed !== null));
@@ -373,4 +373,35 @@ test('without a plan loader nothing is resolved; a replaced or renamed root is R
   [run] = await inspect([root, state, aside]);
   assert.ok(run!.unfinished.length === 2 && run!.unfinished.every((u) => u.state === 'unknown' && u.detail === 'ROOT_CHANGED'));
   assert.match(run!.unfinished[0]!.action, /작업 폴더가 승인 때의 폴더와 다릅니다/u);
+});
+
+test('in-place edits after intent are conflicts for move, trash and delete, preserving all files', async (t) => {
+  for (const kind of ['move', 'trash', 'delete'] as const) {
+    const { root, state } = await setup(t, { 'a.txt': 'original', 'dest/': '' });
+    const plan = await makePlan(root, [{ kind, source: 'a.txt', ...(kind === 'move' ? { destination: 'dest/a.txt' } : {}) }]);
+    await savePlan(state, plan);
+    await journal(state, [entry(plan, 0, hex(1), 'intent')]);
+    const inode = (await lstat(path.join(root, 'a.txt'), { bigint: true })).ino;
+    await writeFile(path.join(root, 'a.txt'), 'changed content with a different size');
+    assert.equal((await lstat(path.join(root, 'a.txt'), { bigint: true })).ino, inode);
+    const [run] = await inspect([root, state]);
+    assert.equal(run!.unfinished[0]!.state, 'conflict', kind);
+  }
+});
+
+test('known content hash detects same-size edits even when the expected timestamp matches', async (t) => {
+  const { root, state } = await setup(t, { 'a.txt': 'original', 'dest/': '' });
+  const plan = await makePlan(root, [{ kind: 'move', source: 'a.txt', destination: 'dest/a.txt' }]);
+  const op = plan.operations[0]!;
+  op.expected.sha256 = createHash('sha256').update('original').digest('hex');
+  await rename(path.join(root, 'a.txt'), path.join(root, 'dest/a.txt'));
+  await writeFile(path.join(root, 'dest/a.txt'), 'modified');
+  // Isolate the hash check: model a timestamp restored to the plan's value.
+  op.expected.modifiedNs = String((await lstat(path.join(root, 'dest/a.txt'), { bigint: true })).mtimeNs);
+  await savePlan(state, plan);
+  await journal(state, [entry(plan, 0, hex(1), 'intent', { before: {
+    device: op.expected.device, inode: op.expected.inode, size: op.expected.size, sha256: op.expected.sha256,
+  } })]);
+  const [run] = await inspect([root, state]);
+  assert.equal(run!.unfinished[0]!.state, 'conflict');
 });

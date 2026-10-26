@@ -1,5 +1,7 @@
 # Firebase 기반 첫 검증 기록
 
+이 문서는 PR #33 당시 v1 저장 형식의 기록입니다. 검토 후 v2 변경·회귀 검증은 [PR 검토 결함 수정](../docs/verification/PR_REVIEW_FIXES.md)과 현재 README를 참고합니다.
+
 날짜: 2026-10-26. 이슈 #25, branch `feat/firebase-foundation`.
 
 ## 확인한 결과

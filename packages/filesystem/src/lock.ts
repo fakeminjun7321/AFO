@@ -1,7 +1,7 @@
 import { constants } from 'node:fs';
 import { link, lstat, mkdir, open, rename, unlink } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { hostname } from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
@@ -19,7 +19,9 @@ export const MAX_LOCK_BYTES = 4096;
 export const LOCK_ACQUIRE_ATTEMPTS = 3;
 export const LOCK_RELEASE_WARNING = 'AFO_LOCK_RELEASE_FAILED';
 const NOFOLLOW = constants.O_NOFOLLOW ?? 0;
-const RootGrantIdSchema = z.string().regex(/^[a-f0-9]{64}$/u);
+const RootLockIdentitySchema = z.object({ device: z.string().regex(/^\d+$/u), inode: z.string().regex(/^\d+$/u) });
+/** Stable OS directory identity; a RootGrant can be passed directly. Grant IDs are deliberately session-specific. */
+export type RootLockIdentity = z.infer<typeof RootLockIdentitySchema>;
 export const RootLockSchema = z.strictObject({ formatVersion: z.literal(1), pid: z.number().int().positive(),
   hostname: z.string().min(1).max(255), startedAt: z.iso.datetime(), token: z.string().regex(/^[a-f0-9]{32}$/u) });
 export type RootLockHolder = z.infer<typeof RootLockSchema>;
@@ -39,14 +41,34 @@ const alive = (pid: number): boolean => {
   try { process.kill(pid, 0); return true; } catch (error) { return fsCode(error) !== 'ESRCH'; }
 };
 
-/** ROOT_FORBIDDEN unless the ID is a RootGrant.id (64 lowercase hex), checked before any disk access. */
-export const rootLockFile = (stateDir: string, rootGrantId: string): string => {
-  if (!RootGrantIdSchema.safeParse(rootGrantId).success)
-    throw new AfoError('ROOT_FORBIDDEN', '작업 폴더 ID가 올바르지 않습니다(64자리 소문자 16진수여야 합니다).');
-  return path.join(statePaths(stateDir).locks, `${rootGrantId}.lock`);
+/** Same physical directory shares a key across grants, sessions, paths and processes. This is not an authority check. */
+export const rootLockFile = (stateDir: string, identity: RootLockIdentity): string => {
+  const parsed = RootLockIdentitySchema.safeParse(identity);
+  if (!parsed.success) throw new AfoError('ROOT_FORBIDDEN', '작업 폴더의 디스크·inode 식별이 필요합니다.');
+  const id = createHash('sha256').update(JSON.stringify([BigInt(parsed.data.device).toString(), BigInt(parsed.data.inode).toString()])).digest('hex');
+  return path.join(statePaths(stateDir).locks, `${id}.lock`);
 };
 
+async function checkLockDirectory(file: string): Promise<void> {
+  let current = path.dirname(file);
+  while (true) {
+    try {
+      // ENOENT below a regular file on Windows must not be mistaken for a free lock.
+      const directory = await lstat(current);
+      if (!directory.isDirectory() || directory.isSymbolicLink())
+        throw new AfoError('STATE_CORRUPT', '잠금 폴더의 기존 상위 경로가 일반 폴더가 아닙니다.');
+      return;
+    } catch (error) {
+      if (fsCode(error) !== 'ENOENT') throw error;
+      const parent = path.dirname(current);
+      if (parent === current) throw error;
+      current = parent;
+    }
+  }
+}
+
 async function inspect(file: string): Promise<Seen> {
+  await checkLockDirectory(file);
   const corrupt = (reason: string, bytes: Buffer | null = null): Seen => ({ state: 'corrupt', holder: null, bytes, reason });
   let handle: FileHandle;
   try {
@@ -151,11 +173,11 @@ async function release(file: string, token: string): Promise<void> {
 }
 
 /**
- * Runs fn while holding `<stateDir>/locks/<rootGrantId>.lock`. fn's error propagates unchanged; if release also fails
+ * Runs fn under the stable directory-identity lock. fn's error propagates unchanged; if release also fails
  * then, it is reported via process.emitWarning (code LOCK_RELEASE_WARNING). If fn succeeded and release fails, that error is thrown.
  */
-export async function withRootLock<T>(stateDir: string, rootGrantId: string, fn: () => Promise<T>): Promise<T> {
-  const file = rootLockFile(stateDir, rootGrantId);
+export async function withRootLock<T>(stateDir: string, identity: RootLockIdentity, fn: () => Promise<T>): Promise<T> {
+  const file = rootLockFile(stateDir, identity);
   const directory = path.dirname(file);
   try {
     await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -180,7 +202,7 @@ export async function withRootLock<T>(stateDir: string, rootGrantId: string, fn:
 }
 
 /** Read-only view for recovery/GUI ("a run is active"). Never creates, removes or repairs anything. */
-export async function readRootLock(stateDir: string, rootGrantId: string): Promise<{ state: RootLockState; holder: RootLockHolder | null }> {
-  const { state, holder } = await inspect(rootLockFile(stateDir, rootGrantId));
+export async function readRootLock(stateDir: string, identity: RootLockIdentity): Promise<{ state: RootLockState; holder: RootLockHolder | null }> {
+  const { state, holder } = await inspect(rootLockFile(stateDir, identity));
   return { state, holder };
 }

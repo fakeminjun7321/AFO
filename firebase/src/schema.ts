@@ -21,10 +21,12 @@ export const StoredRuleSet = RuleSetDraft.safeExtend({
 });
 export type RuleSetInput = z.infer<typeof RuleSetDraft>;
 export type RuleSetRecord = z.infer<typeof StoredRuleSet>;
-export const RuleSetMetadata = RuleSetDraft.omit({ rules: true }).extend({
+/** Storage v2 publishes one immutable revision; tombstones retain the counter after logical removal. */
+export const RuleSetMetadata = z.strictObject({
+  formatVersion: z.literal(2), name: label, deleted: z.boolean(),
   revision: z.number().int().positive(),
   ruleIds: z.array(RuleSetId).max(20).refine((ids) => new Set(ids).size === ids.length),
-});
+}).refine((value) => !value.deleted || value.ruleIds.length === 0);
 
 /** Absolute paths, local evidence filenames, approval tokens and file content have no cloud fields. */
-export const CLOUD_FIELDS = ['formatVersion', 'revision', 'name', 'ruleIds', 'updatedAt'] as const;
+export const CLOUD_FIELDS = ['formatVersion', 'revision', 'name', 'ruleIds', 'deleted', 'updatedAt'] as const;

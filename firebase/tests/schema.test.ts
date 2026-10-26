@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RuleSetDraft, RuleSetId } from '../src/schema.js';
+import { RuleSetDraft, RuleSetId, RuleSetMetadata } from '../src/schema.js';
 
 const valid = { formatVersion: 1, name: '개인 분류', rules: [
   { id: 'physics-pdf', extension: '.pdf', keyword: '물리', targetDirectory: '과제/물리', enabled: true },
@@ -25,4 +25,11 @@ test('wrong types, repeated IDs and excessive rule counts fail closed', () => {
 });
 test('document identifiers cannot introduce another path', () => {
   for (const id of ['../other', 'users/u', '', 'a b']) assert.equal(RuleSetId.safeParse(id).success, false);
+});
+
+test('v2 tombstones preserve a version without retaining rule names or references; v1 is not silently accepted', () => {
+  const metadata = { formatVersion: 2, name: 'deleted', deleted: true, revision: 2, ruleIds: [] };
+  assert.equal(RuleSetMetadata.safeParse(metadata).success, true);
+  assert.equal(RuleSetMetadata.safeParse({ ...metadata, formatVersion: 1 }).success, false);
+  assert.equal(RuleSetMetadata.safeParse({ ...metadata, ruleIds: ['r1'] }).success, false);
 });

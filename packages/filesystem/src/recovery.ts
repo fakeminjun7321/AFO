@@ -1,10 +1,10 @@
 import { lstat, readdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { AfoError, OpaqueIdSchema, OperationPlanSchema, RelativePathSchema } from '../../contracts/src/index.js';
-import type { JournalEntry, OperationKind, OperationPlan } from '../../contracts/src/index.js';
+import type { JournalEntry, OperationKind, OperationPlan, PlanOperation } from '../../contracts/src/index.js';
 import { readJournal, statePaths } from './state.js';
 import type { JournalRead } from './state.js';
-import { classifyMoveState, fileIdentity } from './platform.js';
+import { classifyMoveState, fileIdentity, fileMatchesExpected } from './platform.js';
 import type { MoveState } from './platform.js';
 import { readRootLock } from './lock.js';
 import type { RootLockState } from './lock.js';
@@ -110,8 +110,8 @@ async function inside(root: string, relative: string): Promise<string> {
   return abs;
 }
 
-async function observe(root: string, open: JournalEntry): Promise<MoveState> {
-  const expected = { device: open.before.device, inode: open.before.inode };
+async function observe(root: string, open: JournalEntry, planned: PlanOperation): Promise<MoveState> {
+  const expected = planned.expected;
   const source = await inside(root, open.source);
   if (open.kind === 'move') {
     const destination = await inside(root, open.destination!);
@@ -119,7 +119,7 @@ async function observe(root: string, open: JournalEntry): Promise<MoveState> {
   }
   const now = await fileIdentity(source);
   if (!now) return 'missing';
-  return now.kind === 'file' && now.nlink === 1 && now.device === expected.device && now.inode === expected.inode
+  return now.kind === 'file' && now.nlink === 1 && await fileMatchesExpected(source, expected)
     ? 'not-started' : 'conflict';
 }
 
@@ -201,11 +201,15 @@ async function inspectFile(stateDir: string, name: string, options: InspectOptio
   if (read.entries.some((e) => e.runId !== runId)) problem = { detail: 'JOURNAL_INCONSISTENT', text: '저널 안의 실행 ID가 파일 이름과 다릅니다.' };
   else if (read.entries.some((e) => e.planId !== first!.planId || e.rootGrantId !== first!.rootGrantId))
     problem = { detail: 'JOURNAL_INCONSISTENT', text: '한 실행의 저널에 서로 다른 계획·작업 폴더 기록이 섞여 있습니다.' };
+  // A grant ID is per selection; resolve the verified physical root before consulting its shared lock.
+  const { plan, issue: planIssue } = !first || problem?.detail === 'JOURNAL_INCONSISTENT'
+    ? { plan: null, issue: null } : await loadRunPlan(report, options);
   const notes = problem ? [problem.text] : [];
   let host: string | null = null;
-  if (report.rootGrantId) {
+  if (plan) {
     try {
-      const { state, holder } = await readRootLock(stateDir, report.rootGrantId);
+      const rootStat = await lstat(plan.rootPath, { bigint: true });
+      const { state, holder } = await readRootLock(stateDir, { device: String(rootStat.dev), inode: String(rootStat.ino) });
       report.lock = { state, pid: holder?.pid ?? null, startedAt: holder?.startedAt ?? null };
       host = holder?.hostname ?? null;
       if (state === 'stale') notes.push(`이전 실행(pid ${holder?.pid ?? '?'})이 비정상 종료돼 잠금 파일이 남아 있습니다. AFO는 이 점검에서 잠금을 지우지 않았습니다.`);
@@ -221,9 +225,6 @@ async function inspectFile(stateDir: string, name: string, options: InspectOptio
   const ops = track(read.entries);
   const open = [...ops.entries()].filter(([, t]) => t.bad !== null || t.open !== null);
   report.finished = ops.size - open.length;
-  // Only a consistent journal points at one plan; otherwise no root is trusted and nothing is looked up.
-  const { plan, issue: planIssue } = open.length === 0 || problem?.detail === 'JOURNAL_INCONSISTENT'
-    ? { plan: null, issue: null } : await loadRunPlan(report, options);
   for (const [opId, t] of open) {
     const entry = t.open ?? t.first;
     const base = { opId, kind: entry.kind, phase: entry.phase === 'undo-intent' ? 'undo-intent' as const : 'intent' as const,
@@ -235,11 +236,11 @@ async function inspectFile(stateDir: string, name: string, options: InspectOptio
     let blocked: Issue | null = t.bad ? { detail: 'JOURNAL_INCONSISTENT', text: `저널 기록이 서로 맞지 않습니다(${t.bad}).` + CHECK }
       : problem?.detail === 'JOURNAL_INCONSISTENT' ? { detail: problem.detail, text: problem.text + CHECK }
       : !plan ? planIssue
-      : !planned || planned.kind !== entry.kind || planned.source !== entry.source || planned.destination !== entry.destination
+      : !planned || planned.kind !== entry.kind || planned.source !== entry.source || planned.destination !== entry.destination || !sameBefore(entry.before, planned.expected)
         ? { detail: 'PLAN_MISMATCH', text: '계획 파일에 이 작업이 없거나 저널과 경로·종류가 다릅니다.' + CHECK } : null;
     let observed: MoveState | null = null;
     if (!blocked) {
-      try { observed = await observe(plan!.rootPath, entry); }
+      try { observed = await observe(plan!.rootPath, entry, planned!); }
       catch (error) {
         const code = errorCode(error);
         blocked = { detail: code, text: `실제 파일 상태를 확인하는 중 문제가 있었습니다(${code}). 링크나 폴더 밖 경로는 따라가지 않았습니다.` + CHECK };

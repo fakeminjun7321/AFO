@@ -54,14 +54,21 @@ async function hasProjectMarker(dir: string): Promise<boolean> {
 /** Shared root policy: a real folder chosen directly, not a disk root, home, OS folder, app bundle or dev project. */
 async function checkRoot(input: unknown): Promise<{ canonicalPath: string; stat: BigIntStats }> {
   if (typeof input !== 'string' || input === '' || input.includes('\u0000')) throw forbidden('폴더 경로가 필요합니다.');
-  let stat: BigIntStats;
-  try { stat = await lstat(path.resolve(input), { bigint: true }); }
-  catch (error) {
-    throw new AfoError(fsCode(error) === 'EACCES' || fsCode(error) === 'EPERM' ? 'PERMISSION_DENIED' : 'ROOT_FORBIDDEN',
+  // "a/../b" means different folders lexically and physically once a link is involved; refuse instead of guessing.
+  if (input.split(process.platform === 'win32' ? /[\\/]/u : /\//u).some((part) => part === '.' || part === '..'))
+    throw forbidden('"."·".."가 들어간 경로는 받지 않습니다. 폴더를 직접 선택하세요.');
+  const unreadable = (error: unknown): AfoError =>
+    new AfoError(fsCode(error) === 'EACCES' || fsCode(error) === 'EPERM' ? 'PERMISSION_DENIED' : 'ROOT_FORBIDDEN',
       '선택한 폴더를 찾거나 읽을 수 없습니다.', { cause: error });
-  }
-  if (!stat.isDirectory() || stat.isSymbolicLink()) throw forbidden('일반 폴더를 직접 선택해야 합니다(파일·링크·바로가기 불가).');
-  const canonicalPath = await realpath(input);
+  const notFolder = (): AfoError => forbidden('일반 폴더를 직접 선택해야 합니다(파일·링크·바로가기 불가).');
+  let stat: BigIntStats; let canonicalPath: string;
+  try {
+    // The input itself must not be a link; type and identity come from the real path the grant will name.
+    if ((await lstat(path.resolve(input), { bigint: true })).isSymbolicLink()) throw notFolder();
+    canonicalPath = await realpath(input);
+    stat = await lstat(canonicalPath, { bigint: true });
+  } catch (error) { throw error instanceof AfoError ? error : unreadable(error); }
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw notFolder();
   const home = await realpath(homedir()).catch(() => path.resolve(homedir()));
   const locations = osLocations(home);
   if (canonicalPath === path.parse(canonicalPath).root || locations.exact.some((p) => same(p, canonicalPath)) ||

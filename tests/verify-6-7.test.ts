@@ -130,8 +130,7 @@ test('V67-R1 refused roots: fake home, its Library and projects, disk root, OS f
   assert.deepEqual(await oracle(root), before, 'issuing/refusing grants changed nothing');
 });
 
-test('V67-R2 non-normalized input "<root>/a/../b" is refused at grant issue (CARRYOVER #6)',
-  { todo: 'DEFECT V67-1: issueRootGrant accepts and canonicalizes ".." input (see docs/verification/ISSUE_6_7.md)' }, async (t) => {
+test('V67-R2 non-normalized input "<root>/a/../b" is refused at grant issue (CARRYOVER #6)', async (t) => {
   const root = await make(t, { 'a/x.pdf': 'x', 'b/y.pdf': 'y' });
   const input = `${root}/a/../b`;
   const result = await issueRootGrant(input).then((g) => g, (e: unknown) => e);
@@ -139,8 +138,7 @@ test('V67-R2 non-normalized input "<root>/a/../b" is refused at grant issue (CAR
   assert.ok(isAfoError(result), 'non-normalized ".." input was accepted (canonicalized) instead of refused');
 });
 
-test('V67-R3 an issued grant always describes the folder at its canonicalPath (".." after a link component)',
-  { todo: 'DEFECT V67-2: lstat(path.resolve(input)) vs realpath(input) describe different folders' }, async (t) => {
+test('V67-R3 an issued grant always describes the folder at its canonicalPath (".." after a link component)', async (t) => {
   // <root>/via -> <root>/deep/x. Lexically "via/../target" is <root>/target; physically it is <root>/deep/target.
   const root = await make(t, { 'deep/x/': '', 'deep/target/p.pdf': 'physical', 'target/l.pdf': 'lexical' });
   await symlink(path.join(root, 'deep/x'), path.join(root, 'via'));
@@ -154,8 +152,7 @@ test('V67-R3 an issued grant always describes the folder at its canonicalPath ("
   await verifyGrant(grant, 'work');
 });
 
-test('V67-R3b the same ".." trick never yields a grant whose canonicalPath is a file',
-  { todo: 'DEFECT V67-2: same root cause; grant issued for a file path (fails closed at verifyGrant)' }, async (t) => {
+test('V67-R3b the same ".." trick never yields a grant whose canonicalPath is a file', async (t) => {
   // Lexically "via/../ft" is the folder <root>/ft; physically it is the file <root>/deep/ft.
   const root = await make(t, { 'deep/x/': '', 'deep/ft': 'a file', 'ft/': '' });
   await symlink(path.join(root, 'deep/x'), path.join(root, 'via'));

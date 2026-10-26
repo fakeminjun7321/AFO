@@ -75,3 +75,22 @@ test('grant issue refuses files, links, missing paths, OS folders, bundles and d
   const after = await manifest(root); delete after['shortcut'];
   assert.deepEqual(after, before);
 });
+test('"." and ".." components are refused; identity always comes from the real path the grant names', async (t) => {
+  const root = await fixture(t, { 'a/x.pdf': 'x', 'b/y.pdf': 'y', 'deep/x/inner/z.pdf': 'z' });
+  for (const input of [`${root}/a/../b`, `${root}/./b`, `${root}/b/.`, `${root}/b/..`, '..', '.'])
+    await assert.rejects(issueRootGrant(input), code('ROOT_FORBIDDEN'), input);
+  // An intermediate link component is followed once; dev/inode and kind describe canonicalPath itself.
+  await symlink(path.join(root, 'deep/x'), path.join(root, 'via'), process.platform === 'win32' ? 'junction' : 'dir');
+  const grant = await issueRootGrant(path.join(root, 'via', 'inner'));
+  assert.equal(grant.canonicalPath, path.join(root, 'deep', 'x', 'inner'));
+  const stat = await lstat(grant.canonicalPath, { bigint: true });
+  assert.deepEqual([grant.device, grant.inode], [String(stat.dev), String(stat.ino)]);
+  await assert.rejects(issueRootGrant(path.join(root, 'via')), /직접 선택/u);
+});
+test('scan APIs accept an optional session and refuse grants from another session', async (t) => {
+  const root = await fixture(t, { 'a.pdf': 'a' });
+  const grant = await issueRootGrant(root, { sessionId: 'session-other-1' });
+  await assert.rejects(scanRoot(grant, { sessionId: 'session-mine-01' }), code('ROOT_FORBIDDEN'));
+  assert.equal((await scanRoot(grant, { sessionId: 'session-other-1' })).files.length, 1);
+  assert.equal((await scanRoot(grant)).files.length, 1);
+});

@@ -20,9 +20,12 @@ export interface ScanOptions {
   onAbort?: 'throw' | 'partial';
   /** Files hashed at once (default 4, 1–16). Folder walking is sequential so results stay deterministic. */
   hashConcurrency?: number;
+  /** When set, grants of any other session are refused (the shared service passes its session). */
+  sessionId?: string;
 }
 const devNames = new Set(['node_modules', '__pycache__', 'venv', '.venv', 'dist', 'build', 'target', 'Pods', 'DerivedData']);
 const systemNames = new Set(['$RECYCLE.BIN', 'System Volume Information', 'Thumbs.db', 'desktop.ini', '$Recycle.Bin']);
+const session = (options: ScanOptions): { sessionId?: string } => options.sessionId === undefined ? {} : { sessionId: options.sessionId };
 const PROGRESS_STEP = 1024 * 1024;
 const CHUNK = 64 * 1024;
 
@@ -134,7 +137,7 @@ async function walk(root: string, mode: 'scan' | 'reference', options: ScanOptio
 /** Scans a work root granted by this process. Records metadata only; sha256 stays null until hashCandidates. */
 export async function scanRoot(grantInput: RootGrant, options: ScanOptions = {}): Promise<ScanResult> {
   checkAbort(options.signal); limits(options);
-  const grant = await verifyGrant(grantInput, 'work');
+  const grant = await verifyGrant(grantInput, 'work', session(options));
   const root = { id: digest(grant.canonicalPath), canonicalPath: grant.canonicalPath, readOnly: true as const };
   const files: FileSnapshot[] = [];
   const walked = await walk(grant.canonicalPath, 'scan', options, (rel, stat) => {
@@ -142,7 +145,7 @@ export async function scanRoot(grantInput: RootGrant, options: ScanOptions = {})
       modifiedNs: String(stat.mtimeNs), device: String(stat.dev), inode: String(stat.ino), sha256: null,
       allocatedBytes: allocation(stat) }));
   });
-  await verifyGrant(grant, 'work'); // the root was not swapped while walking
+  await verifyGrant(grant, 'work', session(options)); // the root was not swapped while walking
   return ScanSchema.parse({ root, files, directories: walked.directories, skipped: walked.skipped, complete: walked.complete,
     ...(walked.cancelled ? { cancelled: true } : {}) });
 }
@@ -150,13 +153,13 @@ export async function scanRoot(grantInput: RootGrant, options: ScanOptions = {})
 /** Reference folder: structure, names and extensions only. No sizes, identities, file opens or hashes. */
 export async function readReference(grantInput: ReferenceGrant, options: ScanOptions = {}): Promise<ReferenceScan> {
   checkAbort(options.signal); limits(options);
-  const grant = await verifyGrant(grantInput, 'reference');
+  const grant = await verifyGrant(grantInput, 'reference', session(options));
   const files: ReferenceScan['files'] = [];
   const walked = await walk(grant.canonicalPath, 'reference', options, (rel) => {
     const ext = extensionOf(rel);
     files.push({ relativePath: rel, extension: /^\.[^./]{1,32}$/u.test(ext) ? ext : null });
   });
-  await verifyGrant(grant, 'reference');
+  await verifyGrant(grant, 'reference', session(options));
   return ReferenceScanSchema.parse({ formatVersion: 1, mode: 'reference-metadata', grantId: grant.id,
     root: { id: digest(grant.canonicalPath), canonicalPath: grant.canonicalPath, readOnly: true }, files,
     directories: walked.directories, skipped: walked.skipped, complete: walked.complete,
@@ -202,7 +205,7 @@ async function hashSnapshot(root: string, file: FileSnapshot, signal: AbortSigna
 export async function hashCandidates(grantInput: RootGrant, input: ScanResult,
   options: ScanOptions & { exclude?: Iterable<string> } = {}): Promise<ScanResult> {
   const { hashConcurrency } = limits(options);
-  const grant = await verifyGrant(grantInput, 'work');
+  const grant = await verifyGrant(grantInput, 'work', session(options));
   const scan = ScanSchema.parse(input);
   if (scan.root.canonicalPath !== grant.canonicalPath) throw new AfoError('ROOT_FORBIDDEN', '스캔 결과와 폴더 권한이 다릅니다.');
   const excluded = new Set([...(options.exclude ?? [])].map(pathKey));
@@ -237,7 +240,7 @@ export async function hashCandidates(grantInput: RootGrant, input: ScanResult,
   }
   await Promise.all(Array.from({ length: Math.min(hashConcurrency, targets.length) }, () => worker()));
   if (cancelled && options.onAbort !== 'partial') throw aborted();
-  await verifyGrant(grant, 'work');
+  await verifyGrant(grant, 'work', session(options));
   failures.sort((a, b) => a.relativePath < b.relativePath ? -1 : a.relativePath > b.relativePath ? 1 : 0);
   return ScanSchema.parse({ ...scan, files: scan.files.map((f) => ({ ...f, sha256: hashes.get(f.relativePath) ?? f.sha256 })),
     skipped: [...scan.skipped, ...failures], complete: scan.complete && failures.length === 0 && !cancelled,

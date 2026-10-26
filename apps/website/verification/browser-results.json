@@ -1,0 +1,136 @@
+[
+  {
+    "viewport": {
+      "width": 1586,
+      "height": 992
+    },
+    "status": "passed",
+    "checks": [
+      "HTTP+CSP",
+      "font+assets",
+      "no overflow",
+      "CTA anchor",
+      "6 sample rows",
+      "preview",
+      "personal rule",
+      "unchanged image rule",
+      "reset",
+      "FAQ+keyboard"
+    ],
+    "requests": 5,
+    "externalRequests": 0,
+    "consoleErrors": []
+  },
+  {
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "status": "passed",
+    "checks": [
+      "HTTP+CSP",
+      "font+assets",
+      "no overflow",
+      "CTA anchor",
+      "6 sample rows",
+      "preview",
+      "personal rule",
+      "unchanged image rule",
+      "reset",
+      "FAQ+keyboard"
+    ],
+    "requests": 5,
+    "externalRequests": 0,
+    "consoleErrors": []
+  },
+  {
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "status": "passed",
+    "checks": [
+      "HTTP+CSP",
+      "font+assets",
+      "no overflow",
+      "CTA anchor",
+      "6 sample rows",
+      "preview",
+      "personal rule",
+      "unchanged image rule",
+      "reset",
+      "FAQ+keyboard"
+    ],
+    "requests": 5,
+    "externalRequests": 0,
+    "consoleErrors": []
+  },
+  {
+    "viewport": {
+      "width": 768,
+      "height": 1024
+    },
+    "status": "passed",
+    "checks": [
+      "HTTP+CSP",
+      "font+assets",
+      "no overflow",
+      "CTA anchor",
+      "6 sample rows",
+      "preview",
+      "personal rule",
+      "unchanged image rule",
+      "reset",
+      "FAQ+keyboard"
+    ],
+    "requests": 5,
+    "externalRequests": 0,
+    "consoleErrors": []
+  },
+  {
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "status": "passed",
+    "checks": [
+      "HTTP+CSP",
+      "font+assets",
+      "no overflow",
+      "CTA anchor",
+      "6 sample rows",
+      "preview",
+      "personal rule",
+      "unchanged image rule",
+      "reset",
+      "FAQ+keyboard",
+      "mobile menu"
+    ],
+    "requests": 5,
+    "externalRequests": 0,
+    "consoleErrors": []
+  },
+  {
+    "viewport": {
+      "width": 320,
+      "height": 700
+    },
+    "status": "passed",
+    "checks": [
+      "HTTP+CSP",
+      "font+assets",
+      "no overflow",
+      "CTA anchor",
+      "6 sample rows",
+      "preview",
+      "personal rule",
+      "unchanged image rule",
+      "reset",
+      "FAQ+keyboard",
+      "mobile menu"
+    ],
+    "requests": 5,
+    "externalRequests": 0,
+    "consoleErrors": []
+  }
+]

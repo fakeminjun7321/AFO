@@ -21,8 +21,10 @@ const errno = (error: unknown): string => error !== null && typeof error === 'ob
 const fromErrno = (error: unknown, fallback: PlatformErrorCode = 'UNKNOWN'): PlatformError => {
   const code = errno(error);
   const mapped: PlatformErrorCode = code === 'ENOENT' ? 'SOURCE_MISSING' : code === 'EEXIST' ? 'DEST_EXISTS'
-    : code === 'EXDEV' ? 'CROSS_VOLUME' : code === 'EACCES' || code === 'EROFS' ? 'PERMISSION_DENIED'
-    : code === 'EPERM' || code === 'ENOTSUP' || code === 'EOPNOTSUPP' || code === 'ENOSYS' || code === 'EMLINK' ? 'NOT_SUPPORTED'
+    : code === 'EXDEV' ? 'CROSS_VOLUME'
+    // EPERM is what macOS returns for uchg/immutable files and sticky folders: a permission problem, not a missing feature.
+    : code === 'EACCES' || code === 'EPERM' || code === 'EROFS' ? 'PERMISSION_DENIED'
+    : code === 'ENOTSUP' || code === 'EOPNOTSUPP' || code === 'ENOSYS' || code === 'EMLINK' ? 'NOT_SUPPORTED'
     : code === 'EBUSY' || code === 'ETXTBSY' ? 'FILE_BUSY' : code === 'ENOSPC' || code === 'EDQUOT' ? 'DISK_FULL' : fallback;
   return new PlatformError(mapped, `파일 작업이 실패했습니다(${code || 'unknown'}).`, code || null);
 };

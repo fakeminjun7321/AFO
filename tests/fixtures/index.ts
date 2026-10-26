@@ -55,21 +55,22 @@ export type Manifest = Record<string, ManifestEntry>;
 
 /** Independent oracle: includes hidden/excluded names, never follows links, does not reuse product code. */
 export async function createManifest(root: string): Promise<Manifest> {
-  const result: Manifest = {};
+  // Collect entries, then Object.fromEntries: names such as __proto__ or constructor become own keys of a plain object.
+  const entries: [string, ManifestEntry][] = [];
   async function visit(folder: string, prefix: string): Promise<void> {
     for (const name of (await readdir(folder)).sort()) {
       const full = path.join(folder, name);
       const relative = prefix ? `${prefix}/${name}` : name;
       const stat = await lstat(full, { bigint: true });
-      if (stat.isSymbolicLink()) result[relative] = { type: 'link', target: await readlink(full) };
-      else if (stat.isDirectory()) { result[relative] = { type: 'directory' }; await visit(full, relative); }
-      else if (stat.isFile()) result[relative] = { type: 'file', bytes: String(stat.size), modified: String(stat.mtimeNs),
-        sha256: createHash('sha256').update(await readFile(full)).digest('hex') };
-      else result[relative] = { type: 'other' };
+      if (stat.isSymbolicLink()) entries.push([relative, { type: 'link', target: await readlink(full) }]);
+      else if (stat.isDirectory()) { entries.push([relative, { type: 'directory' }]); await visit(full, relative); }
+      else if (stat.isFile()) entries.push([relative, { type: 'file', bytes: String(stat.size), modified: String(stat.mtimeNs),
+        sha256: createHash('sha256').update(await readFile(full)).digest('hex') }]);
+      else entries.push([relative, { type: 'other' }]);
     }
   }
   await visit(root, '');
-  return result;
+  return Object.fromEntries(entries) as Manifest;
 }
 
 export interface ManifestDiff { added: string[]; removed: string[]; changed: string[] }
@@ -78,9 +79,9 @@ export function diffManifest(before: Manifest, after: Manifest, options: { ignor
   const strip = (entry: ManifestEntry): string => JSON.stringify(options.ignoreModified && entry.type === 'file'
     ? { ...entry, modified: undefined } : entry);
   const sorted = (values: string[]): string[] => values.sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
-  const removed = Object.keys(before).filter((name) => !(name in after));
-  const added = Object.keys(after).filter((name) => !(name in before));
-  const changed = Object.keys(before).filter((name) => name in after && strip(before[name]!) !== strip(after[name]!));
+  const removed = Object.keys(before).filter((name) => !Object.hasOwn(after, name));
+  const added = Object.keys(after).filter((name) => !Object.hasOwn(before, name));
+  const changed = Object.keys(before).filter((name) => Object.hasOwn(after, name) && strip(before[name]!) !== strip(after[name]!));
   return { added: sorted(added), removed: sorted(removed), changed: sorted(changed) };
 }
 export const sameManifest = (diff: ManifestDiff): boolean =>

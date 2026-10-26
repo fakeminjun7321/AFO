@@ -1,0 +1,34 @@
+{
+  "formatVersion": 1,
+  "name": "AFO 체험용 분류 규칙",
+  "rules": [
+    {
+      "id": "physics-text",
+      "extension": ".txt",
+      "keyword": "물리",
+      "targetDirectory": "학교/물리",
+      "enabled": true
+    },
+    {
+      "id": "images",
+      "extension": ".png",
+      "keyword": null,
+      "targetDirectory": "이미지",
+      "enabled": true
+    },
+    {
+      "id": "audio",
+      "extension": ".wav",
+      "keyword": null,
+      "targetDirectory": "소리",
+      "enabled": true
+    },
+    {
+      "id": "data",
+      "extension": ".csv",
+      "keyword": "측정",
+      "targetDirectory": "학교/데이터",
+      "enabled": true
+    }
+  ]
+}

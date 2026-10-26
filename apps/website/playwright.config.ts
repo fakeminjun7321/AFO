@@ -12,7 +12,7 @@ export default defineConfig({
   reporter: "list",
   webServer: {
     command: "node scripts/start-emulators.mjs",
-    url: "http://127.0.0.1:15183",
+    url: "http://127.0.0.1:15193/demo-afo-website/asia-northeast3/adminOverview",
     timeout: 120000,
     reuseExistingServer: false,
     gracefulShutdown: { signal: "SIGTERM", timeout: 15000 },

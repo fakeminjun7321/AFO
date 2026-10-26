@@ -192,3 +192,154 @@ test("Auth + Firestore Emulator: save/reload, account isolation and stale versio
   );
   await one.close();
 });
+
+test("resource pages serve a real test ZIP and importable example rules", async ({
+  page,
+}) => {
+  const { createHash } = await import("node:crypto");
+  const pack = JSON.parse(
+    await readFile(
+      new URL("../src/data/test-pack.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  for (const path of ["/resources", "/downloads", "/notes"]) {
+    await page.goto(path);
+    await expect(page.locator("h1")).toHaveCount(1);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBeTruthy();
+  }
+  await page.goto("/downloads");
+  const fileEvent = page.waitForEvent("download");
+  await page
+    .getByRole("link", { name: "테스트 ZIP 받기", exact: false })
+    .click();
+  const file = await fileEvent;
+  const bytes = await readFile((await file.path())!);
+  expect(bytes.length).toBe(pack.bytes);
+  expect(createHash("sha256").update(bytes).digest("hex")).toBe(pack.sha256);
+  const jsonEvent = page.waitForEvent("download");
+  await page
+    .getByRole("link", { name: "예시 규칙 JSON만 받기", exact: false })
+    .click();
+  const jsonFile = await jsonEvent;
+  await page.goto("/rules");
+  await page.getByText("JSON으로 가져오기·내보내기", { exact: true }).click();
+  await page
+    .getByLabel("규칙 JSON 가져오기")
+    .setInputFiles((await jsonFile.path())!);
+  await expect(page.getByLabel("규칙 1 폴더")).toHaveValue("학교/물리");
+});
+
+test("Admin callable enforces server authorization and returns real emulator user/runtime data", async ({
+  browser,
+}) => {
+  const endpoint =
+    "http://127.0.0.1:15193/demo-afo-website/asia-northeast3/adminOverview";
+  const unauth = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ data: {} }),
+  });
+  expect(unauth.status).toBe(401);
+  const identity = "http://127.0.0.1:19103/identitytoolkit.googleapis.com/v1/";
+  async function create(email: string, verified: boolean, adminClaim: boolean) {
+    const created = await (
+      await fetch(identity + "accounts:signUp", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer owner",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+          password: "Synthetic-Only-274!",
+          emailVerified: verified,
+          targetProjectId: "demo-afo-website",
+        }),
+      })
+    ).json();
+    if (adminClaim)
+      await fetch(identity + "accounts:update", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer owner",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          localId: created.localId,
+          targetProjectId: "demo-afo-website",
+          customAttributes: JSON.stringify({ admin: true }),
+        }),
+      });
+    const signed = await (
+      await fetch(
+        identity + "accounts:signInWithPassword?key=demo-afo-website",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email,
+            password: "Synthetic-Only-274!",
+            returnSecureToken: true,
+          }),
+        },
+      )
+    ).json();
+    return signed.idToken as string;
+  }
+  for (const [verified, claim] of [
+    [true, false],
+    [false, true],
+  ]) {
+    const token = await create(
+      `denied-${Date.now()}-${verified}@example.invalid`,
+      verified,
+      claim,
+    );
+    const denied = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + token,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ data: {} }),
+    });
+    expect(denied.status).toBe(403);
+    expect((await denied.json()).error.status).toBe("PERMISSION_DENIED");
+  }
+  const email = `admin-${Date.now()}@example.invalid`;
+  await create(email, true, true);
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto("/login");
+  await page.getByLabel("이메일", { exact: true }).fill(email);
+  await page
+    .getByLabel("비밀번호", { exact: true })
+    .fill("Synthetic-Only-274!");
+  await page.getByRole("button", { name: "로그인", exact: true }).click();
+  await expect(page).toHaveURL(/\/account$/);
+  await page.getByRole("link", { name: "관리자 화면", exact: true }).click();
+  await page.getByRole("button", { name: "관리 정보 불러오기" }).click();
+  await expect(page.locator(".admin-users")).toContainText(email, {
+    timeout: 20000,
+  });
+  await expect(page.locator(".admin-runtime")).toContainText(
+    "demo-afo-website",
+  );
+  await expect(page.locator(".admin-runtime")).toContainText("연결됨");
+  expect(await page.locator("main").innerText()).not.toMatch(
+    /passwordHash|passwordSalt|refreshToken/,
+  );
+  if (process.env.AFO_EVIDENCE_DIR) {
+    await mkdir(process.env.AFO_EVIDENCE_DIR, { recursive: true });
+    await page.screenshot({
+      path: `${process.env.AFO_EVIDENCE_DIR}/admin-data.png`,
+      fullPage: true,
+    });
+  }
+  await context.close();
+});

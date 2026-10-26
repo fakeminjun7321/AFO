@@ -3,11 +3,12 @@ import { lstat, open, readdir, realpath } from 'node:fs/promises';
 import type { BigIntStats } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { AfoError, FileSchema, ProfileSchema, ReferenceScanSchema, RelativePathSchema, ScanSchema, incompleteSkipCodes }
+import { AfoError, FileSchema, ReferenceScanSchema, RelativePathSchema, ScanSchema, incompleteSkipCodes }
   from '../../contracts/src/index.js';
 import type { FileSnapshot, Preview, ProtectedEntry, ReferenceGrant, ReferenceScan, RootGrant, ScanProgress, ScanResult,
   SkipCode, SkippedEntry } from '../../contracts/src/index.js';
-import { buildPreview, digest, extensionOf, pathKey, suggestProfile } from '../../engine/src/index.js';
+import { buildPreview, digest, extensionOf, parseProfile, pathKey, suggestProfile } from '../../engine/src/index.js';
+import { storedReferenceEntries } from './profiles.js';
 import { bundlePattern, issueReferenceGrant, issueRootGrant, projectMarkers, verifyGrant, within } from './grants.js';
 
 export { currentSessionId, issueReferenceGrant, issueRootGrant, revokeGrant, verifyGrant } from './grants.js';
@@ -268,23 +269,27 @@ export function protectedReferencePaths(workRoot: string, sources: { root: strin
     .map((relativePath) => ({ relativePath, code: 'REFERENCE_FILE' as const, reason: '참고한 기존 파일이라 이동·삭제하지 않습니다.' }));
 }
 
-export interface AnalyzeOptions extends ScanOptions { profile?: unknown; reference?: ReferenceGrant }
+/** profile: v1 JSON or a saved v2 profile (#18). overrides: one-off corrections by file ID, never stored. */
+export interface AnalyzeOptions extends ScanOptions { profile?: unknown; reference?: ReferenceGrant; overrides?: Record<string, string> }
 export interface Analysis { preview: Preview; suggestedProfile: ReturnType<typeof suggestProfile> | null;
   reference: ReferenceScan | null; protected: ProtectedEntry[] }
 
 /** scan → reference metadata → hash size candidates (protected excluded) → preview. No filesystem writes. */
 export async function analyzeRoot(grant: RootGrant, options: AnalyzeOptions = {}): Promise<Analysis> {
   const scan = await scanRoot(grant, options);
-  const profile = options.profile === undefined ? undefined : ProfileSchema.parse(options.profile);
+  const profile = options.profile === undefined ? undefined : parseProfile(options.profile);
   const reference = options.reference ? await readReference(options.reference, options) : null;
   if (reference?.cancelled) throw aborted();
   if (reference && !reference.complete) throw new Error('참고 폴더 스캔이 완료되지 않았습니다.');
   const sources = [...(reference ? [{ root: reference.root.canonicalPath, files: reference.files.map((f) => f.relativePath) }] : []),
-    ...(profile ? [{ root: profile.referenceRoot.canonicalPath, files: profile.referenceFiles }] : [])];
-  const protectedEntries = protectedReferencePaths(scan.root.canonicalPath, sources);
+    // A saved v2 profile keeps no reference path or file list; storedReferenceEntries finds its folder by root ID.
+    ...(profile?.formatVersion === 1 ? [{ root: profile.referenceRoot.canonicalPath, files: profile.referenceFiles }] : [])];
+  const merged = new Map([...protectedReferencePaths(scan.root.canonicalPath, sources), ...(profile ? storedReferenceEntries(scan, profile) : [])]
+    .map((entry) => [pathKey(entry.relativePath), entry] as const));
+  const protectedEntries = [...merged.values()].sort((a, b) => a.relativePath < b.relativePath ? -1 : a.relativePath > b.relativePath ? 1 : 0);
   const protectedPaths = protectedEntries.map((p) => p.relativePath);
   const hashed = scan.cancelled ? scan : await hashCandidates(grant, scan, { ...options, exclude: protectedPaths });
-  return { preview: buildPreview(hashed, profile ? { profile, protectedPaths } : { protectedPaths }),
+  return { preview: buildPreview(hashed, { protectedPaths, ...(profile ? { profile } : {}), ...(options.overrides ? { overrides: options.overrides } : {}) }),
     suggestedProfile: reference ? suggestProfile(reference) : null, reference, protected: protectedEntries };
 }
 

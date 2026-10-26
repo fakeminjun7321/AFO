@@ -86,10 +86,10 @@ export const ProfileSchema = z.strictObject({
     ctx.addIssue({ code: 'custom', message: '참고 파일에 없는 규칙 근거입니다.' });
 });
 /** Classification rule set version. Changing default rules must change this value. */
-export const CLASSIFICATION_VERSION = 'default-1';
+export const CLASSIFICATION_VERSION = 'default-2';
 export const ClassificationReasonSchema = z.enum(['USER_OVERRIDE', 'PERSONAL_RULE', 'DEFAULT_EXTENSION', 'ALREADY_PLACED',
   'PROTECTED_REFERENCE', 'READ_FAILED', 'RULE_CONFLICT', 'COMPOUND_EXTENSION', 'NO_EXTENSION', 'UNKNOWN_EXTENSION',
-  'DEST_CONFLICT', 'DEST_COLLISION', 'PARENT_CONFLICT']);
+  'DEST_CONFLICT', 'DEST_COLLISION', 'PARENT_CONFLICT', 'SAVED_CORRECTION', 'DEST_INVALID']);
 export type ClassificationReason = z.infer<typeof ClassificationReasonSchema>;
 export const PreviewItemSchema = z.strictObject({
   fileId: z.string(), source: RelativePathSchema, destination: RelativePathSchema.nullable(),
@@ -130,6 +130,8 @@ export const SpaceEstimateSchema = z.strictObject({
 export const PreviewSchema = z.strictObject({
   formatVersion: z.literal(1), mode: z.literal('preview-only'), id: z.string(), root: RootSchema,
   profileRevision: z.number().int().positive().nullable(), items: z.array(PreviewItemSchema),
+  /** Profile applied to this preview (#18); set together with profileRevision so #8 can bind plans and approvals. */
+  profileId: z.string().min(1).nullable().optional(),
   duplicates: z.array(DuplicateSchema), largeFiles: z.array(RelativePathSchema),
   skipped: z.array(SkippedEntrySchema),
   scanComplete: z.boolean(), executionAvailable: z.literal(false),
@@ -314,3 +316,59 @@ export const ScanProgressSchema = z.strictObject({
   hashedFiles: ByteCountSchema, hashTargets: ByteCountSchema, bytesHashed: ByteCountSchema, bytesToHash: ByteCountSchema,
 });
 export type ScanProgress = z.infer<typeof ScanProgressSchema>;
+
+/* ---- Saved personal rules (#18). ProfileSchema (v1) stays readable; only a confirmed v1 converts to v2. ---- */
+/** Stored evidence examples per rule. More would copy the reference folder's file list into app data. */
+export const PROFILE_EVIDENCE_LIMIT = 3;
+/** Relative folder under the work root. Hidden segments are refused: the scanner skips them, so moved files would vanish from view. */
+export const TargetDirectorySchema = RelativePathSchema.refine((value) => value.split('/').every((part) => !part.startsWith('.')),
+  '숨김 폴더는 목적지가 될 수 없습니다.');
+const FileNameSchema = z.string().min(1).max(255).refine((value) => !value.includes('/') && RelativePathSchema.safeParse(value).success,
+  '파일 이름 하나가 필요합니다.');
+const ExtensionSchema = z.string().regex(/^\.[a-z0-9]{1,16}$/u);
+export const SavedRuleSchema = z.strictObject({
+  id: z.string().min(1).max(128), extension: ExtensionSchema, keyword: z.string().min(2).max(80).nullable(),
+  targetDirectory: TargetDirectorySchema,
+  /** A few reference-relative examples for explanation; evidenceCount is how many reference files supported the rule. */
+  evidence: z.array(RelativePathSchema).min(2).max(PROFILE_EVIDENCE_LIMIT), evidenceCount: z.number().int().min(2).max(1_000_000),
+  enabled: z.boolean(),
+}).superRefine((rule, ctx) => {
+  if (duplicated(rule.evidence)) issue(ctx, '서로 다른 참고 파일 근거가 필요합니다.');
+  if (rule.evidenceCount < rule.evidence.length) issue(ctx, '근거 개수가 예시보다 적습니다.');
+});
+/** Exact file name, or extension plus optional filename keyword. Compared case- and Unicode-insensitively. */
+export const CorrectionMatchSchema = z.discriminatedUnion('type', [
+  z.strictObject({ type: z.literal('file-name'), name: FileNameSchema }),
+  z.strictObject({ type: z.literal('keyword'), extension: ExtensionSchema, keyword: z.string().min(1).max(80).nullable() }),
+]);
+/** Explicit user correction saved with "이후에도 적용". One-off corrections are never stored. */
+export const CorrectionSchema = z.strictObject({
+  id: z.string().regex(/^[a-f0-9]{16}$/u), match: CorrectionMatchSchema, targetDirectory: TargetDirectorySchema, createdAt: InstantSchema,
+});
+export const correctionMatchKey = (match: z.infer<typeof CorrectionMatchSchema>): string => match.type === 'file-name'
+  ? JSON.stringify(['file-name', key(match.name)]) : JSON.stringify(['keyword', match.extension, match.keyword === null ? null : key(match.keyword)]);
+export const RuleProfileV2Schema = z.strictObject({
+  formatVersion: z.literal(2), id: z.string().min(1).max(128), revision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  status: z.enum(['confirmed', 'disabled']),
+  /**
+   * Reference folder: display name (last path segment) and RootSchema.id (sha256 of its real path), never the path itself.
+   * The ID lets a later analysis recognise that folder inside or around a work root and keep its files untouched.
+   */
+  referenceRootId: Sha256Schema.nullable(),
+  referenceRootLabel: z.string().min(1).max(255).refine((v) => !/[\\/\u0000]/u.test(v), '폴더 이름만 저장합니다.').nullable(),
+  rules: z.array(SavedRuleSchema).max(1000), corrections: z.array(CorrectionSchema).max(1000), updatedAt: InstantSchema,
+}).superRefine((p, ctx) => {
+  if (duplicated(p.rules.map((r) => r.id))) issue(ctx, '중복 규칙 ID입니다.');
+  if (duplicated(p.corrections.map((c) => c.id))) issue(ctx, '중복 수정 ID입니다.');
+  if (duplicated(p.corrections.map((c) => correctionMatchKey(c.match)))) issue(ctx, '같은 조건의 저장 수정이 둘 이상입니다.');
+});
+/** profiles/active.json. 'empty' keeps the last revision after a reset so a (profileId, revision) pair is never reused. */
+export const ProfileStoreSchema = z.discriminatedUnion('state', [
+  z.strictObject({ formatVersion: z.literal(2), state: z.literal('active'), profile: RuleProfileV2Schema }),
+  z.strictObject({ formatVersion: z.literal(2), state: z.literal('empty'), lastRevision: z.number().int().nonnegative(), updatedAt: InstantSchema }),
+]);
+export type SavedRule = z.infer<typeof SavedRuleSchema>;
+export type CorrectionMatch = z.infer<typeof CorrectionMatchSchema>;
+export type Correction = z.infer<typeof CorrectionSchema>;
+export type RuleProfileV2 = z.infer<typeof RuleProfileV2Schema>;
+export type ProfileStore = z.infer<typeof ProfileStoreSchema>;

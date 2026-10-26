@@ -6,7 +6,7 @@ import { CLASSIFICATION_VERSION, LARGE_FILE_BYTES, buildPreview, chooseKeeper, c
   from '../packages/engine/src/index.js';
 import { scanFixture } from './helpers.js';
 
-/** Independent expected answers for default-1, written by hand (not derived from the engine tables). */
+/** Independent expected answers for default-2, written by hand (not derived from the engine tables). */
 const oracle: [string, 'move' | 'keep' | 'review', string | null, string][] = [
   ['보고서.PDF', 'move', '문서/보고서.PDF', 'DEFAULT_EXTENSION'],
   ['사진.JPEG', 'move', '이미지/사진.JPEG', 'DEFAULT_EXTENSION'],
@@ -15,7 +15,8 @@ const oracle: [string, 'move' | 'keep' | 'review', string | null, string][] = [
   ['setup.MSI', 'move', '설치/setup.MSI', 'DEFAULT_EXTENSION'],
   ['자료.zip', 'move', '압축/자료.zip', 'DEFAULT_EXTENSION'],
   ['v1.2 보고서.최종.hwpx', 'move', '문서/v1.2 보고서.최종.hwpx', 'DEFAULT_EXTENSION'],
-  ['backup.tar.gz', 'review', null, 'COMPOUND_EXTENSION'],
+  ['backup.tar.gz', 'move', '압축/backup.tar.gz', 'DEFAULT_EXTENSION'],
+  ['backup.TGZ', 'move', '압축/backup.TGZ', 'DEFAULT_EXTENSION'],
   ['invoice.pdf.exe', 'review', null, 'COMPOUND_EXTENSION'],
   ['README', 'review', null, 'NO_EXTENSION'],
   ['data.xyz', 'review', null, 'UNKNOWN_EXTENSION'],
@@ -124,13 +125,13 @@ test('partial scans cannot create reference rules; hash failures require review'
 });
 
 /* ---- #7 classification and duplicates ---- */
-test('default-1 classification matches an independent oracle with reasons and a rule version', () => {
+test('default-2 classification matches an independent oracle with reasons and a rule version', () => {
   const preview = buildPreview(scanFixture(oracle.map(([name]) => name)));
   assert.equal(preview.classificationVersion, CLASSIFICATION_VERSION);
-  assert.equal(CLASSIFICATION_VERSION, 'default-1');
+  assert.equal(CLASSIFICATION_VERSION, 'default-2');
   assert.deepEqual(preview.items.map((i) => [i.source, i.action, i.destination, i.reasonCode]), oracle);
   for (const item of preview.items) assert.ok(item.reason.length > 0);
-  assert.match(preview.items[0]!.reason, /default-1/u);
+  assert.match(preview.items[0]!.reason, /default-2/u);
 });
 test('identical input gives identical output and id; changed input changes the id', () => {
   const names = ['a.pdf', 'b.jpg', 'c', 'd/e.tar.gz'];
@@ -143,11 +144,11 @@ test('classifyFile is the shared interface: explicit override > confirmed person
   const draft = suggestProfile(scanFixture(['개인/a.pdf', '개인/b.pdf']));
   const confirmed = confirmProfile(draft, [draft.rules[0]!.id]);
   assert.deepEqual(classifyFile('new.pdf'), { targetDirectory: '문서', category: '문서', ruleId: null, source: 'default',
-    reasonCode: 'DEFAULT_EXTENSION', reason: '확장자(.pdf)에 따른 기본 분류(default-1)입니다.' });
+    reasonCode: 'DEFAULT_EXTENSION', reason: '확장자(.pdf)에 따른 기본 분류(default-2)입니다.' });
   assert.equal(classifyFile('new.pdf', { profile: draft }).source, 'default');
   assert.equal(classifyFile('new.pdf', { profile: confirmed }).targetDirectory, '개인');
   assert.equal(classifyFile('new.pdf', { profile: confirmed, override: '이번만' }).targetDirectory, '이번만');
-  assert.equal(classifyFile('archive.tar.gz', { profile: confirmed }).reasonCode, 'COMPOUND_EXTENSION');
+  assert.equal(classifyFile('archive.pdf.exe', { profile: confirmed }).reasonCode, 'COMPOUND_EXTENSION');
   assert.throws(() => classifyFile('../x.pdf'));
   assert.throws(() => classifyFile('a.pdf', { override: '/abs' }));
 });

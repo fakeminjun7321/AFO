@@ -4,12 +4,16 @@ import { CLASSIFICATION_VERSION, ProfileSchema, PreviewSchema, ReferenceScanSche
 import type { Preview, PreviewItem, Rule, RuleProfile } from '../../contracts/src/index.js';
 import { classifyFile, extensionOf } from './classify.js';
 import { findDuplicates, spaceEstimate } from './duplicates.js';
+import { activeRules, parseProfile } from './rules.js';
 import { compare, digest, pathKey } from './util.js';
 
 export { digest, pathKey } from './util.js';
 export { CLASSIFICATION_VERSION, categoryExtensions, classifyFile, extensionOf } from './classify.js';
 export type { Classification } from './classify.js';
 export { SPACE_NOTE, chooseKeeper, findDuplicates, spaceEstimate } from './duplicates.js';
+export { activeRules, classifyPersonal, emptyProfile, makeCorrection, parseProfile, profileFromV1, withCorrection, withRuleEnabled,
+  withStatus, withoutCorrection } from './rules.js';
+export type { AnyProfile } from './rules.js';
 /** Informational only: size or age is never a reason to delete. */
 export const LARGE_FILE_BYTES = 100 * 1024 * 1024;
 
@@ -68,7 +72,8 @@ export function buildPreview(input: unknown, options: {
   profile?: unknown; protectedPaths?: string[]; overrides?: Record<string, string>;
 } = {}): Preview {
   const scan = ScanSchema.parse(input);
-  const profile = options.profile === undefined ? undefined : ProfileSchema.parse(options.profile);
+  const profile = options.profile === undefined ? undefined : parseProfile(options.profile);
+  const active = profile ? activeRules(profile) : null;
   const protectedPaths = new Set((options.protectedPaths ?? []).map((p) => pathKey(RelativePathSchema.parse(p))));
   const inventory = new Map<string, 'file' | 'directory' | 'blocked'>();
   for (const f of scan.files) inventory.set(pathKey(f.relativePath), 'file');
@@ -85,9 +90,11 @@ export function buildPreview(input: unknown, options: {
     const { targetDirectory, ruleId, reason, reasonCode, category } = c;
     if (targetDirectory === null) return { ...base, action: 'review', reason, reasonCode };
     const destination = `${targetDirectory}/${path.posix.basename(file.relativePath)}`;
-    RelativePathSchema.parse(destination);
+    if (!RelativePathSchema.safeParse(destination).success)
+      return { ...base, action: 'review', reason: '목적지 경로를 만들 수 없습니다(길이·이름 제한).', reasonCode: 'DEST_INVALID' };
     if (pathKey(destination) === pathKey(file.relativePath))
-      return { ...base, action: 'keep', destination, ruleId, category, reason: '이미 지정한 위치에 있습니다.', reasonCode: 'ALREADY_PLACED' };
+      return { ...base, action: 'keep', destination, ruleId, category, reasonCode: 'ALREADY_PLACED',
+        reason: reasonCode === 'ALREADY_PLACED' ? reason : '이미 지정한 위치에 있습니다.' };
     const parents = targetDirectory.split('/').map((_, i, a) => a.slice(0, i + 1).join('/'));
     if (inventory.has(pathKey(destination)) || parents.some((p) => {
       const kind = inventory.get(pathKey(p)); return kind !== undefined && kind !== 'directory';
@@ -116,7 +123,7 @@ export function buildPreview(input: unknown, options: {
   const id = digest(JSON.stringify({ version: CLASSIFICATION_VERSION, scan, profile,
     protectedPaths: [...protectedPaths].sort(compare), overrides: options.overrides ?? {} }));
   return PreviewSchema.parse({ formatVersion: 1, mode: 'preview-only', id, root: scan.root,
-    profileRevision: profile?.status === 'confirmed' ? profile.revision : null, items, duplicates,
+    profileRevision: active?.revision ?? null, profileId: active?.id ?? null, items, duplicates,
     largeFiles: scan.files.filter((f) => f.size >= LARGE_FILE_BYTES && !protectedPaths.has(pathKey(f.relativePath))).map((f) => f.relativePath),
     skipped: scan.skipped, scanComplete: scan.complete, executionAvailable: false,
     classificationVersion: CLASSIFICATION_VERSION, duplicateNotes: notes, space: spaceEstimate(duplicates),

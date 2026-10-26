@@ -2,7 +2,7 @@ import { lstat, readdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { AfoError, OpaqueIdSchema, OperationPlanSchema, RelativePathSchema } from '../../contracts/src/index.js';
 import type { JournalEntry, OperationKind, OperationPlan } from '../../contracts/src/index.js';
-import { readJournal, readJson, statePaths } from './state.js';
+import { readJournal, statePaths } from './state.js';
 import type { JournalRead } from './state.js';
 import { classifyMoveState, fileIdentity } from './platform.js';
 import type { MoveState } from './platform.js';
@@ -13,7 +13,8 @@ import type { RootLockState } from './lock.js';
  * Report-only inspection of interrupted runs (#13, DESIGN 실행 규칙 7). It reads journals, plans and lstat results only:
  * it never renames, links, unlinks, writes, re-runs, rolls back or deletes anything under the root or the state folder.
  * The root lock is only read (readRootLock), never acquired or removed. A held lock is per root, so every run of that root is 'active'.
- * Assumption: the plan of a run is stored at statePaths(stateDir).plans/<planId>.json (written by approvals.ts, #8).
+ * Plans come only from the injected `loadPlan` (to be wired to approvals.ts loadSavedPlan, plans/<planId>.json, after #8 lands);
+ * without it nothing is resolved against a root and every open op is 'unknown' (PLAN_UNAVAILABLE).
  */
 export type RecoveryState = MoveState | 'unknown';
 export interface UnfinishedOp {
@@ -29,7 +30,9 @@ export interface RunInspection {
   /** Root lock as seen now; null when the root is unknown or the lock could not be read (see `problem`). */
   lock: { state: RootLockState; pid: number | null; startedAt: string | null } | null;
 }
-export interface InspectOptions { loadPlan?: (planId: string) => Promise<OperationPlan | null> }
+/** `grant` is the RootGrant identity saved with the plan; when given, the root must still be that same folder. */
+export interface SavedPlan { plan: OperationPlan; grant?: { canonicalPath: string; device: string; inode: string } }
+export interface InspectOptions { loadPlan?: (planId: string) => Promise<SavedPlan | null> }
 
 const KEEP = ' AFO는 자동으로 다시 실행·원복·삭제하지 않습니다.';
 const CHECK = ' 사용자가 원래 경로와 목적지를 직접 확인해야 합니다.' + KEEP;
@@ -61,6 +64,8 @@ const actions: Record<'move' | 'undo' | 'trash' | 'delete', Partial<Record<MoveS
   },
 };
 const PLAN_MISSING = '계획 파일이 없어 실제 상태를 확인할 수 없음.' + CHECK;
+const PLAN_UNAVAILABLE = '계획을 불러올 수단이 없어 실제 파일 상태를 확인하지 않았습니다.' + CHECK;
+const ROOT_CHANGED = '작업 폴더가 승인 때의 폴더와 다릅니다(경로 또는 폴더 식별 변경). 실제 상태를 확인하지 않았습니다.' + CHECK;
 
 const errorCode = (error: unknown): string => {
   if (error === null || typeof error !== 'object' || !('code' in error)) return 'UNKNOWN';
@@ -145,18 +150,24 @@ function track(entries: JournalEntry[]): Map<string, Track> {
 
 type Issue = { detail: string; text: string };
 /** Plan of the run, validated and matched to the journal, with its work root re-checked. */
-async function loadRunPlan(stateDir: string, report: RunInspection, options: InspectOptions): Promise<{ plan: OperationPlan | null; issue: Issue | null }> {
+async function loadRunPlan(report: RunInspection, options: InspectOptions): Promise<{ plan: OperationPlan | null; issue: Issue | null }> {
   let plan: OperationPlan | null = null;
+  if (!options.loadPlan) return { plan, issue: { detail: 'PLAN_UNAVAILABLE', text: PLAN_UNAVAILABLE } };
   try {
-    const loaded = options.loadPlan ? await options.loadPlan(report.planId)
-      : await readJson(path.join(statePaths(stateDir).plans, `${report.planId}.json`), OperationPlanSchema);
+    const loaded = await options.loadPlan(report.planId);
     if (loaded === null) return { plan, issue: { detail: 'PLAN_MISSING', text: PLAN_MISSING } };
-    const parsed = OperationPlanSchema.safeParse(loaded);
+    const parsed = OperationPlanSchema.safeParse(loaded.plan);
     if (!parsed.success) return { plan, issue: { detail: 'STATE_CORRUPT', text: '계획 파일이 계약과 달라 실제 상태를 확인할 수 없습니다.' + CHECK } };
     if (parsed.data.id !== report.planId || parsed.data.rootGrantId !== report.rootGrantId)
       return { plan, issue: { detail: 'PLAN_MISMATCH', text: '계획 파일의 ID·작업 폴더가 이 실행의 저널과 맞지 않아 실제 상태를 확인할 수 없습니다.' + CHECK } };
     plan = parsed.data; report.rootPath = plan.rootPath;
+    const grant = loaded.grant;
+    if (grant && grant.canonicalPath !== plan.rootPath) return { plan: null, issue: { detail: 'ROOT_CHANGED', text: ROOT_CHANGED } };
     await checkRoot(plan.rootPath);
+    if (grant) {
+      const now = await lstat(plan.rootPath, { bigint: true });
+      if (String(now.dev) !== grant.device || String(now.ino) !== grant.inode) return { plan: null, issue: { detail: 'ROOT_CHANGED', text: ROOT_CHANGED } };
+    }
     return { plan, issue: null };
   } catch (error) {
     const code = errorCode(error);
@@ -212,7 +223,7 @@ async function inspectFile(stateDir: string, name: string, options: InspectOptio
   report.finished = ops.size - open.length;
   // Only a consistent journal points at one plan; otherwise no root is trusted and nothing is looked up.
   const { plan, issue: planIssue } = open.length === 0 || problem?.detail === 'JOURNAL_INCONSISTENT'
-    ? { plan: null, issue: null } : await loadRunPlan(stateDir, report, options);
+    ? { plan: null, issue: null } : await loadRunPlan(report, options);
   for (const [opId, t] of open) {
     const entry = t.open ?? t.first;
     const base = { opId, kind: entry.kind, phase: entry.phase === 'undo-intent' ? 'undo-intent' as const : 'intent' as const,

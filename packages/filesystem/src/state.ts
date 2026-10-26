@@ -1,5 +1,5 @@
 import { constants } from 'node:fs';
-import { lstat, mkdir, open, realpath, rename, rm } from 'node:fs/promises';
+import { lstat, mkdir, open, realpath, rename, rm, stat } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
@@ -53,8 +53,13 @@ async function realish(target: string): Promise<string> {
   let current = path.resolve(target);
   const tail: string[] = [];
   while (true) {
-    try { return path.join(await realpath(current), ...tail.reverse()); }
-    catch (error) {
+    try {
+      const real = await realpath(current);
+      // Windows reports a path below a regular file as ENOENT rather than ENOTDIR.
+      if (tail.length && !(await stat(real)).isDirectory())
+        throw Object.assign(new Error('상위 경로가 폴더가 아닙니다.'), { code: 'ENOTDIR' });
+      return path.join(real, ...tail.reverse());
+    } catch (error) {
       const parent = path.dirname(current);
       if (fsCode(error) !== 'ENOENT' || parent === current) throw error;
       tail.push(path.basename(current)); current = parent;

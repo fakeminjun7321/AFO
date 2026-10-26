@@ -1,7 +1,7 @@
 import { constants } from 'node:fs';
 import { link, lstat, mkdir, open, rename, unlink } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { hostname } from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
@@ -10,18 +10,28 @@ import type { ErrorCode } from '../../contracts/src/index.js';
 import { statePaths } from './state.js';
 
 /**
- * One run per work root (#13). Not re-entrant: a second call in the same process is also LOCKED_BY_OTHER.
+ * One run per work root (#13), keyed on the folder's device+inode, not the grant ID (which differs per issue).
+ * Not re-entrant: a second call in the same process is also LOCKED_BY_OTHER. Overlapping roots (a folder and its
+ * subfolder) are different locks; per-operation no-clobber and re-verification still apply there.
  * LOCKED_BY_OTHER and ROOT_FORBIDDEN are thrown only before fn runs. A release error is thrown only after fn succeeded.
  * Known limits: a reused pid makes a dead lock look alive (blocks; manual release); SIGKILL leaves the file until the
  * next acquirer finds the pid dead; a three-way race during stale takeover can still admit two holders (docs/verification/ISSUE_13.md).
  */
-export const MAX_LOCK_BYTES = 4096;
+export const MAX_LOCK_BYTES = 32 * 1024; // room for a 4096-character escaped canonicalPath
 export const LOCK_ACQUIRE_ATTEMPTS = 3;
 export const LOCK_RELEASE_WARNING = 'AFO_LOCK_RELEASE_FAILED';
 const NOFOLLOW = constants.O_NOFOLLOW ?? 0;
-const RootGrantIdSchema = z.string().regex(/^[a-f0-9]{64}$/u);
+const DigitsSchema = z.string().regex(/^\d{1,40}$/u);
+/** Same absolute forms as the contracts: POSIX, drive or UNC; no NUL, no \\?\ or \\.\ device paths. */
+const CanonicalPathSchema = z.string().min(1).max(4096).refine((value) => !value.includes('\u0000') &&
+  (/^\//u.test(value) || /^[A-Za-z]:[\\/]/u.test(value) || /^\\\\(?![?.]\\)[^\\]/u.test(value)));
+const RootLockTargetSchema = z.object({ canonicalPath: CanonicalPathSchema, device: DigitsSchema, inode: DigitsSchema });
+/** A RootGrant satisfies this structurally. */
+export interface RootLockTarget { canonicalPath: string; device: string; inode: string }
+/** canonicalPath is for diagnostics and manual release only; the lock decision never uses it. */
 export const RootLockSchema = z.strictObject({ formatVersion: z.literal(1), pid: z.number().int().positive(),
-  hostname: z.string().min(1).max(255), startedAt: z.iso.datetime(), token: z.string().regex(/^[a-f0-9]{32}$/u) });
+  hostname: z.string().min(1).max(255), startedAt: z.iso.datetime(), token: z.string().regex(/^[a-f0-9]{32}$/u),
+  canonicalPath: CanonicalPathSchema });
 export type RootLockHolder = z.infer<typeof RootLockSchema>;
 export type RootLockState = 'free' | 'held' | 'stale' | 'foreign-host' | 'corrupt';
 interface Seen { state: RootLockState; holder: RootLockHolder | null; bytes: Buffer | null; reason: string }
@@ -39,12 +49,31 @@ const alive = (pid: number): boolean => {
   try { process.kill(pid, 0); return true; } catch (error) { return fsCode(error) !== 'ESRCH'; }
 };
 
-/** ROOT_FORBIDDEN unless the ID is a RootGrant.id (64 lowercase hex), checked before any disk access. */
-export const rootLockFile = (stateDir: string, rootGrantId: string): string => {
-  if (!RootGrantIdSchema.safeParse(rootGrantId).success)
-    throw new AfoError('ROOT_FORBIDDEN', '작업 폴더 ID가 올바르지 않습니다(64자리 소문자 16진수여야 합니다).');
-  return path.join(statePaths(stateDir).locks, `${rootGrantId}.lock`);
+const target = (root: RootLockTarget): RootLockTarget => {
+  const parsed = RootLockTargetSchema.safeParse(root);
+  if (!parsed.success) throw new AfoError('ROOT_FORBIDDEN', '작업 폴더 식별 정보(절대 경로·device·inode)가 올바르지 않습니다.');
+  return parsed.data;
 };
+/** sha256 of device+inode only, so every spelling (case, Unicode form, link alias) of one folder maps to one lock. */
+export const rootLockKey = (root: RootLockTarget): string => {
+  const { device, inode } = target(root);
+  return createHash('sha256').update(`afo-root-lock-v1\0${device}\0${inode}`).digest('hex');
+};
+/** ROOT_FORBIDDEN for an invalid target, checked before any disk access. */
+export const rootLockFile = (stateDir: string, root: RootLockTarget): string =>
+  path.join(statePaths(stateDir).locks, `${rootLockKey(root)}.lock`);
+
+/** false when the locks folder is missing; STATE_CORRUPT when it is a link or not a folder (never reported as free). */
+async function locksFolder(directory: string, create: boolean): Promise<boolean> {
+  try {
+    if (create) await mkdir(directory, { recursive: true, mode: 0o700 });
+    if (!(await lstat(directory)).isDirectory()) throw new AfoError('STATE_CORRUPT', `잠금 폴더가 일반 폴더가 아닙니다: ${directory}`);
+    return true;
+  } catch (error) {
+    if (!create && fsCode(error) === 'ENOENT') return false;
+    throw failure('STATE_CORRUPT', `잠금 폴더를 준비할 수 없습니다: ${directory}`, error);
+  }
+}
 
 async function inspect(file: string): Promise<Seen> {
   const corrupt = (reason: string, bytes: Buffer | null = null): Seen => ({ state: 'corrupt', holder: null, bytes, reason });
@@ -112,9 +141,9 @@ async function clearStale(file: string, judged: Buffer): Promise<void> {
   throw new AfoError('LOCKED_BY_OTHER', '다른 AFO 실행이 방금 이 작업 폴더의 잠금을 얻었습니다. 끝난 뒤 다시 시도하세요.');
 }
 
-async function acquire(file: string): Promise<RootLockHolder> {
+async function acquire(file: string, canonicalPath: string): Promise<RootLockHolder> {
   const parsed = RootLockSchema.safeParse({ formatVersion: 1, pid: process.pid, hostname: hostname(),
-    startedAt: new Date().toISOString(), token: randomBytes(16).toString('hex') });
+    startedAt: new Date().toISOString(), token: randomBytes(16).toString('hex'), canonicalPath });
   if (!parsed.success) throw new AfoError('NOT_SUPPORTED', '이 컴퓨터 이름·프로세스 번호로는 잠금을 만들 수 없습니다.', { cause: parsed.error });
   const bytes = Buffer.from(`${JSON.stringify(parsed.data)}\n`);
   for (let attempt = 0; attempt < LOCK_ACQUIRE_ATTEMPTS; attempt += 1) {
@@ -151,17 +180,14 @@ async function release(file: string, token: string): Promise<void> {
 }
 
 /**
- * Runs fn while holding `<stateDir>/locks/<rootGrantId>.lock`. fn's error propagates unchanged; if release also fails
+ * Runs fn while holding `<stateDir>/locks/<rootLockKey(root)>.lock`. fn's error propagates unchanged; if release also fails
  * then, it is reported via process.emitWarning (code LOCK_RELEASE_WARNING). If fn succeeded and release fails, that error is thrown.
  */
-export async function withRootLock<T>(stateDir: string, rootGrantId: string, fn: () => Promise<T>): Promise<T> {
-  const file = rootLockFile(stateDir, rootGrantId);
-  const directory = path.dirname(file);
-  try {
-    await mkdir(directory, { recursive: true, mode: 0o700 });
-    if (!(await lstat(directory)).isDirectory()) throw new AfoError('STATE_CORRUPT', `잠금 폴더가 일반 폴더가 아닙니다: ${directory}`);
-  } catch (error) { throw failure('STATE_CORRUPT', `잠금 폴더를 준비할 수 없습니다: ${directory}`, error); }
-  const { token } = await acquire(file);
+export async function withRootLock<T>(stateDir: string, root: RootLockTarget, fn: () => Promise<T>): Promise<T> {
+  const { canonicalPath } = target(root);
+  const file = rootLockFile(stateDir, root);
+  await locksFolder(path.dirname(file), true);
+  const { token } = await acquire(file, canonicalPath);
   let result: T;
   try { result = await fn(); }
   catch (error) {
@@ -180,7 +206,10 @@ export async function withRootLock<T>(stateDir: string, rootGrantId: string, fn:
 }
 
 /** Read-only view for recovery/GUI ("a run is active"). Never creates, removes or repairs anything. */
-export async function readRootLock(stateDir: string, rootGrantId: string): Promise<{ state: RootLockState; holder: RootLockHolder | null }> {
-  const { state, holder } = await inspect(rootLockFile(stateDir, rootGrantId));
+export async function readRootLock(stateDir: string, root: RootLockTarget): Promise<{ state: RootLockState; holder: RootLockHolder | null }> {
+  const file = rootLockFile(stateDir, root);
+  // Windows open() under a regular file reports ENOENT; check the folder so that case is never 'free'.
+  if (!(await locksFolder(path.dirname(file), false))) return { state: 'free', holder: null };
+  const { state, holder } = await inspect(file);
   return { state, holder };
 }

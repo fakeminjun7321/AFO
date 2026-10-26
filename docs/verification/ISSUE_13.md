@@ -8,16 +8,28 @@
 구현: `packages/filesystem/src/lock.ts`. 테스트: `tests/lock.test.ts`. `packages/filesystem/src/index.ts`에서는 내보내지 않습니다.
 
 ```ts
-withRootLock<T>(stateDir: string, rootGrantId: string, fn: () => Promise<T>): Promise<T>
-readRootLock(stateDir, rootGrantId): Promise<{ state: 'free'|'held'|'stale'|'foreign-host'|'corrupt'; holder: RootLockHolder | null }>
+interface RootLockTarget { canonicalPath: string; device: string; inode: string } // RootGrant가 구조적으로 만족
+withRootLock<T>(stateDir: string, root: RootLockTarget, fn: () => Promise<T>): Promise<T>
+readRootLock(stateDir, root): Promise<{ state: 'free'|'held'|'stale'|'foreign-host'|'corrupt'; holder: RootLockHolder | null }>
+rootLockKey(root): string   rootLockFile(stateDir, root): string
 ```
+
+### 잠금 키: grant ID가 아니라 폴더 식별
+
+- 처음에는 `RootGrant.id`로 잠금 파일을 정했으나, `issueRootGrant`(#6)가 발급할 때마다 무작위 값을 섞어 같은 폴더라도 프로세스마다 ID가 달라집니다.
+  그러면 잠금 파일이 달라져 서로 막지 못하므로(세션 B 발견), 문자열 ID를 받는 형태를 없애고 폴더 식별로 키를 정합니다.
+- 키 = `sha256("afo-root-lock-v1\0" + device + "\0" + inode)`의 16진수. `canonicalPath`는 키에 쓰지 않으므로 대소문자·Unicode 정규화·링크를 거친 다른 표기도 같은 잠금이 됩니다.
+- 검사: `device`·`inode`는 10진 숫자 문자열(1–40자리), `canonicalPath`는 비어 있지 않은 절대 경로(POSIX·드라이브·UNC, NUL·`\\?\`·`\\.\` 거부, 4096자 이하). 아니면 디스크에 접근하기 전에 `ROOT_FORBIDDEN`.
+- 호출자는 실제 폴더의 `realpath`와 `lstat({ bigint: true })`의 `dev`·`ino`(RootGrant의 `device`·`inode`)를 넘겨야 합니다. 값이 정확한지는 이 모듈이 다시 확인하지 않습니다(발급 서비스의 책임).
 
 ### 파일 형식
 
-- 경로: `<상태 폴더>/locks/<rootGrantId>.lock`. `rootGrantId`는 `RootGrant.id`(64자리 소문자 16진수)여야 하며, 아니면 디스크에 접근하기 전에 `ROOT_FORBIDDEN`으로 거부합니다(`../x`, 대문자, 길이 오류, `/` 포함 등).
-- `locks/` 폴더는 `mkdir(recursive, 0o700)`로 만들고, 링크·일반 파일이면 `STATE_CORRUPT`로 거부합니다.
+- 경로: `<상태 폴더>/locks/<rootLockKey(root)>.lock`.
+- `locks/` 폴더는 `mkdir(recursive, 0o700)`로 만들고, 링크·일반 파일이면 `STATE_CORRUPT`로 거부합니다. `readRootLock`도 먼저 `locks/`를 lstat해 없으면 `free`, 링크·폴더 아님이면 `STATE_CORRUPT`를 던집니다
+  (Windows는 일반 파일 아래 경로를 열 때 `ENOENT`를 돌려줘 `free`로 잘못 보고될 수 있었음 — Windows CI에서 발견).
 - 생성: `open(O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW, 0o600)`(= `wx`, Windows에는 `O_NOFOLLOW`가 없어 생략) → 한 줄 JSON 기록 → fsync → close.
-- 내용(`RootLockSchema`, lock.ts 안의 `z.strictObject`): `{"formatVersion":1,"pid":<양의 정수>,"hostname":"<os.hostname()>","startedAt":"<ISO>","token":"<32자리 16진수>"}`. 읽기 한도 4096바이트, UTF-8 엄격 해석.
+- 내용(`RootLockSchema`, lock.ts 안의 `z.strictObject`): `{"formatVersion":1,"pid":<양의 정수>,"hostname":"<os.hostname()>","startedAt":"<ISO>","token":"<32자리 16진수>","canonicalPath":"<절대 경로>"}`.
+  `canonicalPath`는 진단·직접 해제용이며 판정에 쓰지 않습니다. 읽기 한도 32 KiB(이스케이프된 4096자 경로 포함), UTF-8 엄격 해석.
 - 재진입 없음: 같은 프로세스 안의 두 번째 호출(예: 한 주 프로세스의 두 GUI 창)도 `LOCKED_BY_OTHER`이며 그 `fn`은 실행되지 않습니다.
 
 ### 잠금이 이미 있을 때의 판정(EEXIST)
@@ -25,7 +37,7 @@ readRootLock(stateDir, rootGrantId): Promise<{ state: 'free'|'held'|'stale'|'for
 | 기존 잠금 | 판정 | 동작 |
 | --- | --- | --- |
 | 일반 파일이 아님(심볼릭 링크, 폴더 등) | corrupt | `LOCKED_BY_OTHER`. 따라가거나 지우지 않음 |
-| 비어 있음·JSON 아님·계약 위반·4096바이트 초과·UTF-8 아님 | corrupt | `LOCKED_BY_OTHER`. 지우지 않음(다른 프로세스가 기록 중이거나, 생성과 기록 사이에 중단됐을 수 있음). 메시지에 잠금 파일 경로와 직접 해제 조건 |
+| 비어 있음·JSON 아님·계약 위반(필드 누락·추가, 상대 `canonicalPath` 등)·32 KiB 초과·UTF-8 아님 | corrupt | `LOCKED_BY_OTHER`. 지우지 않음(다른 프로세스가 기록 중이거나, 생성과 기록 사이에 중단됐을 수 있음). 메시지에 잠금 파일 경로와 직접 해제 조건 |
 | `hostname`이 이 컴퓨터와 다름 | foreign-host | `LOCKED_BY_OTHER`. 원격 pid는 확인할 수 없어 pid가 없어 보여도 지우지 않음 |
 | 같은 컴퓨터, `process.kill(pid, 0)` 성공 또는 `EPERM` | held | `LOCKED_BY_OTHER`. 메시지에 pid·시작 시각 |
 | 같은 컴퓨터, `process.kill(pid, 0)`이 `ESRCH` | stale | 아래 절차로 치우고 배타 생성을 다시 시도(전체 시도 최대 3회) |
@@ -47,9 +59,13 @@ stale 해제 절차: 기존 파일을 고유한 이웃 이름 `<lock>.stale-<16�
 ### 자동으로 풀지 않는 잠금과 직접 해제 방법
 
 corrupt·foreign-host 잠금, 그리고 pid가 살아 있는 held 잠금은 자동 해제하지 않습니다. 사용자는 해당 작업 폴더를 쓰는 AFO 실행이
-(그 컴퓨터를 포함해) 하나도 없음을 확인한 뒤 오류 메시지에 적힌 `locks/<rootGrantId>.lock` 파일을 직접 지웁니다. `readRootLock`은 상태만 보고하며 아무것도 지우지 않습니다.
+(그 컴퓨터를 포함해) 하나도 없음을 확인한 뒤 오류 메시지에 적힌 `locks/<키>.lock` 파일을 직접 지웁니다. 어느 폴더의 잠금인지는 파일 안의 `canonicalPath`로 확인합니다.
+`readRootLock`은 상태만 보고하며 아무것도 지우지 않습니다.
 
 ### 알려진 한계(수정하지 않음)
+
+- **겹치는 루트**: 한 폴더와 그 하위 폴더는 device·inode가 달라 서로 다른 잠금이며, 서로 막지 않습니다. 각 작업의 no-clobber 이동과 실행 직전 재검증이 그 경우의 보호 장치입니다.
+- **inode 재사용**: 폴더를 지우고 다시 만들면 새 폴더가 예전 키를 받을 수 있습니다. 새 폴더가 같은 잠금으로 묶일 뿐이라 배타성을 해치지 않습니다.
 
 - **pid 재사용**: 충돌·재시작 뒤 같은 번호를 다른 프로세스가 쓰면 죽은 잠금이 살아 있는 것으로 보입니다. 막는 방향이며 직접 해제가 필요합니다.
 - **SIGKILL·전원 차단**: 잠금 파일이 남고, 다음 획득자가 pid가 없음을 확인할 때 stale로 치웁니다. 생성과 기록 사이에 죽으면 빈 파일이 남아 직접 해제가 필요합니다.
@@ -63,15 +79,14 @@ corrupt·foreign-host 잠금, 그리고 pid가 살아 있는 held 잠금은 자�
 ### 검증
 
 ```text
-Issue / PR / Commit: #13(1부 루트 잠금) / PR 없음 / 기준 origin/main 6231c6a, 브랜치 feat/13-root-lock
-Environment: macOS 27.0.1 (26A434) arm64, 실물 Mac(이 Mac), Node v24.18.0, npm 11.16.0
-Fixture: 각 테스트가 createFixture(mkdtemp(os.tmpdir()/afo-test-*))로 만든 state/·bin/ 폴더만 사용, t.after로 삭제
-Steps or exact commands:
-  npm ci --ignore-scripts --no-audit --no-fund
+Issue / PR / Commit: #13(1부 루트 잠금) / PR #30 / 기준 origin/main 20209d6, 브랜치 feat/13-root-lock (키 수정 커밋은 2229898 위)
+Environment: macOS 27.0.1 (26A434) arm64, 실물 Mac(이 Mac), Node v24.18.0, npm 11.16.0. temp 볼륨은 대소문자 구분 없음
+Fixture: 각 테스트가 createFixture(mkdtemp(os.tmpdir()/afo-test-*))로 만든 state/·bin/·work/·other/ 폴더와 그 안의 링크만 사용, t.after로 삭제
+Steps or exact commands (키 수정 뒤):
   npm run typecheck                                   (exit 0)
-  npm test                                            (tests 100, pass 98, fail 0, skipped 2, todo 0; exit 0)
-  node --test dist/tests/lock.test.js  ×25 순차        (매회 tests 11, pass 11, fail 0)
-  node --test dist/tests/lock.test.js  ×6 동시 실행     (매회 pass 11, fail 0)
+  npm test                                            (tests 102, pass 100, fail 0, skipped 2, todo 0; exit 0)
+  node --test dist/tests/lock.test.js  ×25 순차        (매회 tests 13, pass 13, fail 0, skipped 0)
+  node --test dist/tests/lock.test.js  ×6 동시 실행     (매회 pass 13, fail 0)
 Verification level: Unit-verified + macOS 실물에서 실제 자식 프로세스(process.execPath) 동시 실행·SIGKILL 검사. Windows: 미검증(CI 대기)
 ```
 
@@ -80,15 +95,18 @@ skipped 2개는 기존의 실제 OS 휴지통 검사(`AFO_REAL_TRASH_TEST=1`에�
 | 검사(`tests/lock.test.ts`) | 근거 |
 | --- | --- |
 | 실제 자식 A 보유 중 자식 B는 종료 코드 3·`ERROR LOCKED_BY_OTHER`, A 해제 뒤 자식 C 획득·해제, 잠금 파일 없음 | 자식 종료 코드·stdout |
-| 다른 rootGrantId는 서로 막지 않음(자식·부모 모두) | 종료 코드 0 |
+| 두 자식이 같은 폴더를 다른 표기(링크를 거친 부모 경로 / 직접 경로)로 받아 각자 realpath·lstat(bigint)로 대상을 계산: 두 번째는 `LOCKED_BY_OTHER`, 키 동일. 대소문자만 다른 표기도 같은 키(대소문자 구분 없는 볼륨일 때만 검사) | 종료 코드·키 |
+| 다른 폴더·하위 폴더·device만 다른 대상은 다른 키, 다른 폴더끼리 서로 막지 않음(자식·부모 모두) | 키 비교·종료 코드 0 |
+| `locks`가 일반 파일 또는 폴더 링크: `readRootLock`·`withRootLock` 모두 `STATE_CORRUPT`(free 아님), 파일·링크 대상 그대로 | 오류 code·readdir |
 | 같은 프로세스 중첩 호출과 동시 두 호출: 하나만 실행, 나머지 `LOCKED_BY_OTHER`, `fn` 미실행 | 실행 횟수 1 |
 | SIGKILL된 자식의 잠금(죽은 pid) 남음 → `readRootLock` stale → 부모가 인수·`fn` 실행·파일 삭제, `.stale-*` 잔여 없음 | 파일 내용·존재 |
 | 두 자식이 같은 stale 잠금을 동시에 인수: 정확히 하나만 획득, 다른 하나는 종료 코드 3 | 종료 코드·holder pid |
 | 살아 있는 자식 pid로 직접 쓴 잠금: `LOCKED_BY_OTHER`(pid·시작 시각 포함), 바이트 동일, 자식 종료 뒤 stale로 보고만 함 | 바이트 비교 |
-| 다른 hostname(죽은 pid)·빈 파일·잘린 JSON·필드 누락·추가 필드·다른 버전·4096바이트 초과·잘못된 UTF-8: 모두 `LOCKED_BY_OTHER`, 경로 포함, 바이트 동일 | 바이트 비교 |
+| 다른 hostname(죽은 pid)·빈 파일·잘린 JSON·필드 누락·추가 필드·`canonicalPath` 없음/상대 경로·다른 버전·32 KiB 초과·잘못된 UTF-8: 모두 `LOCKED_BY_OTHER`, 경로 포함, 바이트 동일 | 바이트 비교 |
 | 잠금 경로의 심볼릭 링크(대상은 stale처럼 보이는 내용)·폴더: `LOCKED_BY_OTHER`, 링크·대상·폴더 그대로 | lstat·대상 바이트 |
 | `fn` 오류 객체·문자열 거부값을 그대로 전달, 성공 값 반환, 양쪽 모두 잠금 삭제 | 동일성 비교 |
 | `fn` 실행 중 token이 바뀌면 지우지 않음(`STATE_CORRUPT`), 잠금이 사라져도 `STATE_CORRUPT`, `fn` 실패 시에는 `fn` 오류 + 경고 `AFO_LOCK_RELEASE_FAILED` | 파일 바이트·경고 code |
-| 잘못된 rootGrantId 8종: `ROOT_FORBIDDEN`, 상태 폴더에 아무것도 생기지 않음 | readdir |
+| 잘못된 대상 16종(빈·음수·소수·16진·숫자형 device/inode, 41자리 inode, 빈·상대·`..`·NUL·`\\?\` 경로, 경로 누락, 문자열 grant ID, null): `withRootLock`·`readRootLock`·`rootLockKey` 모두 `ROOT_FORBIDDEN`, 상태 폴더에 아무것도 생기지 않음 | readdir |
 
-Windows의 `process.kill(pid, 0)`·`O_EXCL`·`link`·심볼릭 링크 권한 동작은 이 Mac에서 확인할 수 없습니다. 심볼릭 링크 검사는 Windows에서 `EPERM`이면 명시적 skip 메시지로 건너뜁니다.
+Windows의 `process.kill(pid, 0)`·`O_EXCL`·`link`·심볼릭 링크/junction 권한 동작은 이 Mac에서 확인할 수 없습니다. 링크 검사는 Windows에서 폴더는 junction으로 만들고, `EPERM`이면 명시적 skip 메시지로 건너뜁니다.
+이 테스트들은 `os.homedir()`에 의존하지 않습니다(Windows에서 가짜 홈은 `HOME`이 아니라 `USERPROFILE`로 지정해야 함).

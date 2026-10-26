@@ -63,3 +63,12 @@ npm run test:e2e
 승인된 프로젝트/사이트의 `website-design` 채널에만 배포하며 `--no-authorized-domains`를 명시합니다. CSP는 정확한 Firebase/Auth/Firestore origin과 Google helper script를 허용합니다. wildcard·unsafe-inline·unsafe-eval을 추가하지 않았습니다.
 
 폰트는 Pretendard 1.3.9(OFL-1.1), 라이선스 동봉. Google 로고 원본: https://developers.google.com/static/identity/images/g-logo.png
+
+### 최신 공개 배포 및 Google 확인 범위
+
+- 앱 소스: `9b1393f`, Hosting version: `cf60216f01c8c911`, preview 만료: 2026-11-02 22:33:05 Asia/Seoul.
+- 이번 수정에서 공개 앱 문서 접속은 2회, Google 로그인 popup 열기는 2회입니다. 마지막 확인의 브라우저 전체 관측 요청은 24건입니다. 앞선 확인은 메인 프레임만 10건을 수집했으므로 이를 전체 합계로 더하지 않습니다. 설정/계정 관리 API와 배포 트래픽은 별도입니다.
+- 최신 공개 화면에서 3개 메뉴, 도움말 통합, JSON 접기/펼치기, 샘플 기준 변경, 모바일 넘침 없음을 확인했습니다.
+- Google 제공업체 저장 뒤 실제 OAuth popup의 `accounts.google.com` 이메일 입력 폼까지 확인했습니다. 개인 자격 증명은 입력하지 않았습니다. 메인 UI runtime 오류는 없었습니다.
+- 마지막 전체 네트워크 관측에서 기본 authDomain의 `/__/firebase/init.json` 요청 1건이 404였습니다. 이 요청이 있었어도 Google 이메일 입력 화면에는 도달했습니다. 이를 최종 OAuth callback 성공의 근거로 삼지 않으며, 본인 인증 완료 단계는 여전히 미검증입니다. 사용자 승인 없이 기본 live 사이트를 배포하거나 Auth helper를 우회하지 않았습니다.
+- 새 인증 방식을 추가할 때는 제공업체 활성화·정확한 도메인 허용·실제 인증 화면을 확인한 뒤 공개 버튼을 배포하는 순서를 사용합니다. 이번에 버튼을 먼저 공개해 사용자가 실행할 수 없었던 상태를 운영 설정과 검증 순서에 반영했습니다. 다음 독립 작업에서의 재발 감소 효과는 아직 확인하지 않았습니다.

@@ -128,6 +128,8 @@ test('approvals are sorted, bounded in time and bound to one profile revision', 
   fails(ApprovalSchema, approval({ profileRevision: null }), 'profile id without revision');
   fails(ApprovalSchema, approval({ mode: 'all' }), 'unknown mode');
   fails(ApprovalSchema, approval({ approved: true }), 'boolean approval');
+  fails(ApprovalSchema, approval({ id: 'Approval-0001' }), 'uppercase id (case-insensitive file name clash)');
+  fails(ApprovalSchema, approval({ sessionId: 'session_0001' }), 'underscore in id');
   const { planId: _, ...noPlan } = approval();
   fails(ApprovalSchema, noPlan, 'missing plan id');
   assert.equal(ApprovalSchema.safeParse(approval({ profileId: null, profileRevision: null, usedAt: minutes(1) })).success, true);

@@ -11,7 +11,7 @@
 | Simulator-verified | Firebase **Hosting Emulator**에서 빌드 결과를 제공. 별도 headless Chromium의 실제 DOM·화면·버튼 경로 검사 통과. 모바일은 뷰포트 에뮬레이션이며 iOS/Android OS 시뮬레이터 검증이 아님 |
 | Physical-device-verified | 사용자 실제 브라우저 조작·실물 휴대폰 검증은 하지 않음. macOS에서 실행한 headless 검증을 해당 검증으로 확대하지 않음 |
 
-Not verified / 미검증: 공개 Firebase 배포·도메인 접속, 실제 계정 로그인·클라우드 규칙 저장·CLI 연결·실제 사용자 파일 변경. 이 사이트의 범위는 소개와 합성 샘플 체험이며 해당 기능을 제공한다고 표시하지 않는다. 공개 배포는 별도 승인 전이라 실행하지 않았다.
+Not verified / 미검증: 실제 계정 로그인·클라우드 규칙 저장·CLI 연결·실제 사용자 파일 변경. 이 사이트의 범위는 소개와 합성 샘플 체험이며 해당 기능을 제공한다고 표시하지 않는다. 공개 정적 사이트 배포와 브라우저 경로는 아래에서 별도로 검증했다.
 
 ## 실행과 관측
 
@@ -22,7 +22,8 @@ Not verified / 미검증: 공개 Firebase 배포·도메인 접속, 실제 계�
 - 실제 클릭 경로: 히어로 CTA → #demo → 분류 미리보기 → 문서 분류 기준을 과목별 정리로 변경 → 보고서 `학교/물리`, 필기 `학교/수업` 확인 → 사진의 `이미지` 분류 유지 → 다시 체험하기 → 확장자 목록과 초기 버튼 복귀.
 - FAQ 클릭·Enter 키로 펼침/접힘, 동시에 하나만 열림 확인. 390/320px에서 메뉴 열기 → 사용 방법 선택 → 앵커 변경 및 메뉴 닫힘 확인.
 - `browser-results.json`: 여섯 크기 모두 통과. 각 페이지에서 문서·JS·CSS·해당 화면 이미지·폰트 5건만 로컬 요청. 외부 네트워크 요청 0.
-- 이번 채팅의 **AFO 공개 웹사이트 의도적 탐색·직접 HTTP probe: 0회**. Firebase 프로젝트 목록 확인은 읽기 전용 관리 API 조회 1회이며 Hosting 기능·배포 검증으로 계산하지 않는다. SWSH는 참고 자료로만 읽었다.
+- 공개 검증 전 다른 활성 채팅을 읽기 전용으로 확인했다. `파일 정리 시스템 개발`은 Firebase 콘솔의 앱/Auth/DB 설정을 다루며 이 미리보기 채널의 사용자 경로를 검증하는 작업은 관찰되지 않았다. 이 채팅은 별도 채널의 정적 사이트 배포와 검증만 수행했다. 사용자 Chrome·전경 조작은 하지 않았다.
+- 이번 채팅의 **AFO 공개 웹사이트 의도적 최상위 탐색: 1회**. 이 페이지의 정적 리소스 포함 실제 관측 요청은 6건(문서·JS·CSS·데스크톱/모바일 이미지·폰트), 콘솔·페이지 오류 0건. 관리자 API 조회와 Hosting 배포 트래픽은 이 웹사이트 탐색 수와 별개다. 부하 검사·반복 탐색·자동 새로고침은 실행하지 않았다.
 
 ## 시각 대조
 
@@ -43,6 +44,22 @@ Not verified / 미검증: 공개 Firebase 배포·도메인 접속, 실제 계�
 
 의도된 차이: 실제 한국어 조판은 자체 호스팅 Pretendard로 구현하며 이미지의 자형·자간을 완전히 복제하지 않는다. 원본 SWSH의 이벤트 자료와 로고·투자·고객 지표는 AFO 내용으로 대체했다. 미리보기 이후 기준 선택·초기화 상태를 보강했다. 사용 방법은 브라우저에서 실제 파일을 선택하는 것으로 오해하지 않도록 로컬 CLI 기준으로 설명한다. 모바일은 별도 세로 이미지와 2줄 표를 사용한다.
 
+## 승인 후 공개 배포
+
+사용자가 이 채팅에서 `website-design` 채널의 7일 공개 배포를 명시적으로 승인했다. 앱 소스 커밋 `813a6a2`, 배포 version `da977dcb8d38cb97`.
+
+- 명령: `firebase hosting:channel:deploy website-design --expires 7d --project afo-hackathon-2026-7321 --config firebase.json --non-interactive`
+- 기존 채널 목록은 setup/live뿐이었으며 새 website-design 채널을 생성했다. dist의 8개 파일만 배포했다. Firestore·Auth 배포 명령은 실행하지 않았다.
+- URL: https://afo-hackathon-2026-7321--website-design-l2p0zktg.web.app
+- 만료: 2026-11-02 20:44:27 Asia/Seoul.
+- 실제 공개 주소에서 headless Chromium으로 HTTP 200·CSP·제목·이미지·폰트와 샘플 미리보기→과목별 기준→학교/물리→초기화, FAQ, 390px 모바일을 확인했다. 결과는 `public-results.json`, `public-desktop.png`, `public-mobile.png`.
+
+### 확인된 배포 옵션 누락
+
+기대한 범위는 Hosting 전용이었으나 `hosting:channel:deploy`는 기본으로 Firebase Auth 도메인 추가 및 정리 동기화도 시도한다. `--no-authorized-domains`를 실행 전에 확인·적용하지 않은 것은 옵션 확인 누락이다. CLI는 `Unable to add channel domain to Firebase Auth`와 `Unable to sync Firebase Auth state`를 출력했다. 이후 기존 CLI 인증을 사용한 **읽기 전용** Auth config GET 1회는 `404 CONFIGURATION_NOT_FOUND`를 반환했다. 설치 CLI 소스의 Auth 도메인 추가는 config GET 성공 후 PATCH를 수행하는 구조다. 이 시점에 Auth config가 없는 것을 확인했으며, 실패 경고를 Auth 연결 성공으로 표현하지 않는다.
+
+예방: Hosting만 맡은 후속 배포는 `--no-authorized-domains`를 명시하고, CLI help에서 부수 동작 옵션을 확인한다. 동기화 실패를 이유로 Auth 초기화·제공자 활성화·허용 도메인 수정·재배포는 하지 않았다. 이 예방 절차의 다음 독립 작업에서의 효과는 아직 미검증이다.
+
 ## 남은 단계
 
-공개 배포 승인 후 정확한 프로젝트·미리보기 채널과 동시 작업 여부를 확인하고, 한 작업만 새 채널에 배포·공개 주소 확인을 수행해야 한다. Hosting의 성공이 Auth·Firestore·로컬 파일 처리의 성공을 증명하지 않는다.
+로그인·규칙 동기화·로컬 CLI 연결은 각각 별도 통합과 실제 결과 검증이 필요하다. Hosting의 성공이 Auth·Firestore·로컬 파일 처리의 성공을 증명하지 않는다. 본 채널은 만료되는 미리보기이며 프로덕션 live 전환이나 PR 병합은 실행하지 않았다.

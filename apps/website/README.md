@@ -42,7 +42,14 @@ firebase emulators:start --only hosting --project demo-afo-website --config fire
 
 검증 URL: http://127.0.0.1:15175
 
-실제 연결 대상으로 `afo-hackathon-2026-7321` / Hosting site `afo-hackathon-2026-7321`이 존재함을 읽기 전용으로 확인했습니다. 공개 배포는 이번 변경에서 실행하지 않았습니다. 프로젝트 지침이 별도 허가를 요구하므로, 승인 시 새 `website-design` preview 채널에 배포하고 기존 `setup` 채널·live 사이트·Auth·Firestore 설정은 변경하지 않는 안입니다. 외부 공개 미리보기에는 디자인 이미지와 샘플 데이터만 포함됩니다.
+사용자 승인 후 `afo-hackathon-2026-7321` / Hosting site `afo-hackathon-2026-7321`의 새 `website-design` preview 채널에 배포했습니다.
+
+- [공개 미리보기](https://afo-hackathon-2026-7321--website-design-l2p0zktg.web.app)
+- 만료: 2026-11-02 20:44:27 (Asia/Seoul)
+- Hosting version: `da977dcb8d38cb97`, 앱 소스 커밋: `813a6a2`
+- 공개 Chromium에서 HTTP 200, CSP·이미지·폰트, 미리보기→기준 변경→초기화, FAQ·모바일 화면을 확인했습니다. 로그인·클라우드 저장·실제 파일 작업의 검증은 아닙니다.
+
+Hosting 전용 후속 배포에서는 반드시 `--no-authorized-domains`를 명시합니다. 이번 CLI 기본 동작이 Auth 도메인 동기화를 추가 시도해 실패 경고를 냈습니다. 이후 읽기 전용 Auth 설정 조회 결과는 `404 CONFIGURATION_NOT_FOUND`였습니다. 자세한 범위와 예방 절차는 검증 기록에 남겼습니다. 기존 `setup`·live 사이트를 배포 대상으로 사용하지 않았으며 Firestore 배포도 하지 않았습니다.
 
 ## 디자인·검증
 

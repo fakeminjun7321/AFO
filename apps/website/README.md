@@ -87,3 +87,5 @@ Firebase가 발급하는 ID token의 `admin === true`와 `email_verified === tru
 검증: 일반/Emulator 빌드 통과. 실제 Auth Emulator popup에서 취소 복귀, 일반 Google 사용자의 관리자 접근 거부, 미확인 이메일의 관리자 접근 거부, 비밀번호 없는 사전 생성 계정의 Google 연결 후 UID·claim 보존, 관리자 접근과 새로고침 유지, 모바일 넘침 없음을 확인했습니다. 이는 합성 Google identity를 쓰는 Emulator 검증이며 실제 Google OAuth 성공을 뜻하지 않습니다.
 
 CSP는 Firebase Auth iframe origin과 `apis.google.com` helper script만 추가 허용하고, `Cross-Origin-Opener-Policy: same-origin-allow-popups`를 적용했습니다. 광범위한 wildcard·unsafe-inline·unsafe-eval은 추가하지 않았습니다. 공개 제공업체 활성화와 실제 Google 로그인 결과는 별도로 확인합니다.
+
+최신 Google 옵션 배포: 앱 소스 `f3bca4c`, Hosting version `e2cd1509bfb765a5`, 만료 2026-11-02 21:24:39 Asia/Seoul. 공개 `/login`의 Google 버튼·모바일 렌더를 별도로 확인했습니다. 이 변경의 공개 확인은 문서 탐색 1회이며, Google 제공업체 설정의 최종 저장은 사용자 확인을 기다립니다. 관리자 계정은 서버 생성·claim 재조회까지 확인했지만, 실제 Google 본인 인증과 관리자 화면 진입은 아직 미검증입니다.

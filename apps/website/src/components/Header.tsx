@@ -1,37 +1,47 @@
 import { useState } from "react";
 import { Arrow } from "./Icons";
+import { Link, NavLink } from "react-router-dom";
+import { useAuth } from "../auth/AuthProvider";
 
 export function Header() {
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
+  const { user, ready } = useAuth();
   return (
     <header className="header">
-      <a
+      <Link
         className="wordmark"
-        href="#top"
+        to="/"
         aria-label="AFO 처음으로"
         onClick={close}
       >
         AFO
-      </a>
+      </Link>
       <nav
         className={open ? "navigation is-open" : "navigation"}
         id="navigation"
         aria-label="주 메뉴"
       >
-        <a href="#features" onClick={close}>
-          기능
-        </a>
-        <a href="#how-it-works" onClick={close}>
+        <NavLink to="/" end onClick={close}>
+          소개
+        </NavLink>
+        <NavLink to="/guide" onClick={close}>
           사용 방법
-        </a>
-        <a href="#faq" onClick={close}>
+        </NavLink>
+        <NavLink to="/demo" onClick={close}>
+          직접 체험
+        </NavLink>
+        <NavLink to="/faq" onClick={close}>
           자주 묻는 질문
-        </a>
+        </NavLink>
       </nav>
-      <a className="button button--outline header-cta" href="#demo">
-        직접 체험하기 <Arrow diagonal />
-      </a>
+      <Link
+        className="button button--outline header-cta"
+        to={user ? "/account" : "/login"}
+        onClick={close}
+      >
+        {!ready ? "확인 중" : user ? "내 계정" : "로그인"} <Arrow diagonal />
+      </Link>
       <button
         className="menu-toggle"
         type="button"

@@ -1,60 +1,63 @@
 # AFO 웹사이트
 
-[이슈 #32](https://github.com/fakeminjun7321/AFO/issues/32). 사용자 요청에 따라 [SWSH](https://www.joinswsh.com/)를 디자인 참고로 제작한 한국어 제품 소개·샘플 체험 웹사이트입니다. React + Vite 독립 패키지이며 루트 CLI와 Firebase 연동 패키지의 설정·lockfile을 바꾸지 않습니다.
+[이슈 #32](https://github.com/fakeminjun7321/AFO/issues/32), [PR #35](https://github.com/fakeminjun7321/AFO/pull/35). [SWSH](https://www.joinswsh.com/)를 참고한 검정·흰색·주황색 디자인을 유지하고, 2026-10-26 후속 요청에 따라 화면을 별도 URL로 분리했습니다.
 
-## 제공하는 동작
+## 화면과 제공 기능
 
-- 제품 소개, 사용 방법, FAQ, 모바일 메뉴와 섹션 이동
-- 합성 샘플 6개의 분류 전후 비교
-- 기본 분류와 과목별 정리의 미리 정한 샘플 결과 전환, 초기화
-- 자체 호스팅 한글 폰트와 이미지, 외부 API·파일 업로드·분석 스크립트 없음
+| URL | 내용 |
+| --- | --- |
+| `/` | 기존 디자인의 소개 화면 |
+| `/guide` | 사용 방법 |
+| `/demo` | 합성 샘플 6개 분류 미리보기·기준 변경·초기화 |
+| `/faq` | 자주 묻는 질문 |
+| `/login`, `/signup` | Firebase 이메일·비밀번호 로그인·회원가입 |
+| `/reset-password` | 비밀번호 재설정 메일 요청 |
+| `/account` | 실제 로그인 계정 표시·로그아웃, 비로그인 접근 시 로그인 화면으로 이동 |
 
-**이 화면은 샘플 체험입니다.** 실제 사용자 파일을 읽거나 이동·삭제하지 않습니다. 새로고침 시 샘플 상태가 초기화됩니다. 공용 파일 분류 엔진을 복제하지 않으며, `sample.ts`의 설명용 결과만 보여 줍니다. 로그인·Firestore·로컬 CLI 연결은 포함하지 않습니다. Firebase 연동 기반은 별도 #25에서 개발합니다.
+메뉴는 페이지를 이동하며 브라우저 뒤로 가기와 새로고침을 지원합니다. Hosting rewrite는 각 경로에서 index.html을 제공합니다. 로그인 없이도 샘플 체험을 사용할 수 있습니다.
 
-## 로컬 실행
+**실제 파일을 읽거나 이동·삭제하지 않습니다.** 샘플은 설명용으로 미리 정한 결과입니다. 로그인해도 로컬 CLI와 개인 규칙의 Firestore 저장은 연결되지 않습니다. 공용 엔진·Firebase 연동 패키지·루트 lockfile은 수정하지 않습니다.
 
-Node.js 24, npm을 사용합니다. 아래 명령은 이 디렉터리에서 실행합니다.
+## 실행과 빌드
+
+Node.js 24 환경에서 이 디렉터리 기준:
 
 ```sh
 npm ci
 npm run dev
+npm run build
 ```
 
-개발 서버: http://127.0.0.1:15173
+개발 서버는 http://127.0.0.1:15173 입니다. 일반 빌드는 등록된 `AFO Web` 앱의 실제 Firebase Auth에 연결합니다. 브라우저 식별용 공개 설정은 `src/config/firebase.public.json`이며 서비스 계정·관리자 자격 증명은 없습니다. 실제 비밀번호와 인증 토큰은 소스·로그에 저장하지 않으며 세션은 Firebase SDK가 관리합니다.
+
+## 격리된 Auth 검증
 
 ```sh
-npm run build
-npm run preview
+npm run build:emulator
+firebase emulators:start --only auth,hosting --project demo-afo-website --config firebase.emulator.json --non-interactive
 ```
 
-Vite 빌드 미리보기: http://127.0.0.1:15174
+http://127.0.0.1:15175 에서 확인합니다. 이 빌드는 `demo-afo-website`와 Auth Emulator 19101만 사용합니다. `emulator` 모드를 로컬 외부 주소에서 실행하면 시작을 거부합니다. Emulator 결과 디렉터리는 `dist-emulator`, 공개 배포용 디렉터리는 `dist`로 분리했습니다. Emulator에서 실제 계정·외부 메일을 사용하지 않습니다.
 
-## Firebase Hosting
+2026-10-26 로컬 검증:
 
-[공식 Hosting 설정](https://firebase.google.com/docs/hosting/full-config)에 따라 `firebase.json`의 `public`을 빌드 결과 `dist`로 지정했습니다. 보안 헤더와 CSP는 현재 정적 사이트의 자기 출처 리소스만 허용합니다. 향후 Firebase Auth/Firestore를 연결할 때 허용 출처를 필요한 범위로 추가하고 실제 요청을 다시 검증해야 합니다.
+- `npm run build`, `npm run build:emulator`, TypeScript 검사 통과.
+- IAB의 `/login` 접근성 구조 확인. 기존 origin의 25% 배율에서 캡처가 불안정하므로 사용자 줌 설정을 바꾸지 않고 별도 headless Chromium으로 렌더·동작 검증.
+- 1440×900, 390×844, 320×700에서 7개 공개 경로 직접 접속·새로고침, 페이지당 H1 하나, 가로 넘침 없음, 샘플 체험 및 모바일 메뉴 이동 확인.
+- Firebase Auth SDK → 실제 Auth Emulator의 가입·로그인·로그아웃·잘못된 비밀번호·새로고침과 새 탭의 세션 유지 검증. 서버의 계정 레코드를 별도 조회해 생성된 UID 확인. 비밀번호 불일치는 서버 요청 전에 차단.
+- 재설정 요청 후 Emulator의 PASSWORD_RESET OOB 레코드 확인. 실제 메일 배달 검증은 아님.
+- 결과와 최신 캡처는 이 채팅의 작업 산출물 경로에 보관했습니다. 과거 단일 페이지의 첫 배포 기록은 `verification/VERIFICATION.md`에 있습니다.
 
-Firebase CLI가 설치된 환경에서 빌드 후 다음 명령으로 **클라우드에 연결하지 않는 demo 프로젝트**를 사용합니다.
+Implemented와 Simulator-verified(Auth/Hosting Emulator)를 구분합니다. 별도 단위 테스트·실물 휴대폰은 미검증입니다. 실제 클라우드 인증 결과는 검증 후 아래 배포 상태에 반영합니다.
 
-```sh
-npm run build
-firebase emulators:start --only hosting --project demo-afo-website --config firebase.json --non-interactive
-```
+## Hosting 및 실제 인증 상태
 
-검증 URL: http://127.0.0.1:15175
+프로젝트 `afo-hackathon-2026-7321`, 사이트 `afo-hackathon-2026-7321`, 승인된 미리보기 채널 `website-design`.
 
-사용자 승인 후 `afo-hackathon-2026-7321` / Hosting site `afo-hackathon-2026-7321`의 새 `website-design` preview 채널에 배포했습니다.
+[공개 미리보기](https://afo-hackathon-2026-7321--website-design-l2p0zktg.web.app)
 
-- [공개 미리보기](https://afo-hackathon-2026-7321--website-design-l2p0zktg.web.app)
-- 만료: 2026-11-02 20:44:27 (Asia/Seoul)
-- Hosting version: `da977dcb8d38cb97`, 앱 소스 커밋: `813a6a2`
-- 공개 Chromium에서 HTTP 200, CSP·이미지·폰트, 미리보기→기준 변경→초기화, FAQ·모바일 화면을 확인했습니다. 로그인·클라우드 저장·실제 파일 작업의 검증은 아닙니다.
+공개 배포는 `firebase.json`의 dist만 사용하며 후속 배포에는 반드시 `--no-authorized-domains`를 명시합니다. 이번 이메일 인증에서는 OAuth·Google 로그인·허용 도메인 변경을 추가하지 않습니다. Auth 초기화와 제공업체 활성화는 Hosting 배포와 다른 변경입니다.
 
-Hosting 전용 후속 배포에서는 반드시 `--no-authorized-domains`를 명시합니다. 이번 CLI 기본 동작이 Auth 도메인 동기화를 추가 시도해 실패 경고를 냈습니다. 이후 읽기 전용 Auth 설정 조회 결과는 `404 CONFIGURATION_NOT_FOUND`였습니다. 자세한 범위와 예방 절차는 검증 기록에 남겼습니다. 기존 `setup`·live 사이트를 배포 대상으로 사용하지 않았으며 Firestore 배포도 하지 않았습니다.
+현재 확인한 서버 Auth config는 생성돼 있으나 이메일 제공업체는 비활성화 상태입니다. 활성화 및 합성 계정 한 개의 실제 검증은 사용자에게 최종 확인을 요청했습니다. 이 상태에서 공개 로그인 성공을 주장하지 않습니다.
 
-## 디자인·검증
-
-- [디자인 기준과 생성 브리프](design/DESIGN.md), 콘셉트 이미지 3개
-- [검증 수준·비교 기록](verification/VERIFICATION.md), 브라우저 결과 JSON과 최종 렌더 이미지
-- 빌드·타입 검사와 UI 검증은 실제 로컬 파일 정리·클라우드 인증·사용자별 저장을 증명하지 않습니다.
-
-폰트: Pretendard 1.3.9, OFL-1.1. `public/assets/Pretendard-LICENSE.txt`를 동봉했습니다. 히어로 오브젝트는 이 작업에서 built-in Image Gen으로 생성했습니다. 참조 사이트의 사진·로고·고객 지표를 복제하지 않았습니다.
+폰트는 Pretendard 1.3.9(OFL-1.1), 라이선스 동봉. 기존 히어로 이미지를 그대로 사용했습니다. 새 로그인 화면은 같은 서체·색·버튼·여백 체계로 구현했습니다.

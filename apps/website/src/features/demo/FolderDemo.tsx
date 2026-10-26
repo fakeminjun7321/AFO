@@ -16,11 +16,11 @@ export function FolderDemo() {
       aria-labelledby="demo-title"
     >
       <div className="section-heading">
-        <h2 id="demo-title">
+        <h1 id="demo-title">
           쌓아둔 파일,
           <br />
           정리의 시작.
-        </h2>
+        </h1>
         <p>
           어떻게 정리되는지 먼저 살펴보세요.
           <br />

@@ -18,11 +18,11 @@ const questions = [
 export function FAQ() {
   return (
     <section className="faq section-wrap" id="faq" aria-labelledby="faq-title">
-      <h2 id="faq-title">
+      <h1 id="faq-title">
         궁금한 점이
         <br />
         있나요?
-      </h2>
+      </h1>
       <div className="questions">
         {questions.map((item, i) => (
           <details key={item.question} open={i === 0} name="faq">

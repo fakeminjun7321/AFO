@@ -25,6 +25,387 @@
   --orange: #f4512c;
   --gutter: clamp(24px, 4.45vw, 72px);
 }
+.site-shell {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+.site-shell main {
+  flex: 1;
+}
+.site-shell main:focus {
+  outline: none;
+}
+.site-shell:not(.home-route) .header {
+  position: relative;
+  flex-shrink: 0;
+}
+.navigation a[aria-current="page"] {
+  color: var(--orange);
+}
+.site-shell:not(.home-route) .demo-section {
+  padding-top: 75px;
+  padding-bottom: 90px;
+}
+.site-shell:not(.home-route) .faq {
+  padding-top: 80px;
+  min-height: 650px;
+}
+.site-shell > .footer {
+  width: 100%;
+  border-top: 1px solid #202020;
+}
+.page-heading {
+  padding-top: 85px;
+  padding-bottom: 65px;
+}
+.page-heading h1 {
+  font-size: clamp(48px, 6.1vw, 88px);
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -0.055em;
+}
+.page-heading p {
+  font-size: 20px;
+  color: var(--muted);
+  line-height: 1.7;
+  margin-top: 30px;
+}
+.page-heading > .button {
+  margin-top: 35px;
+}
+.guide-note {
+  padding-block: 45px 95px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 60px;
+}
+.guide-note h2 {
+  font-size: 42px;
+  line-height: 1.25;
+  letter-spacing: -0.045em;
+}
+.guide-note p {
+  font-size: 18px;
+  line-height: 1.8;
+  max-width: 650px;
+  color: var(--muted);
+  margin-top: 25px;
+}
+.quiet-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 17px;
+  font-size: 17px;
+  line-height: 1.5;
+  white-space: nowrap;
+  border-bottom: 1px solid #666;
+  padding-bottom: 10px;
+}
+.quiet-link:hover {
+  color: var(--orange);
+  border-color: var(--orange);
+}
+.auth-page {
+  padding-block: 100px 110px;
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 100px;
+  align-items: start;
+  width: 100%;
+}
+.auth-intro {
+  padding-top: 12px;
+}
+.auth-intro h1 {
+  font-size: clamp(40px, 4.3vw, 64px);
+  font-weight: 800;
+  letter-spacing: -0.055em;
+  line-height: 1.2;
+  max-width: 540px;
+  word-break: keep-all;
+}
+.auth-intro > p {
+  font-size: 25px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin-top: 32px;
+  letter-spacing: -0.03em;
+}
+.auth-intro > .quiet-link {
+  margin-top: 55px;
+}
+.auth-form-wrap {
+  max-width: 440px;
+  width: 100%;
+  justify-self: end;
+}
+.auth-tabs {
+  display: flex;
+  gap: 35px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 34px;
+}
+.auth-tabs a {
+  display: block;
+  padding: 0 1px 18px;
+  color: var(--muted);
+  font-size: 18px;
+  position: relative;
+}
+.auth-tabs a[aria-current="page"] {
+  color: var(--text);
+  font-weight: 700;
+}
+.auth-tabs a[aria-current="page"]:after {
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  content: "";
+  height: 2px;
+  background: var(--orange);
+}
+.auth-form-wrap h2 {
+  font-size: 25px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin-bottom: 30px;
+}
+.auth-form-wrap fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.auth-form-wrap label {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  margin: 22px 0 10px;
+}
+.auth-form-wrap input {
+  display: block;
+  width: 100%;
+  min-height: 54px;
+  padding: 14px 16px;
+  background: #151515;
+  border: 1px solid #555;
+  border-radius: 9px;
+  color: var(--text);
+  font: inherit;
+  font-size: 17px;
+  line-height: 1.4;
+}
+.auth-form-wrap input:focus {
+  outline: 2px solid var(--orange);
+  outline-offset: 2px;
+}
+.auth-form-wrap input::placeholder {
+  color: #858581;
+}
+.auth-submit {
+  width: 100%;
+  margin-top: 30px;
+  font-size: 19px;
+  font-weight: 700;
+  min-height: 56px;
+}
+.auth-help {
+  display: block;
+  text-align: right;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  font-size: 14px;
+  color: var(--muted);
+  margin-top: 20px;
+}
+.auth-note {
+  border-top: 1px solid var(--line);
+  padding-top: 24px;
+  margin-top: 30px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: #999995;
+}
+.field-help {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 8px;
+  line-height: 1.5;
+}
+.form-error {
+  color: #ff9b80;
+  font-size: 15px;
+  line-height: 1.6;
+  margin-top: 18px;
+}
+.form-message {
+  color: #d3e5a0;
+  font-size: 15px;
+  line-height: 1.7;
+  margin-top: 18px;
+}
+button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+  transform: none;
+}
+.route-status {
+  padding: 120px var(--gutter);
+  color: var(--muted);
+  font-size: 18px;
+}
+.account-page {
+  padding-bottom: 100px;
+  width: 100%;
+}
+.account-row {
+  border-block: 1px solid var(--line);
+  padding-block: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 25px;
+}
+.account-label {
+  font-size: 14px;
+  color: var(--muted);
+}
+.account-email {
+  font-size: 25px;
+  margin-top: 12px;
+  overflow-wrap: anywhere;
+}
+.account-next {
+  padding-top: 60px;
+}
+.account-next h2 {
+  font-size: 44px;
+  line-height: 1.25;
+  letter-spacing: -0.04em;
+}
+.account-next p {
+  font-size: 18px;
+  line-height: 1.7;
+  color: var(--muted);
+  margin-top: 20px;
+}
+.account-next .button {
+  margin-top: 30px;
+  font-weight: 700;
+  font-size: 19px;
+}
+@media (max-width: 1100px) {
+  .auth-page {
+    gap: 60px;
+  }
+  .navigation {
+    gap: 25px;
+  }
+  .guide-note {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 35px;
+  }
+}
+@media (max-width: 760px) {
+  .site-shell:not(.home-route) .demo-section {
+    padding-top: 40px;
+    padding-bottom: 55px;
+  }
+  .site-shell:not(.home-route) .faq {
+    padding-top: 40px;
+    min-height: 0;
+  }
+  .page-heading {
+    padding-top: 45px;
+    padding-bottom: 45px;
+  }
+  .page-heading h1 {
+    font-size: 48px;
+  }
+  .page-heading p {
+    font-size: 17px;
+    margin-top: 24px;
+  }
+  .guide-note {
+    padding-block: 30px 60px;
+    gap: 25px;
+  }
+  .guide-note h2 {
+    font-size: 33px;
+  }
+  .guide-note p {
+    font-size: 16px;
+    margin-top: 20px;
+  }
+  .quiet-link {
+    font-size: 15px;
+    white-space: normal;
+  }
+  .auth-page {
+    padding-block: 40px 65px;
+    grid-template-columns: 1fr;
+    gap: 45px;
+  }
+  .auth-intro {
+    padding-top: 0;
+  }
+  .auth-intro h1 {
+    font-size: 39px;
+    max-width: 330px;
+  }
+  .auth-intro > p {
+    font-size: 20px;
+    margin-top: 22px;
+  }
+  .auth-intro > .quiet-link {
+    margin-top: 25px;
+  }
+  .auth-form-wrap {
+    justify-self: start;
+    max-width: none;
+  }
+  .auth-tabs {
+    margin-bottom: 25px;
+  }
+  .auth-tabs a {
+    font-size: 17px;
+    padding-bottom: 15px;
+  }
+  .auth-form-wrap h2 {
+    font-size: 23px;
+    margin-bottom: 25px;
+  }
+  .auth-form-wrap input {
+    font-size: 16px;
+    min-height: 52px;
+  }
+  .auth-submit {
+    font-size: 19px;
+  }
+  .account-email {
+    font-size: 19px;
+  }
+  .account-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .account-next {
+    padding-top: 40px;
+  }
+  .account-next h2 {
+    font-size: 35px;
+  }
+  .account-next p {
+    font-size: 16px;
+  }
+  .account-page {
+    padding-bottom: 60px;
+  }
+}
 * {
   box-sizing: border-box;
 }
@@ -326,8 +707,8 @@ svg path {
   gap: 40px;
   margin-bottom: 52px;
 }
-.section-heading h2,
-.faq h2 {
+.section-heading :is(h1, h2),
+.faq :is(h1, h2) {
   font-size: clamp(48px, 6.1vw, 88px);
   line-height: 1.12;
   letter-spacing: -0.055em;
@@ -541,7 +922,7 @@ svg path {
   padding-top: 100px;
   padding-bottom: 100px;
 }
-.faq h2 {
+.faq :is(h1, h2) {
   font-size: clamp(48px, 5.5vw, 80px);
   line-height: 1.2;
 }
@@ -671,7 +1052,7 @@ html::-webkit-scrollbar-thumb {
     font-size: 17px;
     min-height: 56px;
   }
-  .section-heading h2 {
+  .section-heading :is(h1, h2) {
     font-size: 62px;
   }
   .section-heading p {
@@ -816,7 +1197,7 @@ html::-webkit-scrollbar-thumb {
     display: block;
     margin-bottom: 30px;
   }
-  .section-heading h2 {
+  .section-heading :is(h1, h2) {
     font-size: 48px;
     line-height: 1.13;
   }
@@ -954,7 +1335,7 @@ html::-webkit-scrollbar-thumb {
     padding-top: 65px;
     padding-bottom: 65px;
   }
-  .faq h2 {
+  .faq :is(h1, h2) {
     font-size: 48px;
   }
   .questions summary {

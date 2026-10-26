@@ -1,4 +1,5 @@
 import { Arrow } from "./Icons";
+import { Link } from "react-router-dom";
 
 export function Hero() {
   return (
@@ -23,9 +24,9 @@ export function Hero() {
           <span>당신은 다음 일에.</span>
         </h1>
         <p>어지러운 폴더를, 나다운 정리로.</p>
-        <a className="button button--orange hero-cta" href="#demo">
+        <Link className="button button--orange hero-cta" to="/demo">
           정리 흐름 체험하기 <Arrow />
-        </a>
+        </Link>
       </div>
       <ul className="principles" id="features" aria-label="AFO의 정리 원칙">
         <li>분류는 자동으로</li>

@@ -19,13 +19,13 @@
       <h2 id="h-work">1. 작업 폴더 선택</h2>
       <p class="hint">정리를 제안받을 폴더입니다. 홈 전체·디스크 루트·시스템 폴더·개발 프로젝트는 선택할 수 없습니다.</p>
       <div class="row">
-        <button type="button" id="work-pick">폴더 선택 대화상자 열기</button>
+        <button type="button" id="work-pick" class="choose">폴더 선택 대화상자 열기</button>
       </div>
-      <div class="row">
+      <form class="row" id="work-form" novalidate>
         <label for="work-path">또는 전체 경로 입력</label>
-        <input id="work-path" type="text" autocomplete="off" spellcheck="false" placeholder="/Users/이름/정리할 폴더">
-        <button type="button" id="work-use">이 경로 사용</button>
-      </div>
+        <input id="work-path" type="text" autocomplete="off" spellcheck="false" placeholder="/Users/이름/정리할 폴더" aria-describedby="work-status">
+        <button type="submit" id="work-use" class="choose">이 경로 사용</button>
+      </form>
       <p class="status" id="work-status" role="status" aria-live="polite">선택한 작업 폴더가 없습니다.</p>
     </section>
 
@@ -33,14 +33,14 @@
       <h2 id="h-ref">2. 참고 폴더 선택 (건너뛸 수 있음)</h2>
       <p class="hint">이미 정리해 둔 폴더의 구조·이름·확장자만 읽어 규칙 후보를 만듭니다. 참고 폴더의 파일은 열거나 바꾸지 않습니다.</p>
       <div class="row">
-        <button type="button" id="ref-pick">폴더 선택 대화상자 열기</button>
-        <button type="button" id="ref-skip">참고 폴더 건너뛰기</button>
+        <button type="button" id="ref-pick" class="choose">폴더 선택 대화상자 열기</button>
+        <button type="button" id="ref-skip" class="choose">참고 폴더 건너뛰기</button>
       </div>
-      <div class="row">
+      <form class="row" id="ref-form" novalidate>
         <label for="ref-path">또는 전체 경로 입력</label>
-        <input id="ref-path" type="text" autocomplete="off" spellcheck="false" placeholder="/Users/이름/정리된 폴더">
-        <button type="button" id="ref-use">이 경로 사용</button>
-      </div>
+        <input id="ref-path" type="text" autocomplete="off" spellcheck="false" placeholder="/Users/이름/정리된 폴더" aria-describedby="ref-status">
+        <button type="submit" id="ref-use" class="choose">이 경로 사용</button>
+      </form>
       <p class="status" id="ref-status" role="status" aria-live="polite">참고 폴더 없음(건너뜀).</p>
     </section>
 
@@ -71,7 +71,7 @@
 
     <section id="step-rules" aria-labelledby="h-rules" hidden>
       <h2 id="h-rules">5. 참고 규칙 후보</h2>
-      <p class="hint">참고 폴더에서 찾은 후보입니다. 체크한 규칙만 확인하며, 확인 전에는 적용하지 않습니다. 규칙 저장은 후속 작업입니다(이번 실행에서만 사용).</p>
+      <p class="hint">참고 폴더에서 찾은 후보입니다. 체크한 규칙만 확인하며, 확인 전에는 적용하지 않습니다. 확인한 규칙은 같은 작업·참고 폴더로 다시 분석할 때 계속 적용되고, 폴더를 바꾸면 해제됩니다. 규칙 저장은 후속 작업입니다(이번 실행에서만 사용).</p>
       <fieldset>
         <legend>적용할 규칙 선택</legend>
         <ul id="rule-list" class="rules"></ul>
@@ -79,6 +79,7 @@
       <div class="row">
         <button type="button" id="rules-confirm" disabled>선택한 규칙 확인</button>
         <button type="button" id="rules-reanalyze" disabled>확인된 규칙으로 다시 미리보기</button>
+        <button type="button" id="rules-release" disabled>확인한 규칙 해제(기본 규칙으로)</button>
       </div>
       <p class="status" id="rules-status" role="status" aria-live="polite"></p>
     </section>

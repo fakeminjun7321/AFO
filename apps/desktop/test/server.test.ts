@@ -83,7 +83,8 @@ test('binds 127.0.0.1 on an OS-chosen port and builds the token URL', () => {
 });
 
 test('static files carry the ADR security headers and no CORS headers', async () => {
-  for (const [route, type] of [['/', 'text/html'], ['/index.html', 'text/html'], ['/app.js', 'text/javascript'], ['/style.css', 'text/css']] as const) {
+  for (const [route, type] of [['/', 'text/html'], ['/index.html', 'text/html'], ['/app.js', 'text/javascript'], ['/state.js', 'text/javascript'],
+    ['/style.css', 'text/css']] as const) {
     const reply = await send(server, { path: route });
     assert.equal(reply.status, 200, route);
     assert.ok(String(reply.headers['content-type']).startsWith(type), route);
@@ -99,7 +100,11 @@ test('static files carry the ADR security headers and no CORS headers', async ()
   assert.doesNotMatch(html, /<script(?![^>]*src=)/u); // no inline script (CSP forbids it anyway)
   assert.doesNotMatch(html, /<button[^>]*>[^<]*실행/u); // no "실행" button in the read-only step
   assert.doesNotMatch(html, /\sstyle=|\son[a-z]+=/u); // no inline styles or handlers (CSP would block them)
-  assert.doesNotMatch((await send(server, { path: '/app.js' })).text, /innerHTML|outerHTML|insertAdjacentHTML|document\.write/u);
+  for (const script of ['/app.js', '/state.js'])
+    assert.doesNotMatch((await send(server, { path: script })).text, /innerHTML|outerHTML|insertAdjacentHTML|document\.write/u);
+  // Enter in a path field submits: each path input sits in a form with a submit button (handled in script, never sent).
+  for (const kind of ['work', 'ref'])
+    assert.match(html, new RegExp(`<form[^>]*id="${kind}-form"[\\s\\S]*?id="${kind}-path"[\\s\\S]*?type="submit"[^>]*id="${kind}-use"[\\s\\S]*?</form>`, 'u'));
   // API errors carry the same headers and also no CORS.
   const apiReply = await send(server, { method: 'POST', path: '/api/job', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   assert.equal(apiReply.headers['content-security-policy'], ADR_CSP);
@@ -375,4 +380,73 @@ test('the work folder disappearing after selection is refused by grant re-verifi
   await rename(root, path.join(parent.root, 'moved'));
   await mkdir(root); await writeFile(path.join(root, 'b.pdf'), 'b');
   refused(await api(server, 'analyze', { rootGrantId: sel.grantId, referenceGrantId: null, profileId: null }), 'FILE_CHANGED');
+});
+
+test('a refused folder choice clears that folder instead of silently keeping the previous one (typed and picked)', async (t) => {
+  const work = await createFixture({ 'a.pdf': 'a' }, t); const ref = await createFixture({ 'r/x 1.pdf': 'x', 'r/x 2.pdf': 'y' }, t);
+  const analyzeWith = (rootGrantId: string, referenceGrantId: string | null) => api(server, 'analyze', { rootGrantId, referenceGrantId, profileId: null });
+  for (const refusal of [{ via: 'typed', input: '/' }, { via: 'typed', input: 'relative/path' }, { via: 'typed', input: '' },
+    { via: 'typed', input: 'x'.repeat(5000) }, { via: 'picked', input: '/' }]) {
+    const label = `${refusal.via} ${refusal.input.slice(0, 20)}`;
+    const choose = (kind: FolderKind): Promise<{ status: number; body: any }> => {
+      if (refusal.via === 'typed') return select(server, kind, refusal.input);
+      picks = [refusal.input]; return api(server, 'pick-folder', { kind });
+    };
+    // Work folder: the previous grant no longer analyzes.
+    const previous = ok(await select(server, 'work', work.root)).selected;
+    refused(await choose('work'), 'ROOT_FORBIDDEN');
+    refused(await analyzeWith(previous.grantId, null), 'ROOT_FORBIDDEN');
+    // Reference folder: same rule; the work folder is untouched.
+    const current = ok(await select(server, 'work', work.root)).selected;
+    const previousRef = ok(await select(server, 'reference', ref.root)).selected;
+    refused(await choose('reference'), 'ROOT_FORBIDDEN');
+    refused(await analyzeWith(current.grantId, previousRef.grantId), 'ROOT_FORBIDDEN');
+    assert.equal((await waitJob(server, ok(await analyzeWith(current.grantId, null)).jobId)).state, 'done', label);
+  }
+  // Not a choice: dialog cancel or a dialog that cannot open keeps the current selection.
+  const kept = ok(await select(server, 'work', work.root)).selected;
+  picks = [null];
+  assert.equal(ok(await api(server, 'pick-folder', { kind: 'work' })).selected, null);
+  picks = [new Error('no dialog')];
+  refused(await api(server, 'pick-folder', { kind: 'work' }), 'PICKER_UNAVAILABLE');
+  assert.equal((await waitJob(server, ok(await analyzeWith(kept.grantId, null)).jobId)).state, 'done');
+});
+
+test('confirmed rules stay applied for the same work + reference selection and are released when either changes', async (t) => {
+  const work = await createFixture({ '새 숙제.pdf': 'hw', '사진.jpg': 'img' }, t);
+  const ref = await createFixture({ '수업자료/물리/역학 1.pdf': 'a', '수업자료/물리/역학 2.pdf': 'b' }, t);
+  let workSel = ok(await select(server, 'work', work.root)).selected;
+  let refSel = ok(await select(server, 'reference', ref.root)).selected;
+  const run = async (profileId: string | null): Promise<any> =>
+    waitJob(server, ok(await api(server, 'analyze', { rootGrantId: workSel.grantId, referenceGrantId: refSel.grantId, profileId })).jobId);
+  const first = await run(null);
+  assert.deepEqual(first.result.appliedRuleIds, []);
+  const rule = first.result.suggestedProfile.rules[0];
+  assert.equal(rule.targetDirectory, '수업자료/물리');
+  const { profileId } = ok(await api(server, 'confirm-rules', { jobId: first.jobId, ruleIds: [rule.id] }));
+  const homework = (job: any): any => job.result.preview.items.find((i: any) => i.source === '새 숙제.pdf');
+  // Repeated analyses of the same pair keep the confirmed rules.
+  for (let i = 0; i < 2; i++) {
+    const again = await run(profileId);
+    assert.equal(again.result.preview.profileRevision, 2);
+    assert.deepEqual(again.result.appliedRuleIds, [rule.id]);
+    assert.equal(homework(again).destination, '수업자료/물리/새 숙제.pdf'); assert.equal(homework(again).reasonCode, 'PERSONAL_RULE');
+  }
+  // A different pair (reference skipped) may not reuse them.
+  refused(await api(server, 'analyze', { rootGrantId: workSel.grantId, referenceGrantId: null, profileId }), 'PROFILE_CHANGED');
+  // Re-selecting the reference folder (even the same path) releases them.
+  refSel = ok(await select(server, 'reference', ref.root)).selected;
+  refused(await api(server, 'analyze', { rootGrantId: workSel.grantId, referenceGrantId: refSel.grantId, profileId }), 'UNKNOWN_PROFILE');
+  // Same for the work folder, and a refused work choice releases them as well.
+  const second = await run(null);
+  const p2 = ok(await api(server, 'confirm-rules', { jobId: second.jobId, ruleIds: [rule.id] })).profileId;
+  workSel = ok(await select(server, 'work', work.root)).selected;
+  refused(await api(server, 'analyze', { rootGrantId: workSel.grantId, referenceGrantId: refSel.grantId, profileId: p2 }), 'UNKNOWN_PROFILE');
+  const third = await run(null);
+  const p3 = ok(await api(server, 'confirm-rules', { jobId: third.jobId, ruleIds: [rule.id] })).profileId;
+  refused(await select(server, 'work', '/'), 'ROOT_FORBIDDEN');
+  workSel = ok(await select(server, 'work', work.root)).selected;
+  refused(await api(server, 'analyze', { rootGrantId: workSel.grantId, referenceGrantId: refSel.grantId, profileId: p3 }), 'UNKNOWN_PROFILE');
+  // A finished job whose folders were re-selected can no longer confirm rules.
+  refused(await api(server, 'confirm-rules', { jobId: third.jobId, ruleIds: [rule.id] }), 'PROFILE_CHANGED');
 });

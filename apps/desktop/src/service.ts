@@ -36,7 +36,8 @@ const GrantId = z.string().regex(/^[a-f0-9]{64}$/u);
 const HandleId = z.string().regex(/^[a-z0-9-]{8,128}$/u);
 const Kind = z.enum(['work', 'reference']);
 const schemas = {
-  'select-folder': z.strictObject({ kind: Kind, path: z.string().min(1).max(4096) }),
+  // Length and emptiness are checked in select() so that a refused path clears the selection like any other refusal.
+  'select-folder': z.strictObject({ kind: Kind, path: z.string() }),
   'pick-folder': z.strictObject({ kind: Kind }),
   analyze: z.strictObject({ rootGrantId: GrantId, referenceGrantId: GrantId.nullable(), profileId: HandleId.nullable() }),
   job: z.strictObject({ jobId: HandleId }),
@@ -61,16 +62,31 @@ export function createService(options: ServiceOptions): { handle: (channel: Chan
   const analyze = options.analyze ?? analyzeRoot;
   const grants = { work: new Map<string, RootGrant>(), reference: new Map<string, ReferenceGrant>() };
   const jobs = new Map<string, Job>();
-  const profiles = new Map<string, RuleProfile>();
+  /** Confirmed rules, usable only with the exact work + reference selection they were confirmed for. */
+  const profiles = new Map<string, { profile: RuleProfile; rootGrantId: string; referenceGrantId: string | null }>();
   let pickerBusy = false;
 
-  async function select(kind: FolderKind, input: string): Promise<unknown> {
-    // Shared policy resolves relative input against the process cwd; a typed GUI path must be absolute instead.
-    if (!path.isAbsolute(input)) throw new AfoError('ROOT_FORBIDDEN', '전체 경로(절대 경로)를 입력하세요.');
-    const grant = kind === 'work' ? await issueRootGrant(input) : await issueReferenceGrant(input);
-    // Re-selecting replaces the previous folder of the same kind; the old grant stops verifying.
-    for (const old of grants[kind].values()) revokeGrant(old);
+  /** Drops the current folder of this kind and every confirmed profile bound to it. */
+  function clearSelection(kind: FolderKind): void {
+    for (const old of grants[kind].values()) {
+      revokeGrant(old);
+      for (const [id, bound] of profiles) if (bound.rootGrantId === old.id || bound.referenceGrantId === old.id) profiles.delete(id);
+    }
     grants[kind].clear();
+  }
+  /**
+   * A new choice (typed or picked) replaces the previous folder of the same kind. A refused choice also clears it:
+   * the screen then has no folder of that kind instead of silently keeping the previous one.
+   */
+  async function select(kind: FolderKind, input: unknown): Promise<unknown> {
+    let grant: RootGrant | ReferenceGrant;
+    try {
+      if (typeof input !== 'string' || input === '' || input.length > 4096) throw new AfoError('ROOT_FORBIDDEN', '폴더 경로가 필요합니다.');
+      // Shared policy resolves relative input against the process cwd; a typed GUI path must be absolute instead.
+      if (!path.isAbsolute(input)) throw new AfoError('ROOT_FORBIDDEN', '전체 경로(절대 경로)를 입력하세요.');
+      grant = kind === 'work' ? await issueRootGrant(input) : await issueReferenceGrant(input);
+    } catch (error) { clearSelection(kind); throw error; }
+    clearSelection(kind);
     if (kind === 'work') grants.work.set(grant.id, grant as RootGrant); else grants.reference.set(grant.id, grant as ReferenceGrant);
     return { selected: { kind, grantId: grant.id, path: grant.canonicalPath } };
   }
@@ -94,8 +110,8 @@ export function createService(options: ServiceOptions): { handle: (channel: Chan
       catch (error) {
         throw new ChannelError('PICKER_UNAVAILABLE', error instanceof PickerUnavailable ? error.message : '폴더 선택 대화상자를 열지 못했습니다. 경로를 직접 입력하세요.');
       } finally { pickerBusy = false; }
+      // Cancel (or a dialog that could not open) is not a choice: the previous selection stays.
       if (picked === null) return { selected: null };
-      if (typeof picked !== 'string' || picked === '' || picked.length > 4096) throw new AfoError('ROOT_FORBIDDEN', '선택한 폴더 경로를 확인할 수 없습니다.');
       return select(kind, picked);
     },
     analyze: async ({ rootGrantId, referenceGrantId, profileId }) => {
@@ -103,8 +119,11 @@ export function createService(options: ServiceOptions): { handle: (channel: Chan
       if (!root) throw new AfoError('ROOT_FORBIDDEN', '이 화면에서 선택한 작업 폴더 권한이 아닙니다. 폴더를 다시 선택하세요.');
       const reference = referenceGrantId === null ? undefined : grants.reference.get(referenceGrantId);
       if (referenceGrantId !== null && !reference) throw new AfoError('ROOT_FORBIDDEN', '이 화면에서 선택한 참고 폴더 권한이 아닙니다. 다시 선택하세요.');
-      const profile = profileId === null ? undefined : profiles.get(profileId);
-      if (profileId !== null && !profile) throw new ChannelError('UNKNOWN_PROFILE', '확인된 규칙을 찾을 수 없습니다. 규칙을 다시 확인하세요.');
+      const bound = profileId === null ? undefined : profiles.get(profileId);
+      if (profileId !== null && !bound) throw new ChannelError('UNKNOWN_PROFILE', '확인된 규칙을 찾을 수 없습니다(폴더를 바꾸면 해제됩니다). 규칙을 다시 확인하세요.');
+      if (bound && (bound.rootGrantId !== rootGrantId || bound.referenceGrantId !== referenceGrantId))
+        throw new AfoError('PROFILE_CHANGED', '확인한 규칙은 확인할 때의 작업·참고 폴더 선택에서만 씁니다. 규칙을 다시 확인하세요.');
+      const profile = bound?.profile;
       // Fail fast on a replaced folder; analyzeRoot verifies again before and after reading.
       await verifyGrant(root, 'work');
       if (reference) await verifyGrant(reference, 'reference');
@@ -125,7 +144,8 @@ export function createService(options: ServiceOptions): { handle: (channel: Chan
     job: async ({ jobId }) => {
       const j = job(jobId);
       const result = j.analysis === null ? null : { preview: j.analysis.preview, suggestedProfile: j.analysis.suggestedProfile,
-        protected: j.analysis.protected, profileId: j.profileId };
+        protected: j.analysis.protected, profileId: j.profileId,
+        appliedRuleIds: j.profileId === null ? [] : (profiles.get(j.profileId)?.profile.rules.map((r) => r.id) ?? []) };
       return { jobId: j.id, state: j.state, progress: j.progress, startedAt: j.startedAt, result, error: j.error };
     },
     cancel: async ({ jobId }) => {
@@ -142,7 +162,10 @@ export function createService(options: ServiceOptions): { handle: (channel: Chan
       try { confirmed = confirmProfile(suggested, ruleIds); }
       catch (error) { throw isAfoError(error) ? error : new ChannelError('INVALID_REQUEST', '확인할 규칙 ID를 후보 목록에서 중복 없이 선택하세요.'); }
       const profileId = randomUUID();
-      profiles.set(profileId, confirmed);
+      // A job may outlive its folders (re-selected meanwhile): only bind to selections that are still current.
+      if (!grants.work.has(j.rootGrantId) || (j.referenceGrantId !== null && !grants.reference.has(j.referenceGrantId)))
+        throw new AfoError('PROFILE_CHANGED', '폴더 선택이 바뀌었습니다. 다시 분석한 뒤 규칙을 확인하세요.');
+      profiles.set(profileId, { profile: confirmed, rootGrantId: j.rootGrantId, referenceGrantId: j.referenceGrantId });
       return { profileId, profile: confirmed, saved: false };
     },
   };

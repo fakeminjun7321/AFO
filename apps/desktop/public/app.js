@@ -1,4 +1,7 @@
 // AFO read-only screen. Plain ES module, no build step. All file names and paths are inserted with textContent only.
+import { analysisRequest, applySelection, canAnalyze, confirmRules as withRules, initialState, keepReasonForScreen, releaseRules,
+  ruleText } from './state.js';
+
 const TOKEN_KEY = 'afo-token';
 const LIST_LIMIT = 500;
 const $ = (id) => document.getElementById(id);
@@ -57,47 +60,68 @@ function formatBytes(bytes) {
   return unit === 0 ? short : `${short} (${bytes.toLocaleString('ko-KR')} B)`;
 }
 
-const state = { workGrantId: null, referenceGrantId: null, jobId: null, profileId: null, polling: null, busy: false };
+let selection = initialState();
+// pending: what the folder steps are waiting for ('pick' = OS dialog open, 'path' = checking a typed path).
+const ui = { jobId: null, polling: null, pending: null };
 
-function resetResults() {
-  if (state.polling) { clearTimeout(state.polling); state.polling = null; }
-  state.jobId = null; state.profileId = null;
+function clearResults() {
+  if (ui.polling) { clearTimeout(ui.polling); ui.polling = null; }
+  ui.jobId = null;
   $('step-preview').hidden = true; $('step-rules').hidden = true;
   $('rule-list').replaceChildren(); setStatus('rules-status', '');
   $('progress').value = 0;
-  refreshButtons();
 }
 function refreshButtons() {
-  const running = state.polling !== null;
-  for (const id of ['work-pick', 'work-use', 'ref-pick', 'ref-use', 'ref-skip']) $(id).disabled = running || state.busy;
-  $('analyze').disabled = running || state.busy || state.workGrantId === null;
+  const running = ui.polling !== null;
+  const blocked = running || ui.pending !== null;
+  // Folder controls stay focusable and announce why they are unavailable (aria-disabled + status text) instead of
+  // silently ignoring Enter/clicks; the handlers check `blocked` themselves.
+  for (const button of document.querySelectorAll('button.choose')) button.setAttribute('aria-disabled', String(blocked));
+  for (const id of ['step-work', 'step-ref']) $(id).setAttribute('aria-busy', String(ui.pending !== null));
+  $('analyze').disabled = blocked || !canAnalyze(selection);
   $('cancel').disabled = !running;
   const checked = $('rule-list').querySelectorAll('input[type=checkbox]:checked').length;
-  $('rules-confirm').disabled = running || state.busy || state.jobId === null || checked === 0;
-  $('rules-reanalyze').disabled = running || state.busy || state.profileId === null;
+  $('rules-confirm').disabled = blocked || ui.jobId === null || checked === 0;
+  $('rules-reanalyze').disabled = blocked || selection.profileId === null || !canAnalyze(selection);
+  $('rules-release').disabled = blocked || selection.profileId === null;
 }
+function blockedReason() {
+  if (ui.polling !== null) return '분석이 진행 중입니다. 끝나거나 취소한 뒤 폴더를 바꿀 수 있습니다.';
+  if (ui.pending === 'pick') return '폴더 선택 대화상자가 열려 있습니다(다른 창 뒤에 있을 수 있음). 대화상자에서 고르거나 취소한 뒤 다시 시도하세요.';
+  return '이전 요청을 처리하는 중입니다. 끝난 뒤 다시 시도하세요.';
+}
+const isBlocked = () => ui.polling !== null || ui.pending !== null;
 
+function showSelection(kind, result) {
+  selection = result.state;
+  setStatus(kind === 'work' ? 'work-status' : 'ref-status', result.message, result.error);
+  setStatus('analyze-status', canAnalyze(selection) ? '분석할 준비가 되었습니다.' : '작업 폴더를 선택하면 분석할 수 있습니다.');
+}
 async function choose(kind, how) {
   const prefix = kind === 'work' ? 'work' : 'ref';
   const statusId = `${prefix}-status`;
-  state.busy = true; refreshButtons();
-  setStatus(statusId, how === 'pick' ? '폴더 선택 대화상자를 열었습니다. 대화상자에서 폴더를 고르세요…' : '경로를 확인하는 중…');
+  if (isBlocked()) { setStatus(statusId, blockedReason(), true); return; }
+  const typed = $(`${prefix}-path`).value.trim();
+  if (how === 'path' && typed === '') { setStatus(statusId, '경로를 입력한 뒤 "이 경로 사용"을 누르세요(Enter도 됩니다).', true); return; }
+  ui.pending = how; refreshButtons();
+  setStatus(statusId, how === 'pick' ? '폴더 선택 대화상자를 열었습니다. 대화상자에서 폴더를 고르세요(다른 창 뒤에 있을 수 있음)…' : '경로를 확인하는 중…');
+  let outcome;
   try {
-    const data = how === 'pick' ? await api('pick-folder', { kind })
-      : await api('select-folder', { kind, path: $(`${prefix}-path`).value.trim() });
-    if (data.selected === null) { setStatus(statusId, '선택을 취소했습니다. 이전 선택은 그대로입니다.'); return; }
-    resetResults();
-    if (kind === 'work') state.workGrantId = data.selected.grantId; else state.referenceGrantId = data.selected.grantId;
-    setStatus(statusId, `${kind === 'work' ? '작업 폴더' : '참고 폴더(읽기 전용)'}: ${data.selected.path}`);
-    setStatus('analyze-status', '분석할 준비가 되었습니다.');
+    const data = how === 'pick' ? await api('pick-folder', { kind }) : await api('select-folder', { kind, path: typed });
+    outcome = data.selected === null ? { type: 'cancelled' } : { type: 'selected', grantId: data.selected.grantId, path: data.selected.path };
   } catch (error) {
-    setStatus(statusId, `선택하지 못했습니다: ${errorText(error)}`, true);
-  } finally { state.busy = false; refreshButtons(); }
+    outcome = { type: 'refused', code: error instanceof ApiError ? error.code : 'UNKNOWN', message: error instanceof ApiError ? error.message : '요청이 실패했습니다.' };
+  } finally { ui.pending = null; }
+  const result = applySelection(selection, kind, outcome);
+  if (result.state !== selection) clearResults();
+  showSelection(kind, result);
+  refreshButtons();
 }
 function skipReference() {
-  resetResults();
-  state.referenceGrantId = null;
-  setStatus('ref-status', '참고 폴더 없음(건너뜀).');
+  if (isBlocked()) { setStatus('ref-status', blockedReason(), true); return; }
+  clearResults();
+  showSelection('reference', applySelection(selection, 'reference', { type: 'skipped' }));
+  refreshButtons();
 }
 
 function describeProgress(p) {
@@ -112,27 +136,30 @@ function showProgress(p) {
   setStatus('analyze-status', describeProgress(p));
 }
 
-async function startAnalysis(profileId) {
-  resetResultsKeepProfile(profileId);
+async function startAnalysis() {
+  if (!canAnalyze(selection) || isBlocked()) return;
+  clearResults();
   try {
-    const { jobId } = await api('analyze', { rootGrantId: state.workGrantId, referenceGrantId: state.referenceGrantId, profileId });
-    state.jobId = jobId;
+    const { jobId } = await api('analyze', analysisRequest(selection));
+    ui.jobId = jobId;
     showProgress(null);
-    state.polling = setTimeout(poll, 150);
+    if (selection.profileId) setStatus('analyze-status', `분석을 시작했습니다. 확인한 규칙 ${selection.appliedRuleIds.length}개를 계속 적용합니다(폴더를 바꾸면 해제).`);
+    ui.polling = setTimeout(poll, 150);
   } catch (error) {
     setStatus('analyze-status', `분석을 시작하지 못했습니다: ${errorText(error)}`, true);
+    if (error instanceof ApiError && (error.code === 'UNKNOWN_PROFILE' || error.code === 'PROFILE_CHANGED')) {
+      selection = releaseRules(selection);
+      setStatus('rules-status', '확인한 규칙을 더 쓸 수 없어 해제했습니다. 다시 분석한 뒤 규칙을 확인하세요.', true);
+    }
   }
   refreshButtons();
 }
-function resetResultsKeepProfile(profileId) {
-  const keep = profileId; resetResults(); state.profileId = keep;
-}
 async function poll() {
   let status;
-  try { status = await api('job', { jobId: state.jobId }); }
-  catch (error) { state.polling = null; setStatus('analyze-status', `진행 상황을 읽지 못했습니다: ${errorText(error)}`, true); refreshButtons(); return; }
-  if (status.state === 'running') { showProgress(status.progress); state.polling = setTimeout(poll, 250); return; }
-  state.polling = null;
+  try { status = await api('job', { jobId: ui.jobId }); }
+  catch (error) { ui.polling = null; setStatus('analyze-status', `진행 상황을 읽지 못했습니다: ${errorText(error)}`, true); refreshButtons(); return; }
+  if (status.state === 'running') { showProgress(status.progress); ui.polling = setTimeout(poll, 250); return; }
+  ui.polling = null;
   const bar = $('progress');
   if (status.state === 'done') {
     bar.value = 1;
@@ -147,8 +174,8 @@ async function poll() {
   refreshButtons();
 }
 async function cancelAnalysis() {
-  if (!state.jobId) return;
-  try { await api('cancel', { jobId: state.jobId }); setStatus('analyze-status', '취소를 요청했습니다…'); }
+  if (!ui.jobId) return;
+  try { await api('cancel', { jobId: ui.jobId }); setStatus('analyze-status', '취소를 요청했습니다…'); }
   catch (error) { setStatus('analyze-status', `취소하지 못했습니다: ${errorText(error)}`, true); }
 }
 
@@ -175,7 +202,8 @@ function render(result) {
   for (const item of preview.items) byAction[item.action].push(item);
   $('step-preview').hidden = false;
   const parts = [`파일 ${preview.items.length}개 분석`, `스캔 ${preview.scanComplete ? '완료' : '일부 미완료'}`,
-    `제외·오류 ${preview.skipped.length}개`, preview.profileRevision ? `확인된 규칙 적용(버전 ${preview.profileRevision})` : '기본 규칙만 적용'];
+    `제외·오류 ${preview.skipped.length}개`,
+    preview.profileRevision ? `확인한 규칙 ${result.appliedRuleIds.length}개 적용(버전 ${preview.profileRevision})` : '기본 규칙만 적용'];
   $('preview-summary').textContent = parts.join(' · ');
   setStatus('analyze-status', '분석을 마쳤습니다. 파일은 바뀌지 않았습니다.');
   fillList('list-move', 's-move', '이동 제안', byAction.move, itemNode);
@@ -184,7 +212,7 @@ function render(result) {
   fillList('list-dup', 's-dup', '중복 후보', preview.duplicates, (group) => {
     const li = el('li');
     li.append(el('div', `남길 파일 제안: ${group.suggestedKeep}`, 'path'));
-    if (group.keepReason) li.append(el('div', group.keepReason, 'reason'));
+    li.append(el('div', keepReasonForScreen(group.keepReason), 'reason'));
     const sub = el('ul');
     for (const candidate of group.candidates) sub.append(el('li', candidate, 'path'));
     li.append(el('div', `확인할 같은 내용 파일 ${group.candidates.length}개:`, 'reason'), sub);
@@ -197,10 +225,10 @@ function render(result) {
     li.append(el('div', entry.relativePath, 'path'), el('div', `${entry.reason}${entry.code ? ` (${entry.code})` : ''}`, 'reason'));
     return li;
   });
-  renderRules(suggestedProfile, result.profileId);
+  renderRules(suggestedProfile, result.appliedRuleIds);
 }
 
-function renderRules(profile, appliedProfileId) {
+function renderRules(profile, appliedRuleIds) {
   const list = $('rule-list');
   list.replaceChildren();
   if (!profile) { $('step-rules').hidden = true; return; }
@@ -208,48 +236,58 @@ function renderRules(profile, appliedProfileId) {
   if (profile.rules.length === 0) {
     list.append(el('li', '참고 폴더에서 규칙 후보를 찾지 못했습니다(같은 폴더에 같은 확장자 파일이 2개 이상 있어야 합니다).', 'empty'));
   }
-  for (const rule of profile.rules) {
+  profile.rules.forEach((rule, index) => {
     const li = el('li');
-    const id = `rule-${rule.id}`;
-    const box = el('input'); box.type = 'checkbox'; box.id = id; box.value = rule.id;
+    const evidenceId = `rule-evidence-${index}`;
+    // The checkbox sits inside its label, and also gets an explicit name, so it is announced as the rule, not its ID.
+    const label = el('label', null, 'rule');
+    const box = el('input'); box.type = 'checkbox'; box.value = rule.id; box.checked = appliedRuleIds.includes(rule.id);
+    box.setAttribute('aria-label', ruleText(rule));
+    box.setAttribute('aria-describedby', evidenceId);
     box.addEventListener('change', refreshButtons);
-    const label = el('label'); label.htmlFor = id;
-    label.append(el('span', `${rule.extension} 파일${rule.keyword ? `(이름에 "${rule.keyword}" 포함)` : ''} → `),
-      el('span', rule.targetDirectory, 'path'));
-    const evidence = el('ul', null, 'evidence');
-    for (const file of rule.evidence) evidence.append(el('li', file, 'path'));
-    li.append(box, label, el('div', `근거: 참고 폴더의 파일 ${rule.evidence.length}개`, 'reason'), evidence);
+    label.append(box, el('span', ruleText(rule), 'path'));
+    const evidence = el('div', null, 'reason');
+    evidence.id = evidenceId;
+    evidence.append(el('span', `근거: 참고 폴더의 파일 ${rule.evidence.length}개 — `));
+    rule.evidence.forEach((file, i) => { if (i > 0) evidence.append(el('span', ', ')); evidence.append(el('span', file, 'path')); });
+    li.append(label, evidence);
     list.append(li);
-  }
-  setStatus('rules-status', appliedProfileId ? '확인된 규칙으로 만든 미리보기입니다. 규칙 저장은 후속 작업입니다.' :
-    '규칙을 체크하고 "선택한 규칙 확인"을 누르세요. 규칙 저장은 후속 작업입니다.');
+  });
+  setStatus('rules-status', appliedRuleIds.length
+    ? `확인한 규칙 ${appliedRuleIds.length}개를 적용한 미리보기입니다. 같은 폴더로 다시 분석해도 계속 적용되며, 폴더를 바꾸거나 "확인한 규칙 해제"를 누르면 해제됩니다. 저장은 후속 작업입니다.`
+    : '규칙을 체크하고 "선택한 규칙 확인"을 누르세요. 규칙 저장은 후속 작업입니다.');
 }
 
 async function confirmRules() {
   const ruleIds = [...$('rule-list').querySelectorAll('input[type=checkbox]:checked')].map((box) => box.value);
-  state.busy = true; refreshButtons();
+  ui.pending = 'path'; refreshButtons();
   try {
-    const data = await api('confirm-rules', { jobId: state.jobId, ruleIds });
-    state.profileId = data.profileId;
-    setStatus('rules-status', `규칙 ${data.profile.rules.length}개를 확인했습니다(이번 실행에서만 사용, 저장은 후속). "확인된 규칙으로 다시 미리보기"를 누르세요.`);
+    const data = await api('confirm-rules', { jobId: ui.jobId, ruleIds });
+    selection = withRules(selection, data.profileId, data.profile.rules.map((r) => r.id));
+    setStatus('rules-status', `규칙 ${data.profile.rules.length}개를 확인했습니다(이번 실행에서만 사용, 저장은 후속). "확인된 규칙으로 다시 미리보기"를 누르세요. 같은 폴더로 다시 분석할 때도 계속 적용됩니다.`);
   } catch (error) {
     setStatus('rules-status', `규칙을 확인하지 못했습니다: ${errorText(error)}`, true);
-  } finally { state.busy = false; refreshButtons(); }
+  } finally { ui.pending = null; refreshButtons(); }
+}
+function releaseConfirmedRules() {
+  selection = releaseRules(selection);
+  setStatus('rules-status', '확인한 규칙을 해제했습니다. 다음 분석은 기본 규칙만 적용합니다.');
+  refreshButtons();
 }
 
 function init() {
   if (!token) showFatal('화면 토큰이 없습니다. 터미널에 표시된 주소(#t=…)로 다시 여세요.');
   $('work-pick').addEventListener('click', () => choose('work', 'pick'));
-  $('work-use').addEventListener('click', () => choose('work', 'path'));
   $('ref-pick').addEventListener('click', () => choose('reference', 'pick'));
-  $('ref-use').addEventListener('click', () => choose('reference', 'path'));
   $('ref-skip').addEventListener('click', skipReference);
-  for (const [input, button] of [['work-path', 'work-use'], ['ref-path', 'ref-use']])
-    $(input).addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); $(button).click(); } });
-  $('analyze').addEventListener('click', () => startAnalysis(null));
+  // Enter in a path field submits its form (implicit submission); the submit is handled here, never sent as a form.
+  $('work-form').addEventListener('submit', (event) => { event.preventDefault(); choose('work', 'path'); });
+  $('ref-form').addEventListener('submit', (event) => { event.preventDefault(); choose('reference', 'path'); });
+  $('analyze').addEventListener('click', startAnalysis);
   $('cancel').addEventListener('click', cancelAnalysis);
   $('rules-confirm').addEventListener('click', confirmRules);
-  $('rules-reanalyze').addEventListener('click', () => startAnalysis(state.profileId));
+  $('rules-reanalyze').addEventListener('click', startAnalysis);
+  $('rules-release').addEventListener('click', releaseConfirmedRules);
   refreshButtons();
 }
 init();

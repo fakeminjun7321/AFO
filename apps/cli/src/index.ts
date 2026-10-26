@@ -1,22 +1,26 @@
-import { readFile, lstat } from 'node:fs/promises';
 import { createInterface } from 'node:readline/promises';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
-import { AfoError, ProfileSchema, TargetDirectorySchema } from '../../../packages/contracts/src/index.js';
+import { AfoError, ProfileSchema } from '../../../packages/contracts/src/index.js';
 import type { CorrectionMatch, RuleProfile } from '../../../packages/contracts/src/index.js';
-import { confirmProfile, parseProfile, pathKey, suggestProfile } from '../../../packages/engine/src/index.js';
-import type { AnyProfile } from '../../../packages/engine/src/index.js';
-import { analyzeRoot, issueReferenceGrant, issueRootGrant, readReference, scanRoot } from '../../../packages/filesystem/src/index.js';
-import { addCorrection, loadProfile } from '../../../packages/filesystem/src/profiles.js';
-import { assertStateDirOutside, resolveStateDir } from '../../../packages/filesystem/src/state.js';
-import { CliError, corruptHint, draftLines, expected, isCorrupt, rulesCommand, usage } from './rules.js';
+import { confirmProfile, pathKey, suggestProfile } from '../../../packages/engine/src/index.js';
+import { issueReferenceGrant, readReference } from '../../../packages/filesystem/src/index.js';
+import { addCorrection } from '../../../packages/filesystem/src/profiles.js';
+import { resolveStateDir } from '../../../packages/filesystem/src/state.js';
+import { analyzeTarget, profileLine, readJsonFile } from './analyze.js';
+import type { AnalyzeValues } from './analyze.js';
+import { planCommand } from './plan.js';
+import { CliError, draftLines, expected, isCorrupt, rulesCommand, usage } from './rules.js';
 
-const help = `AFO 읽기 전용 미리보기와 개인 규칙
+const help = `AFO 미리보기·개인 규칙·정리 계획 (사용자 파일은 읽기 전용)
 
 preview <폴더> [--reference <참고 폴더>] [--profile <JSON>] [--no-saved-rules]
         [--move <상대 경로>=<목적지 폴더>]... [--remember] [--json]
+plan <폴더> [preview와 같은 분석 옵션, --remember 제외] [--delete-mode trash|permanent]
+     [--delete-duplicates all|<그룹 해시,...>] [--delete-file <상대 경로>]... [--json]
+     정리 계획을 상태 폴더에 저장하고 작업 ID·이유·방식별 승인 코드를 출력
 suggest-rules <참고 폴더> [--json]       규칙 후보(초안) JSON을 stdout에, 요약을 stderr에 출력
 rules save <초안 JSON> --select <규칙ID,...>
 rules list [--json]
@@ -28,16 +32,11 @@ confirm-rules <규칙 JSON> --select <규칙ID,...>   (이전 방식: 확인한 
 
 preview는 저장된 개인 규칙을 자동 적용합니다. --move는 이번 미리보기에만 적용하고,
 --remember를 붙이면 그 수정을 이후에도 적용하도록 저장합니다.
-이 버전은 파일을 읽고 결과를 출력합니다. 사용자 파일의 이동·삭제는 수행하지 않습니다.
-규칙 저장 명령은 앱 로컬 상태 폴더(AFO_STATE_DIR)에만 씁니다.
+plan의 --delete-mode 기본값은 trash(휴지통)입니다. permanent(영구 삭제)는 되돌릴 수 없습니다.
+이 버전은 파일을 읽고 결과를 출력합니다. 사용자 파일의 이동·삭제는 수행하지 않습니다. 실행 명령은 다음 버전에서 제공합니다.
+규칙 저장과 plan은 앱 로컬 상태 폴더(AFO_STATE_DIR)에만 씁니다.
 `;
 
-const MAX_JSON = 1024 * 1024;
-async function readJsonFile(file: string): Promise<unknown> {
-  const stat = await lstat(file);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_JSON) throw new Error('규칙 JSON은 1 MiB 이하의 일반 파일이어야 합니다.');
-  return JSON.parse(await readFile(file, 'utf8')) as unknown;
-}
 const readDraft = async (file: string): Promise<RuleProfile> => ProfileSchema.parse(await readJsonFile(file));
 
 export interface CliIo {
@@ -52,11 +51,9 @@ export interface CliIo {
 /** Each command's accepted options; anything else is a usage error rather than being ignored. */
 const allowed: Record<string, readonly string[]> = {
   preview: ['profile', 'reference', 'json', 'no-saved-rules', 'move', 'remember'],
+  plan: ['profile', 'reference', 'json', 'no-saved-rules', 'move', 'delete-mode', 'delete-duplicates', 'delete-file'],
   'suggest-rules': ['json'], 'confirm-rules': ['select'], rules: ['json', 'select', 'confirm'],
 };
-
-interface ProfileInfo { source: 'saved' | 'file' | 'none' | 'skipped' | 'corrupt'; id: string | null; revision: number | null;
-  status: string | null; warning?: string }
 
 export async function run(args: string[], signal?: AbortSignal, io: CliIo = {}): Promise<string> {
   if (args.length === 0 || args[0] === '--help') return help;
@@ -65,7 +62,8 @@ export async function run(args: string[], signal?: AbortSignal, io: CliIo = {}):
     parsed = parseArgs({ args, allowPositionals: true, strict: true, options: {
       profile: { type: 'string' }, reference: { type: 'string' }, select: { type: 'string' }, json: { type: 'boolean' },
       'no-saved-rules': { type: 'boolean' }, move: { type: 'string', multiple: true }, remember: { type: 'boolean' },
-      confirm: { type: 'string' },
+      confirm: { type: 'string' }, 'delete-mode': { type: 'string' }, 'delete-duplicates': { type: 'string' },
+      'delete-file': { type: 'string', multiple: true },
     } });
   } catch (error) {
     throw usage(`옵션을 해석할 수 없습니다(${error instanceof Error ? error.message : String(error)}). --help 참고`);
@@ -97,77 +95,17 @@ export async function run(args: string[], signal?: AbortSignal, io: CliIo = {}):
     if (!values.select) throw usage('--select로 확인할 규칙 ID만 명시하세요.');
     return JSON.stringify(confirmProfile(await readDraft(target), values.select.split(',')), null, 2);
   }
+  if (command === 'plan') return planCommand(target, values, { json, warn, stateDir, options });
   return preview(target, values, { json, warn, stateDir, options });
 }
 
-interface PreviewValues { profile?: string | undefined; reference?: string | undefined; 'no-saved-rules'?: boolean | undefined;
-  move?: string[] | undefined; remember?: boolean | undefined }
-async function preview(target: string, values: PreviewValues, ctx: { json: boolean; warn: (line: string) => void;
+async function preview(target: string, values: AnalyzeValues, ctx: { json: boolean; warn: (line: string) => void;
   stateDir: () => string; options: { signal?: AbortSignal } }): Promise<string> {
   const moves = values.move ?? [];
   if (values.remember && !moves.length) throw usage('--remember는 --move와 함께 써야 합니다.');
   if (values.remember && (values.profile !== undefined || values['no-saved-rules']))
     throw usage('--remember는 저장된 프로필에 기록하므로 --profile·--no-saved-rules와 함께 쓸 수 없습니다.');
-  if (values.profile !== undefined && values['no-saved-rules']) throw usage('--profile과 --no-saved-rules 중 하나만 쓰세요.');
-
-  // Profile: an explicit file, else the saved one (damaged → warn and fall back to default rules), unless skipped.
-  let profile: AnyProfile | undefined; let info: ProfileInfo;
-  let saved: Awaited<ReturnType<typeof loadProfile>> = null;
-  if (values.profile !== undefined) {
-    profile = parseProfile(await readJsonFile(values.profile));
-    info = { source: 'file', id: profile.id, revision: profile.revision, status: profile.status };
-  } else if (values['no-saved-rules']) info = { source: 'skipped', id: null, revision: null, status: null };
-  else {
-    saved = await loadProfile({ stateDir: ctx.stateDir() });
-    if (saved === null) info = { source: 'none', id: null, revision: null, status: null };
-    else if (isCorrupt(saved)) {
-      info = { source: 'corrupt', id: null, revision: null, status: null,
-        warning: `저장된 개인 규칙 프로필이 손상돼 적용하지 않았습니다: ${saved.reason}` };
-      if (values.remember) throw new AfoError('STATE_CORRUPT', `${info.warning} ${corruptHint}`);
-      ctx.warn(`경고: ${info.warning} ${corruptHint}`);
-    } else { profile = saved; info = { source: 'saved', id: saved.id, revision: saved.revision, status: saved.status }; }
-  }
-
-  const grant = await issueRootGrant(target);
-  const referenceGrant = values.reference !== undefined ? await issueReferenceGrant(values.reference) : undefined;
-  if (values.remember) {
-    // Saving must not write into the folders being organized or consulted.
-    await assertStateDirOutside(ctx.stateDir(), grant.canonicalPath);
-    if (referenceGrant) await assertStateDirOutside(ctx.stateDir(), referenceGrant.canonicalPath);
-  }
-  // One-off corrections: "<relative path>=<folder>", resolved to file IDs of the current scan.
-  const overrides: Record<string, string> = {};
-  const picked: { fileId: string; relativePath: string; target: string }[] = [];
-  if (moves.length) {
-    const files = (await scanRoot(grant, ctx.options)).files;
-    for (const spec of moves) {
-      if (!spec.includes('=')) throw usage(`--move는 <상대 경로>=<목적지 폴더> 형식입니다: ${spec}`);
-      const splits = [...spec.matchAll(/=/gu)].map((m) => m.index)
-        .map((i) => [spec.slice(0, i), spec.slice(i + 1)] as const)
-        .map(([rel, dir]) => [files.find((f) => f.relativePath === rel) ?? files.find((f) => pathKey(f.relativePath) === pathKey(rel)), dir] as const)
-        .filter(([file]) => file !== undefined);
-      if (splits.length !== 1) throw new Error(`--move의 파일을 이 폴더에서 하나로 찾을 수 없습니다: ${spec}`);
-      const [file, dir] = splits[0]!;
-      const folder = TargetDirectorySchema.safeParse(dir);
-      if (!folder.success) throw usage(`--move의 목적지는 작업 폴더 안의 상대 폴더여야 합니다(숨김·..·절대 경로 불가): ${dir}`);
-      if (overrides[file!.id] !== undefined) throw usage(`같은 파일에 --move를 두 번 지정했습니다: ${file!.relativePath}`);
-      overrides[file!.id] = folder.data;
-      picked.push({ fileId: file!.id, relativePath: file!.relativePath, target: folder.data });
-    }
-    if (values.remember) {
-      const names = picked.map((p) => pathKey(path.posix.basename(p.relativePath)));
-      if (new Set(names).size !== names.length) throw usage('--remember는 파일 이름으로 저장하므로 같은 이름의 파일을 두 번 지정할 수 없습니다.');
-    }
-  }
-
-  const analysis = await analyzeRoot(grant, { ...ctx.options, ...(profile ? { profile } : {}),
-    ...(referenceGrant ? { reference: referenceGrant } : {}), ...(picked.length ? { overrides } : {}) });
-  for (const p of picked) {
-    const item = analysis.preview.items.find((i) => i.fileId === p.fileId);
-    if (!item) throw new AfoError('FILE_CHANGED', `분석 중 파일이 바뀌었습니다: ${p.relativePath}. 다시 실행하세요.`);
-    if (item.reasonCode === 'PROTECTED_REFERENCE') throw new Error(`참고한 기존 파일은 옮기지 않습니다: ${p.relativePath}`);
-    if (item.reasonCode === 'READ_FAILED') throw new Error(`읽지 못한 파일은 수정할 수 없습니다: ${p.relativePath}`);
-  }
+  const { analysis, info, saved, picked } = await analyzeTarget(target, values, { ...ctx, writesState: values.remember === true });
 
   // "이후에도 적용": stored only now, after the preview succeeded, guarded by the revision this preview used.
   const remembered: { correctionId: string; name: string; targetDirectory: string; revision: number }[] = [];
@@ -189,16 +127,10 @@ async function preview(target: string, values: PreviewValues, ctx: { json: boole
     ...(values.remember ? { remembered } : {}) }, null, 2);
   const { preview: result } = analysis;
   const labels = { move: '이동 제안', keep: '유지', review: '검토 필요' };
-  const profileLine = info.source === 'file' ? `개인 규칙: --profile 파일 적용(ID ${info.id}, revision ${info.revision}, 상태 ${info.status})`
-    : info.source === 'skipped' ? '개인 규칙: --no-saved-rules로 적용하지 않음(기본 분류)'
-    : info.source === 'none' ? '개인 규칙: 저장된 규칙 없음(기본 분류)'
-    : info.source === 'corrupt' ? '개인 규칙: 저장된 프로필 손상으로 적용하지 않음(기본 분류)'
-    : info.status === 'disabled' ? '개인 규칙: 저장된 프로필이 꺼져 있음(기본 분류, 참고 파일 보호는 유지)'
-    : `개인 규칙: 저장된 프로필 적용(revision ${info.revision})`;
   const once = new Set(picked.map((p) => p.fileId));
   return ['AFO 정리 미리보기 — 실제 파일은 변경하지 않았습니다.',
     `분석: ${result.items.length}개 / 스캔 ${result.scanComplete ? '완료' : '일부 미완료'} / 제외·오류 ${result.skipped.length}개`,
-    profileLine,
+    profileLine(info),
     ...result.items.map((item) => `[${labels[item.action]}] ${item.source}${item.destination ? ` → ${item.destination}` : ''}` +
       `${once.has(item.fileId) ? values.remember ? ' (사용자 수정, 이후에도 적용 저장)' : ' (이번만 적용)' : ''}\n  ${item.reason}`),
     ...result.duplicates.map((group) => `[중복 후보] 남길 파일 제안: ${group.suggestedKeep}\n  확인할 파일: ${group.candidates.join(', ')} / 논리 크기 ${group.logicalCandidateBytes} B (확보량 아님)`),

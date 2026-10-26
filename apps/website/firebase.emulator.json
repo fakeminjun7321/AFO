@@ -1,7 +1,11 @@
 {
   "hosting": {
     "public": "dist-emulator",
-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
     "headers": [
       {
         "source": "**",
@@ -20,7 +24,11 @@
           },
           {
             "key": "Content-Security-Policy",
-            "value": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self' http://127.0.0.1:19101; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+            "value": "default-src 'none'; script-src 'self' https://apis.google.com; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self' http://127.0.0.1:19101; frame-src http://127.0.0.1:19101; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+          },
+          {
+            "key": "Cross-Origin-Opener-Policy",
+            "value": "same-origin-allow-popups"
           }
         ]
       },

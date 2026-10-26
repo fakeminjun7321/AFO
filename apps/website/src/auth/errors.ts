@@ -24,6 +24,13 @@ export function authError(error: unknown): string {
       return "이메일 로그인을 준비하고 있습니다. 잠시 후 다시 시도해 주세요.";
     case "auth/unauthorized-domain":
       return "이 주소에서의 로그인이 아직 허용되지 않았습니다.";
+    case "auth/popup-closed-by-user":
+    case "auth/cancelled-popup-request":
+      return "Google 로그인을 취소했습니다. 다시 시도할 수 있어요.";
+    case "auth/popup-blocked":
+      return "로그인 창이 차단됐습니다. 이 사이트의 팝업을 허용한 뒤 다시 시도해 주세요.";
+    case "auth/account-exists-with-different-credential":
+      return "이 이메일로 가입한 계정이 있습니다. 기존 로그인 방법으로 먼저 로그인해 주세요.";
     default:
       return "요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.";
   }

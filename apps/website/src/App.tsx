@@ -14,6 +14,7 @@ import { Footer } from "./components/Footer";
 import { GuidePage } from "./pages/GuidePage";
 import { AuthPage } from "./pages/AuthPage";
 import { AccountPage } from "./pages/AccountPage";
+import { AdminPage } from "./pages/AdminPage";
 import { AuthProvider } from "./auth/AuthProvider";
 
 const titles: Record<string, string> = {
@@ -25,6 +26,7 @@ const titles: Record<string, string> = {
   "/signup": "회원가입",
   "/reset-password": "비밀번호 재설정",
   "/account": "내 계정",
+  "/admin": "관리자",
 };
 function Shell() {
   const { pathname } = useLocation();
@@ -62,6 +64,7 @@ function Shell() {
             element={<AuthPage key="reset" mode="reset" />}
           />
           <Route path="/account" element={<AccountPage />} />
+          <Route path="/admin" element={<AdminPage />} />
           <Route
             path="*"
             element={

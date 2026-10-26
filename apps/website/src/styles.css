@@ -173,6 +173,139 @@
   letter-spacing: -0.03em;
   margin-bottom: 30px;
 }
+.google-signin {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  gap: 12px;
+  min-height: 54px;
+  border-radius: 100px;
+  background: #fff;
+  border: 1px solid #747775;
+  color: #1f1f1f;
+  font: inherit;
+  font-size: 17px;
+  font-weight: 550;
+  padding: 14px 24px;
+  line-height: 1.4;
+  margin-bottom: 25px;
+  transition: background 0.2s;
+}
+.google-signin:hover {
+  background: #f2f2f2;
+}
+.google-signin img {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 28px;
+}
+.auth-divider:before,
+.auth-divider:after {
+  content: "";
+  height: 1px;
+  background: var(--line);
+  flex: 1;
+}
+.account-role {
+  font-size: 14px;
+  color: var(--muted);
+  margin-top: 10px;
+}
+.admin-entry {
+  border-bottom: 1px solid var(--line);
+  padding-block: 25px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 25px;
+}
+.admin-entry p {
+  font-size: 17px;
+  color: var(--muted);
+}
+.admin-page {
+  width: 100%;
+  padding-bottom: 85px;
+}
+.admin-details {
+  margin: 0;
+  border-top: 1px solid var(--line);
+}
+.admin-details > div {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  gap: 25px;
+  padding: 25px 0;
+  border-bottom: 1px solid var(--line);
+}
+.admin-details dt {
+  color: var(--muted);
+  font-size: 16px;
+}
+.admin-details dd {
+  margin: 0;
+  font-size: 19px;
+  overflow-wrap: anywhere;
+}
+.admin-links {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 45px;
+}
+.admin-links a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 25px;
+  border-bottom: 1px solid var(--line);
+  padding: 25px 0;
+  font-size: 21px;
+}
+.admin-links a:hover {
+  color: var(--orange);
+}
+.admin-scope-note {
+  margin-top: 35px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.8;
+  max-width: 800px;
+}
+@media (max-width: 760px) {
+  .google-signin {
+    font-size: 16px;
+    min-height: 52px;
+  }
+  .admin-entry {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .admin-details > div {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .admin-details dd {
+    font-size: 17px;
+  }
+  .admin-links a {
+    font-size: 18px;
+  }
+  .admin-page {
+    padding-bottom: 60px;
+  }
+}
 .auth-form-wrap fieldset {
   border: 0;
   padding: 0;

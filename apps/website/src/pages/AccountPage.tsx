@@ -7,7 +7,7 @@ import { authError } from "../auth/errors";
 import { Arrow } from "../components/Icons";
 
 export function AccountPage() {
-  const { user, ready, error: stateError } = useAuth();
+  const { user, ready, error: stateError, isAdmin, adminAssigned } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   if (!ready)
@@ -38,6 +38,13 @@ export function AccountPage() {
         <div>
           <span className="account-label">로그인 계정</span>
           <p className="account-email">{user.email}</p>
+          <p className="account-role">
+            {isAdmin
+              ? "AFO 관리자"
+              : adminAssigned
+                ? "관리자 지정됨 · 이메일 본인 확인 필요"
+                : "일반 계정"}
+          </p>
         </div>
         <button
           type="button"
@@ -52,6 +59,14 @@ export function AccountPage() {
         <p className="form-error" role="alert">
           {error || stateError}
         </p>
+      )}
+      {isAdmin && (
+        <div className="admin-entry">
+          <p>운영 계정으로 로그인했어요.</p>
+          <Link to="/admin" className="button button--outline">
+            관리자 화면 <Arrow />
+          </Link>
+        </div>
       )}
       <div className="account-next">
         <h2>

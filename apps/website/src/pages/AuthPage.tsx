@@ -5,6 +5,8 @@ import {
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
 } from "firebase/auth";
 import { auth } from "../auth/firebase";
 import { useAuth } from "../auth/AuthProvider";
@@ -18,6 +20,7 @@ export function AuthPage({ mode }: { mode: Mode }) {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const title =
@@ -26,6 +29,23 @@ export function AuthPage({ mode }: { mode: Mode }) {
       : mode === "reset"
         ? "다시, 로그인할 수 있게."
         : "다시 만나 반가워요.";
+  async function googleLogin() {
+    if (busy) return;
+    setError("");
+    setMessage("");
+    setBusy(true);
+    setGoogleBusy(true);
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      await signInWithPopup(auth, provider);
+    } catch (e) {
+      setError(authError(e));
+    } finally {
+      setBusy(false);
+      setGoogleBusy(false);
+    }
+  }
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (busy) return;
@@ -90,6 +110,24 @@ export function AuthPage({ mode }: { mode: Mode }) {
             회원가입
           </Link>
         </div>
+        {mode !== "reset" && (
+          <>
+            <button
+              type="button"
+              className="google-signin"
+              disabled={busy}
+              onClick={googleLogin}
+            >
+              <img src="/assets/google-g.png" alt="" width="20" height="20" />
+              <span>
+                {googleBusy ? "Google 로그인 확인 중…" : "Google로 계속하기"}
+              </span>
+            </button>
+            <div className="auth-divider">
+              <span>또는 이메일로</span>
+            </div>
+          </>
+        )}
         <h2>
           {mode === "signup"
             ? "AFO 계정 만들기"
@@ -180,7 +218,7 @@ export function AuthPage({ mode }: { mode: Mode }) {
           </Link>
         )}
         <p className="auth-note">
-          이메일과 비밀번호는 계정 인증에만 사용합니다.
+          로그인 정보는 계정 인증에만 사용합니다.
           <br />
           파일 내용은 업로드하지 않습니다.
         </p>

@@ -1,6 +1,7 @@
 import { constants } from 'node:fs';
 import type { BigIntStats } from 'node:fs';
-import { access, link, lstat, statfs, unlink } from 'node:fs/promises';
+import { access, link, lstat, open, statfs, unlink } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 
@@ -14,7 +15,7 @@ export class PlatformError extends Error {
 }
 export interface FileIdentity { kind: 'file' | 'directory' | 'symlink' | 'other'; device: string; inode: string;
   size: number; modifiedNs: string; nlink: number }
-export interface ExpectedIdentity { device: string; inode: string; size?: number; modifiedNs?: string }
+export interface ExpectedIdentity { device: string; inode: string; size?: number; modifiedNs?: string; sha256?: string | null }
 
 const errno = (error: unknown): string => error !== null && typeof error === 'object' && 'code' in error
   ? String(error.code) : '';
@@ -114,15 +115,43 @@ export async function linkMoveNoClobber(src: string, dst: string, expected?: Exp
 
 /** Recovery helper for an interrupted move. Never fixes anything by itself. */
 export type MoveState = 'not-started' | 'linked-both' | 'moved' | 'missing' | 'conflict';
+/** Read-only check, including a streaming hash when the approved plan has one. No path writes or repairs. */
+export async function fileMatchesExpected(abs: string, expected: ExpectedIdentity): Promise<boolean> {
+  const target = absolute(abs);
+  const matches = (s: BigIntStats | null): boolean => !!s && s.isFile() && !s.isSymbolicLink() &&
+    String(s.dev) === expected.device && String(s.ino) === expected.inode &&
+    (expected.size === undefined || s.size === BigInt(expected.size)) &&
+    (expected.modifiedNs === undefined || String(s.mtimeNs) === expected.modifiedNs);
+  const before = await lstatOrMissing(target);
+  if (!matches(before)) return false;
+  if (!expected.sha256) return true;
+  const handle = await open(target, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  try {
+    if (!matches(await handle.stat({ bigint: true }))) return false;
+    const hash = createHash('sha256'); const buffer = Buffer.alloc(64 * 1024);
+    let total = 0n;
+    while (true) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
+      if (bytesRead === 0) break;
+      total += BigInt(bytesRead);
+      if (total > before!.size) return false;
+      hash.update(buffer.subarray(0, bytesRead));
+    }
+    const after = await handle.stat({ bigint: true });
+    return total === before!.size && matches(after) && after.mtimeNs === before!.mtimeNs &&
+      after.ctimeNs === before!.ctimeNs && matches(await lstatOrMissing(target)) && hash.digest('hex') === expected.sha256;
+  } finally { await handle.close(); }
+}
 export async function classifyMoveState(src: string, dst: string, expected: ExpectedIdentity): Promise<MoveState> {
   const [s, d] = await Promise.all([lstatOrMissing(absolute(src)), lstatOrMissing(absolute(dst))]);
-  const match = (x: BigIntStats | null): boolean => !!x && x.isFile() && !x.isSymbolicLink() &&
-    String(x.dev) === expected.device && String(x.ino) === expected.inode;
+  const [sourceMatches, destinationMatches] = await Promise.all([
+    s ? fileMatchesExpected(src, expected) : false, d ? fileMatchesExpected(dst, expected) : false,
+  ]);
   // Two names really exist only when the inode has 2 links; otherwise src and dst resolve to the same entry
   // (case/Unicode folding or a linked parent) and "linked-both" would invite deleting the only copy.
-  if (match(s) && match(d)) return s!.nlink === 2n && d!.nlink === 2n ? 'linked-both' : 'conflict';
-  if (match(s) && !d) return 'not-started';
-  if (!s && match(d)) return 'moved';
+  if (sourceMatches && destinationMatches) return s!.nlink === 2n && d!.nlink === 2n ? 'linked-both' : 'conflict';
+  if (sourceMatches && !d) return s!.nlink === 1n ? 'not-started' : 'conflict';
+  if (!s && destinationMatches) return d!.nlink === 1n ? 'moved' : 'conflict';
   if (!s && !d) return 'missing';
   return 'conflict';
 }

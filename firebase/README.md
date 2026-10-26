@@ -20,8 +20,8 @@ Firebase는 Authentication, 사용자별 분류 규칙 저장, Hosting을 담당
 
 ```text
 users/{uid}/ruleSets/{setId}
-  formatVersion, name, revision, ruleIds, updatedAt
-users/{uid}/ruleSets/{setId}/rules/{ruleId}
+  formatVersion: 2, name, revision, ruleIds, deleted, updatedAt
+users/{uid}/ruleSets/{setId}/rules/{revision}_{ruleId}
   id, extension, keyword, targetDirectory, enabled, revision, updatedAt
 ```
 
@@ -30,7 +30,11 @@ users/{uid}/ruleSets/{setId}/rules/{ruleId}
 원본 파일 내용·절대 경로·참고 파일명·실행 승인 토큰은 데이터 필드가 아닙니다. 기존 로컬 Profile JSON을 그대로 저장하면 strict 스키마가 거부합니다.
 클라우드 규칙을 로컬에 가져올 때도 로컬 계약으로 다시 검증하고 사용자 확인을 받아야 합니다. 클라우드 데이터·로그인은 로컬 파일 변경 승인이 아닙니다.
 
-소유자가 repository API를 우회해 문서를 따로 삭제하거나 변경하면 불완전한 데이터가 생길 수 있습니다. 읽기에서 누락·revision 불일치를 거부하며 자동 파일 실행으로 이어지지 않습니다. 데이터의 모든 참조 무결성을 Security Rules만으로 보장한다고 주장하지 않습니다.
+각 세대의 규칙 문서는 생성 후 수정할 수 없습니다. 부모를 저장할 때 Security Rules가 참조하는 최대 20개 문서가 모두 있는지 확인하고 현재 세대의 삭제도 막습니다. 부모는 삭제 대신 `deleted: true`, 빈 ruleIds와 고정 이름 `deleted`를 가진 tombstone으로 바뀌어 버전이 계속 증가합니다. 같은 ID로 다시 만들 때도 과거 버전의 저장·삭제 요청은 거부합니다.
+
+공개용 RuleSetDraft/StoredRuleSet 포맷은 v1을 유지하지만 Firestore 저장 포맷은 v2입니다. 기존 v1 저장 문서는 자동 변환하거나 덮어쓰지 않고 오류를 반환합니다. 실제 클라우드 DB는 아직 구성하지 않았으며, 기존 개발 자료가 있다면 내보낸 후 별도로 마이그레이션해야 합니다.
+
+새 세대 공개는 transaction 하나로 처리하고, 이전 세대 삭제는 20개 이하 배치로 뒤이어 수행합니다. 후속 정리만 실패하면 `CleanupPending` 오류의 `committedRevision`에 이미 저장된 버전을 돌려줍니다. 이전 버전으로 save/remove를 재시도하지 말고 다시 조회한 뒤 `repository.cleanup(id)`으로 정리를 재시도합니다. 정리가 끝날 때까지 이전 세대가 남을 수 있으며 tombstone의 버전은 유지됩니다. cleanup은 현재·새 세대 문서를 삭제할 수 없습니다.
 
 ## 로컬 실행
 

@@ -25,52 +25,62 @@ service cloud.firestore {
         && value.revision is int && value.revision > 0 && value.updatedAt == request.time;
     }
     function ids(values) {
-      return values is list && values.size() <= 20 && values.toSet().size() == values.size()
-        && (values.size() <= 0 || (values[0] is string && values[0].matches('^[A-Za-z0-9_-]{1,64}$')))
-        && (values.size() <= 1 || (values[1] is string && values[1].matches('^[A-Za-z0-9_-]{1,64}$')))
-        && (values.size() <= 2 || (values[2] is string && values[2].matches('^[A-Za-z0-9_-]{1,64}$')))
-        && (values.size() <= 3 || (values[3] is string && values[3].matches('^[A-Za-z0-9_-]{1,64}$')))
-        && (values.size() <= 4 || (values[4] is string && values[4].matches('^[A-Za-z0-9_-]{1,64}$')))
-        && (values.size() <= 5 || (values[5] is string && values[5].matches('^[A-Za-z0-9_-]{1,64}$')))
-        && (values.size() <= 6 || (values[6] is string && values[6].matches('^[A-Za-z0-9_-]{1,64}$')))
-        && (values.size() <= 7 || (values[7] is string && values[7].matches('^[A-Za-z0-9_-]{1,64}$')))
-        && (values.size() <= 8 || (values[8] is string && values[8].matches('^[A-Za-z0-9_-]{1,64}$')))
-        && (values.size() <= 9 || (values[9] is string && values[9].matches('^[A-Za-z0-9_-]{1,64}$')))
-        && (values.size() <= 10 || (values[10] is string && values[10].matches('^[A-Za-z0-9_-]{1,64}$')))
-        && (values.size() <= 11 || (values[11] is string && values[11].matches('^[A-Za-z0-9_-]{1,64}$')))
-        && (values.size() <= 12 || (values[12] is string && values[12].matches('^[A-Za-z0-9_-]{1,64}$')))
-        && (values.size() <= 13 || (values[13] is string && values[13].matches('^[A-Za-z0-9_-]{1,64}$')))
-        && (values.size() <= 14 || (values[14] is string && values[14].matches('^[A-Za-z0-9_-]{1,64}$')))
-        && (values.size() <= 15 || (values[15] is string && values[15].matches('^[A-Za-z0-9_-]{1,64}$')))
-        && (values.size() <= 16 || (values[16] is string && values[16].matches('^[A-Za-z0-9_-]{1,64}$')))
-        && (values.size() <= 17 || (values[17] is string && values[17].matches('^[A-Za-z0-9_-]{1,64}$')))
-        && (values.size() <= 18 || (values[18] is string && values[18].matches('^[A-Za-z0-9_-]{1,64}$')))
-        && (values.size() <= 19 || (values[19] is string && values[19].matches('^[A-Za-z0-9_-]{1,64}$')));
+      // IDs are validated by their immutable child documents when the parent is published.
+      return values is list && values.size() <= 20 && values.toSet().size() == values.size();
     }
     function record(value) {
-      return value.keys().hasAll(['formatVersion', 'revision', 'name', 'ruleIds', 'updatedAt'])
-        && value.keys().hasOnly(['formatVersion', 'revision', 'name', 'ruleIds', 'updatedAt'])
-        && value.formatVersion == 1 && value.revision is int && value.revision > 0
-        && label(value.name) && ids(value.ruleIds)
+      return value.keys().hasAll(['formatVersion', 'revision', 'name', 'ruleIds', 'deleted', 'updatedAt'])
+        && value.keys().hasOnly(['formatVersion', 'revision', 'name', 'ruleIds', 'deleted', 'updatedAt'])
+        && value.formatVersion == 2 && value.revision is int && value.revision > 0
+        && label(value.name) && ids(value.ruleIds) && value.deleted is bool
+        && (!value.deleted || value.ruleIds.size() == 0)
         && value.updatedAt is timestamp && value.updatedAt == request.time;
     }
-    function parentStep(uid, ruleSetId, ruleId) {
-      let p = /databases/$(database)/documents/users/$(uid)/ruleSets/$(ruleSetId);
-      let after = getAfter(p).data;
-      return ruleId in after.ruleIds && request.resource.data.revision == after.revision
-        && ((!exists(p) && after.revision == 1) || (exists(p) && after.revision == get(p).data.revision + 1));
+    // Published children are immutable. Only the parent uses getAfter (at most 20 distinct reads).
+    function complete(uid, ruleSetId, value) {
+      let prefix = string(value.revision) + '_';
+      // The child path already binds both revision and ID, enforced on immutable child creation.
+      return
+        (value.ruleIds.size() <= 0 || getAfter(/databases/$(database)/documents/users/$(uid)/ruleSets/$(ruleSetId)/rules/$(prefix + value.ruleIds[0])).data.id == value.ruleIds[0]) &&
+        (value.ruleIds.size() <= 1 || getAfter(/databases/$(database)/documents/users/$(uid)/ruleSets/$(ruleSetId)/rules/$(prefix + value.ruleIds[1])).data.id == value.ruleIds[1]) &&
+        (value.ruleIds.size() <= 2 || getAfter(/databases/$(database)/documents/users/$(uid)/ruleSets/$(ruleSetId)/rules/$(prefix + value.ruleIds[2])).data.id == value.ruleIds[2]) &&
+        (value.ruleIds.size() <= 3 || getAfter(/databases/$(database)/documents/users/$(uid)/ruleSets/$(ruleSetId)/rules/$(prefix + value.ruleIds[3])).data.id == value.ruleIds[3]) &&
+        (value.ruleIds.size() <= 4 || getAfter(/databases/$(database)/documents/users/$(uid)/ruleSets/$(ruleSetId)/rules/$(prefix + value.ruleIds[4])).data.id == value.ruleIds[4]) &&
+        (value.ruleIds.size() <= 5 || getAfter(/databases/$(database)/documents/users/$(uid)/ruleSets/$(ruleSetId)/rules/$(prefix + value.ruleIds[5])).data.id == value.ruleIds[5]) &&
+        (value.ruleIds.size() <= 6 || getAfter(/databases/$(database)/documents/users/$(uid)/ruleSets/$(ruleSetId)/rules/$(prefix + value.ruleIds[6])).data.id == value.ruleIds[6]) &&
+        (value.ruleIds.size() <= 7 || getAfter(/databases/$(database)/documents/users/$(uid)/ruleSets/$(ruleSetId)/rules/$(prefix + value.ruleIds[7])).data.id == value.ruleIds[7]) &&
+        (value.ruleIds.size() <= 8 || getAfter(/databases/$(database)/documents/users/$(uid)/ruleSets/$(ruleSetId)/rules/$(prefix + value.ruleIds[8])).data.id == value.ruleIds[8]) &&
+        (value.ruleIds.size() <= 9 || getAfter(/databases/$(database)/documents/users/$(uid)/ruleSets/$(ruleSetId)/rules/$(prefix + value.ruleIds[9])).data.id == value.ruleIds[9]) &&
+        (value.ruleIds.size() <= 10 || getAfter(/databases/$(database)/documents/users/$(uid)/ruleSets/$(ruleSetId)/rules/$(prefix + value.ruleIds[10])).data.id == value.ruleIds[10]) &&
+        (value.ruleIds.size() <= 11 || getAfter(/databases/$(database)/documents/users/$(uid)/ruleSets/$(ruleSetId)/rules/$(prefix + value.ruleIds[11])).data.id == value.ruleIds[11]) &&
+        (value.ruleIds.size() <= 12 || getAfter(/databases/$(database)/documents/users/$(uid)/ruleSets/$(ruleSetId)/rules/$(prefix + value.ruleIds[12])).data.id == value.ruleIds[12]) &&
+        (value.ruleIds.size() <= 13 || getAfter(/databases/$(database)/documents/users/$(uid)/ruleSets/$(ruleSetId)/rules/$(prefix + value.ruleIds[13])).data.id == value.ruleIds[13]) &&
+        (value.ruleIds.size() <= 14 || getAfter(/databases/$(database)/documents/users/$(uid)/ruleSets/$(ruleSetId)/rules/$(prefix + value.ruleIds[14])).data.id == value.ruleIds[14]) &&
+        (value.ruleIds.size() <= 15 || getAfter(/databases/$(database)/documents/users/$(uid)/ruleSets/$(ruleSetId)/rules/$(prefix + value.ruleIds[15])).data.id == value.ruleIds[15]) &&
+        (value.ruleIds.size() <= 16 || getAfter(/databases/$(database)/documents/users/$(uid)/ruleSets/$(ruleSetId)/rules/$(prefix + value.ruleIds[16])).data.id == value.ruleIds[16]) &&
+        (value.ruleIds.size() <= 17 || getAfter(/databases/$(database)/documents/users/$(uid)/ruleSets/$(ruleSetId)/rules/$(prefix + value.ruleIds[17])).data.id == value.ruleIds[17]) &&
+        (value.ruleIds.size() <= 18 || getAfter(/databases/$(database)/documents/users/$(uid)/ruleSets/$(ruleSetId)/rules/$(prefix + value.ruleIds[18])).data.id == value.ruleIds[18]) &&
+        (value.ruleIds.size() <= 19 || getAfter(/databases/$(database)/documents/users/$(uid)/ruleSets/$(ruleSetId)/rules/$(prefix + value.ruleIds[19])).data.id == value.ruleIds[19]);
+    }
+    function obsolete(uid, ruleSetId) {
+      let parent = getAfter(/databases/$(database)/documents/users/$(uid)/ruleSets/$(ruleSetId)).data;
+      return parent.formatVersion == 2 && resource.data.revision < parent.revision;
     }
     match /users/{uid}/ruleSets/{ruleSetId} {
       allow read: if owner(uid);
       allow create: if owner(uid) && ruleSetId.matches('^[A-Za-z0-9_-]{1,64}$')
-        && record(request.resource.data) && request.resource.data.revision == 1;
+        && record(request.resource.data) && request.resource.data.revision == 1
+        && complete(uid, ruleSetId, request.resource.data);
       allow update: if owner(uid) && record(request.resource.data)
-        && request.resource.data.revision == resource.data.revision + 1;
-      allow delete: if owner(uid);
+        && request.resource.data.revision == resource.data.revision + 1
+        && complete(uid, ruleSetId, request.resource.data);
+      allow delete: if false; // Keep the monotonic revision tombstone; never reset an ID to revision 1.
       match /rules/{ruleId} {
-        allow read, delete: if owner(uid);
-        allow create, update: if owner(uid) && request.resource.data.id == ruleId
-          && rule(request.resource.data) && parentStep(uid, ruleSetId, ruleId);
+        allow read: if owner(uid);
+        allow create: if owner(uid) && rule(request.resource.data)
+          && ruleId == string(request.resource.data.revision) + '_' + request.resource.data.id;
+        allow update: if false;
+        allow delete: if owner(uid) && obsolete(uid, ruleSetId);
       }
     }
     match /{document=**} { allow read, write: if false; }

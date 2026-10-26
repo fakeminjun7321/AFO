@@ -1,5 +1,7 @@
 # #13 중단 복구·동시 실행 검증 기록
 
+2026-10-26 PR 검토 후 변경: 잠금 키는 선택마다 바뀌는 `RootGrant.id` 대신 실제 폴더의 `device`·`inode`로 계산합니다. 아래 기존 검증 수치는 변경 전 기록입니다. 최신 수정·검증은 [PR 검토 결함 수정](PR_REVIEW_FIXES.md)을 참고합니다.
+
 #13은 세 부분(루트 잠금 → 중단 복구 `inspectRuns` → 결함 주입 검증)으로 나눠 진행합니다. 이 문서는 현재 **1부: 루트 잠금**만 다룹니다.
 실제 이동·휴지통·삭제 실행(`executeBatch`, #10–#12)과 복구 보고는 아직 이 잠금과 연결되지 않았고, 여기서 검증하지 않았습니다.
 
@@ -8,13 +10,13 @@
 구현: `packages/filesystem/src/lock.ts`. 테스트: `tests/lock.test.ts`. `packages/filesystem/src/index.ts`에서는 내보내지 않습니다.
 
 ```ts
-withRootLock<T>(stateDir: string, rootGrantId: string, fn: () => Promise<T>): Promise<T>
+withRootLock<T>(stateDir: string, identity: { device: string; inode: string }, fn: () => Promise<T>): Promise<T>
 readRootLock(stateDir, rootGrantId): Promise<{ state: 'free'|'held'|'stale'|'foreign-host'|'corrupt'; holder: RootLockHolder | null }>
 ```
 
 ### 파일 형식
 
-- 경로: `<상태 폴더>/locks/<rootGrantId>.lock`. `rootGrantId`는 `RootGrant.id`(64자리 소문자 16진수)여야 하며, 아니면 디스크에 접근하기 전에 `ROOT_FORBIDDEN`으로 거부합니다(`../x`, 대문자, 길이 오류, `/` 포함 등).
+- 경로: `<상태 폴더>/locks/<SHA-256([device,inode])>.lock`. RootGrant 자체 또는 그 폴더 식별을 전달합니다. `RootGrant.id` 문자열은 거부합니다. grant의 발급·승인·재검증은 실행 서비스 책임이며 잠금 자체가 파일 권한을 부여하지 않습니다.
 - `locks/` 폴더는 `mkdir(recursive, 0o700)`로 만들고, 링크·일반 파일이면 `STATE_CORRUPT`로 거부합니다.
 - 생성: `open(O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW, 0o600)`(= `wx`, Windows에는 `O_NOFOLLOW`가 없어 생략) → 한 줄 JSON 기록 → fsync → close.
 - 내용(`RootLockSchema`, lock.ts 안의 `z.strictObject`): `{"formatVersion":1,"pid":<양의 정수>,"hostname":"<os.hostname()>","startedAt":"<ISO>","token":"<32자리 16진수>"}`. 읽기 한도 4096바이트, UTF-8 엄격 해석.
@@ -47,7 +49,7 @@ stale 해제 절차: 기존 파일을 고유한 이웃 이름 `<lock>.stale-<16�
 ### 자동으로 풀지 않는 잠금과 직접 해제 방법
 
 corrupt·foreign-host 잠금, 그리고 pid가 살아 있는 held 잠금은 자동 해제하지 않습니다. 사용자는 해당 작업 폴더를 쓰는 AFO 실행이
-(그 컴퓨터를 포함해) 하나도 없음을 확인한 뒤 오류 메시지에 적힌 `locks/<rootGrantId>.lock` 파일을 직접 지웁니다. `readRootLock`은 상태만 보고하며 아무것도 지우지 않습니다.
+(그 컴퓨터를 포함해) 하나도 없음을 확인한 뒤 오류 메시지에 적힌 `locks/<폴더 식별 해시>.lock` 파일을 직접 지웁니다. `readRootLock`은 상태만 보고하며 아무것도 지우지 않습니다.
 
 ### 알려진 한계(수정하지 않음)
 

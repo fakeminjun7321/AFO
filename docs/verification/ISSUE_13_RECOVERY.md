@@ -1,3 +1,5 @@
+2026-10-26 검토 후 수정 사항은 [PR 검토 결함 수정](PR_REVIEW_FIXES.md)에 기록했습니다. 아래 기존 검증 수치는 변경 전 기록입니다.
+
 # #13 중단된 실행 보고(`inspectRuns`) 구현 기록
 
 역할: core-builder. 날짜: 2026-10-26. 브랜치 `feat/13-recovery`: 처음 `6231c6a`(origin/main) 기준, 이후 잠금 브랜치 `origin/feat/13-root-lock`(`2229898`, PR #30) 위로 rebase.
@@ -36,11 +38,11 @@
 
 ### 루트 잠금 (읽기만)
 
-`rootGrantId`를 아는 실행마다 `readRootLock(stateDir, rootGrantId)`로 `locks/<rootGrantId>.lock`을 읽어 `lock: { state, pid, startedAt }`에 남깁니다. 잠금을 얻거나 지우거나 고치지 않습니다.
+검증한 계획의 실제 루트 식별로 `readRootLock(stateDir, { device, inode })`를 호출해 `locks/<폴더 식별 해시>.lock`을 읽어 `lock: { state, pid, startedAt }`에 남깁니다. 잠금을 얻거나 지우거나 고치지 않습니다.
 - `held`(이 컴퓨터의 살아 있는 pid) 또는 `foreign-host`(다른 컴퓨터): 실행이 아직 진행 중일 수 있으므로 실행 상태 `active`, 열린 작업은 모두 `unknown`(`LOCKED_BY_OTHER`)입니다. `observed`는 계산할 수 있으면 채웁니다. 안내: 진행 중일 수 있으니 끝난 뒤 다시 확인, 이 점검은 아무것도 바꾸지 않음. 진행 중인 실행이 마지막 줄을 쓰는 중일 수 있으므로 `active`가 `corrupt`보다 우선합니다.
 - `stale`(pid 없음): 저널대로 판정하고 `problem`에 "이전 실행이 비정상 종료돼 잠금 파일이 남아 있음, 지우지 않았음"을 덧붙입니다. 해제는 다음 `withRootLock` 획득 때 lock.ts 규칙으로만 일어납니다.
 - `corrupt`: 저널대로 판정, `problem`에 해석 불가 안내. `free`: 저널대로 판정.
-- `readRootLock` 오류(예: `locks`가 파일): `lock: null`, `problem`에 "잠금 상태를 읽지 못했습니다(코드)". 예외를 던지지 않습니다. `rootGrantId`를 모르는 실행(빈 저널, unreadable)도 `lock: null`입니다.
+- `readRootLock` 오류(예: `locks`가 파일): `lock: null`, `problem`에 "잠금 상태를 읽지 못했습니다(코드)". 예외를 던지지 않습니다. 계획·실제 루트 식별을 확인할 수 없는 실행도 `lock: null`입니다.
 - 한계: 잠금은 루트 단위입니다. 같은 루트의 다른 실행이 진행 중이면 그 루트의 오래된 실행도 모두 `active`로 보입니다(보수적). pid 재사용 시 끝난 실행이 `held`로 보일 수 있습니다(lock.ts와 같은 한계).
 
 ### 상태와 안내(action)

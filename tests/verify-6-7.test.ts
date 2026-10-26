@@ -96,9 +96,11 @@ function assertKeeper(preview: Preview, protectedPaths: string[] = []): void {
 }
 
 async function withHome<T>(home: string, body: () => Promise<T>): Promise<T> {
-  const saved = process.env['HOME'];
-  process.env['HOME'] = home;
-  try { return await body(); } finally { if (saved === undefined) delete process.env['HOME']; else process.env['HOME'] = saved; }
+  // os.homedir() reads USERPROFILE on Windows and HOME elsewhere.
+  const key = process.platform === 'win32' ? 'USERPROFILE' : 'HOME';
+  const saved = process.env[key];
+  process.env[key] = home;
+  try { return await body(); } finally { if (saved === undefined) delete process.env[key]; else process.env[key] = saved; }
 }
 
 /* ======================================================================= #6 roots and grants */

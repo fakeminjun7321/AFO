@@ -72,3 +72,15 @@ test('help needs no implicit filesystem target', async () => {
   assert.match(await run([]), /읽기 전용/u);
   assert.match(await run(['--help']), /이동·삭제·자동 저장은 수행하지 않습니다/u);
 });
+test('documented exit codes: 0 for help and success, 1 for any refused input (docs/CLI.md)', async (t) => {
+  const root = await fixture(t, { 'a.pdf': 'x' }); const before = await manifest(root);
+  assert.equal(invoke('--help').status, 0);
+  assert.equal(invoke().status, 0);
+  assert.equal(invoke('preview', root).status, 0);
+  const refused = invoke('delete', root);
+  assert.equal(refused.status, 1);
+  assert.match(String(refused.stderr), /^AFO 오류: /u);
+  assert.equal(invoke('preview', root, '--execute').status, 1);
+  assert.equal(invoke('preview', path.join(root, 'missing')).status, 1);
+  assert.deepEqual(await manifest(root), before);
+});

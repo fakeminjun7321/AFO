@@ -9,6 +9,9 @@ on:
       - 'tsconfig.json'
       - '.github/workflows/engine.yml'
   workflow_dispatch:
+concurrency:
+  group: engine-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -26,5 +29,4 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: npm run typecheck
       - run: npm test

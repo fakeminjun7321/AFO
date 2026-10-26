@@ -160,7 +160,7 @@ async function preview(target: string, values: PreviewValues, ctx: { json: boole
     }
   }
 
-  const analysis = await analyzeRoot(grant, { ...ctx.options, ...(profile ? { profile } : {}),
+  const analysis = await analyzeRoot(grant, { ...ctx.options, stateDir: ctx.stateDir(), ...(profile ? { profile } : {}),
     ...(referenceGrant ? { reference: referenceGrant } : {}), ...(picked.length ? { overrides } : {}) });
   for (const p of picked) {
     const item = analysis.preview.items.find((i) => i.fileId === p.fileId);
@@ -199,6 +199,7 @@ async function preview(target: string, values: PreviewValues, ctx: { json: boole
   return ['AFO 정리 미리보기 — 실제 파일은 변경하지 않았습니다.',
     `분석: ${result.items.length}개 / 스캔 ${result.scanComplete ? '완료' : '일부 미완료'} / 제외·오류 ${result.skipped.length}개`,
     profileLine,
+    ...(result.profileNotice ? [`경고: ${result.profileNotice.reason} 'rules list'로 확인한 뒤 suggest-rules → rules save로 다시 저장하세요.`] : []),
     ...result.items.map((item) => `[${labels[item.action]}] ${item.source}${item.destination ? ` → ${item.destination}` : ''}` +
       `${once.has(item.fileId) ? values.remember ? ' (사용자 수정, 이후에도 적용 저장)' : ' (이번만 적용)' : ''}\n  ${item.reason}`),
     ...result.duplicates.map((group) => `[중복 후보] 남길 파일 제안: ${group.suggestedKeep}\n  확인할 파일: ${group.candidates.join(', ')} / 논리 크기 ${group.logicalCandidateBytes} B (확보량 아님)`),

@@ -1,8 +1,8 @@
 import path from 'node:path';
 import { AfoError, PROFILE_EVIDENCE_LIMIT } from '../../../packages/contracts/src/index.js';
 import type { Correction, RuleProfile, RuleProfileV2 } from '../../../packages/contracts/src/index.js';
-import { confirmProfile, profileFromV1, withCorrection } from '../../../packages/engine/src/index.js';
-import { disableProfile, enableProfile, loadProfile, removeCorrection, resetProfile, saveConfirmedProfile, setRuleEnabled }
+import { confirmProfile, withCorrection } from '../../../packages/engine/src/index.js';
+import { disableProfile, enableProfile, loadProfile, profileFromConfirmed, removeCorrection, resetProfile, saveConfirmedProfile, setRuleEnabled }
   from '../../../packages/filesystem/src/profiles.js';
 import type { CorruptProfile } from '../../../packages/filesystem/src/profiles.js';
 
@@ -14,9 +14,9 @@ export const usage = (message: string): CliError => new CliError(message, 2);
 
 export type Stored = RuleProfileV2 | CorruptProfile | null;
 export const isCorrupt = (p: Stored): p is CorruptProfile => p !== null && p.status === 'corrupt';
-/** Revision guard for the store: only an active profile has one. Empty or damaged state cannot be pinned by the current API. */
-export const expected = (p: Stored): { expectedRevision?: number } =>
-  p !== null && !isCorrupt(p) ? { expectedRevision: p.revision } : {};
+/** Pins the store state this command saw: a revision, null for "nothing saved", or the damaged file's fingerprint. */
+export const expected = (p: Stored): { expectedRevision: number | null } | { expectedCorrupt: string } =>
+  p === null ? { expectedRevision: null } : isCorrupt(p) ? { expectedCorrupt: p.fingerprint } : { expectedRevision: p.revision };
 export const corruptHint = '`rules reset`으로 비우거나 `rules save`로 다시 저장하세요(손상 파일은 지우지 않고 따로 보관합니다).';
 
 const ruleText = (r: { id: string; extension: string; keyword: string | null; targetDirectory: string }): string =>
@@ -85,7 +85,7 @@ export async function rulesCommand(sub: string | undefined, arg: string | undefi
       if (isCorrupt(before)) io.warn(`경고: 손상된 기존 프로필(${before.reason})은 따로 보관하고 새로 저장합니다.`);
       // Saved corrections are explicit user choices; replacing the reference rules does not silently drop them.
       const kept = before !== null && !isCorrupt(before) ? before.corrections : [];
-      let next = profileFromV1(confirmed);
+      let next = await profileFromConfirmed(confirmed);
       for (const c of kept) next = withCorrection(next, c);
       const saved = await saveConfirmedProfile(next, { stateDir, ...expected(before) });
       const replaced = before !== null && !isCorrupt(before)

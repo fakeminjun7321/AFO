@@ -511,12 +511,15 @@ test('V18-12a a separate reference folder renamed after saving: rules still appl
   const saved = await saveConfirmedProfile(await confirmedFrom(e.dir('ref')), e.o);
   await rename(e.dir('ref'), e.dir('ref-renamed'));
   assert.deepEqual(table((await analyze(e.dir('work2'), { profile: saved })).preview.items)['국어_c.pdf'], ['move', '국어/국어_c.pdf', 'PERSONAL_RULE']);
-  assert.deepEqual(table((await analyze(e.dir('ref-renamed'), { profile: saved })).preview.items)['수학/수학_과제1.pdf'],
-    ['keep', '수학/수학_과제1.pdf', 'ALREADY_PLACED'], 'files already in their rule folder stay put');
+  // After the F-1 fix the renamed folder is recognised by dev/inode: every file is a protected reference original and the
+  // profile is reported stale (not applied) for this analysis. Previously this passed only via ALREADY_PLACED.
+  const renamed = (await analyze(e.dir('ref-renamed'), { profile: saved })).preview;
+  assert.deepEqual(table(renamed.items)['수학/수학_과제1.pdf'], ['keep', null, 'PROTECTED_REFERENCE'], 'files of the renamed reference stay put');
+  assert.equal(renamed.profileNotice?.code, 'PROFILE_STALE');
 });
 
 /** Finding F-1 (docs/verification/ISSUE_18.md): expected behaviour, recorded as todo so the suite reports it without failing. */
-test('V18-12b reference folder inside the work root renamed after saving: its originals must not become move proposals', { todo: 'F-1' }, async (t) => {
+test('V18-12b reference folder inside the work root renamed after saving: its originals must not become move proposals', async (t) => {
   const e = await env(t, { ...prefixed('work/정리', REF_IN), 'work/수학_과제5.pdf': 'n' });
   const saved = await saveConfirmedProfile(await confirmedFrom(e.dir('work/정리')), e.o);
   await rename(e.dir('work/정리'), e.dir('work/정리2'));

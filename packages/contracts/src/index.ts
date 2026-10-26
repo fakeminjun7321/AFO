@@ -137,6 +137,8 @@ export const PreviewSchema = z.strictObject({
   scanComplete: z.boolean(), executionAvailable: z.literal(false),
   classificationVersion: z.string().min(1).optional(), duplicateNotes: z.array(DuplicateNoteSchema).optional(),
   space: SpaceEstimateSchema.optional(), cancelled: z.boolean().optional(),
+  /** Saved profile not applied because its reference folder looks moved/renamed (#18). Reference files stay protected. */
+  profileNotice: z.strictObject({ code: z.literal('PROFILE_STALE'), reason: z.string().min(1) }).optional(),
 });
 export type FileSnapshot = z.infer<typeof FileSchema>;
 export type ScanResult = z.infer<typeof ScanSchema>;
@@ -355,6 +357,8 @@ export const RuleProfileV2Schema = z.strictObject({
    * The ID lets a later analysis recognise that folder inside or around a work root and keep its files untouched.
    */
   referenceRootId: Sha256Schema.nullable(),
+  /** dev/inode of the reference folder when saved: recognises it after a same-volume rename or move. Absent in early v2 files. */
+  referenceRootIdentity: z.strictObject({ device: DigitsSchema, inode: DigitsSchema }).nullable().optional(),
   referenceRootLabel: z.string().min(1).max(255).refine((v) => !/[\\/\u0000]/u.test(v), '폴더 이름만 저장합니다.').nullable(),
   rules: z.array(SavedRuleSchema).max(1000), corrections: z.array(CorrectionSchema).max(1000), updatedAt: InstantSchema,
 }).superRefine((p, ctx) => {

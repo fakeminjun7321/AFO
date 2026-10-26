@@ -3,12 +3,13 @@ import { lstat, open, readdir, realpath } from 'node:fs/promises';
 import type { BigIntStats } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { AfoError, FileSchema, ReferenceScanSchema, RelativePathSchema, ScanSchema, incompleteSkipCodes }
+import { AfoError, FileSchema, PreviewSchema, ReferenceScanSchema, RelativePathSchema, ScanSchema, incompleteSkipCodes }
   from '../../contracts/src/index.js';
 import type { FileSnapshot, Preview, ProtectedEntry, ReferenceGrant, ReferenceScan, RootGrant, ScanProgress, ScanResult,
   SkipCode, SkippedEntry } from '../../contracts/src/index.js';
 import { buildPreview, digest, extensionOf, parseProfile, pathKey, suggestProfile } from '../../engine/src/index.js';
-import { storedReferenceEntries } from './profiles.js';
+import { storedReferenceCheck } from './profiles.js';
+import { assertStateDirOutside, resolveStateDir } from './state.js';
 import { bundlePattern, issueReferenceGrant, issueRootGrant, projectMarkers, verifyGrant, within } from './grants.js';
 
 export { currentSessionId, issueReferenceGrant, issueRootGrant, revokeGrant, verifyGrant } from './grants.js';
@@ -270,26 +271,37 @@ export function protectedReferencePaths(workRoot: string, sources: { root: strin
 }
 
 /** profile: v1 JSON or a saved v2 profile (#18). overrides: one-off corrections by file ID, never stored. */
-export interface AnalyzeOptions extends ScanOptions { profile?: unknown; reference?: ReferenceGrant; overrides?: Record<string, string> }
+/** stateDir: the app state folder in use (default resolveStateDir()); a work or reference root overlapping it is refused. */
+export interface AnalyzeOptions extends ScanOptions { profile?: unknown; reference?: ReferenceGrant; overrides?: Record<string, string>;
+  stateDir?: string }
 export interface Analysis { preview: Preview; suggestedProfile: ReturnType<typeof suggestProfile> | null;
   reference: ReferenceScan | null; protected: ProtectedEntry[] }
 
 /** scan → reference metadata → hash size candidates (protected excluded) → preview. No filesystem writes. */
 export async function analyzeRoot(grant: RootGrant, options: AnalyzeOptions = {}): Promise<Analysis> {
+  // The app's own state (profiles, plans, journal) must never become a work or reference file (STATE_DIR_CONFLICT).
+  const stateDir = options.stateDir ?? resolveStateDir();
+  await assertStateDirOutside(stateDir, grant.canonicalPath);
+  if (options.reference) await assertStateDirOutside(stateDir, options.reference.canonicalPath);
   const scan = await scanRoot(grant, options);
   const profile = options.profile === undefined ? undefined : parseProfile(options.profile);
   const reference = options.reference ? await readReference(options.reference, options) : null;
   if (reference?.cancelled) throw aborted();
   if (reference && !reference.complete) throw new Error('참고 폴더 스캔이 완료되지 않았습니다.');
   const sources = [...(reference ? [{ root: reference.root.canonicalPath, files: reference.files.map((f) => f.relativePath) }] : []),
-    // A saved v2 profile keeps no reference path or file list; storedReferenceEntries finds its folder by root ID.
+    // A saved v2 profile keeps no reference path or file list; storedReferenceCheck finds its folder by ID or dev/inode.
     ...(profile?.formatVersion === 1 ? [{ root: profile.referenceRoot.canonicalPath, files: profile.referenceFiles }] : [])];
-  const merged = new Map([...protectedReferencePaths(scan.root.canonicalPath, sources), ...(profile ? storedReferenceEntries(scan, profile) : [])]
+  const stored = profile ? await storedReferenceCheck(scan, profile) : { entries: [], stale: null };
+  const merged = new Map([...protectedReferencePaths(scan.root.canonicalPath, sources), ...stored.entries]
     .map((entry) => [pathKey(entry.relativePath), entry] as const));
   const protectedEntries = [...merged.values()].sort((a, b) => a.relativePath < b.relativePath ? -1 : a.relativePath > b.relativePath ? 1 : 0);
   const protectedPaths = protectedEntries.map((p) => p.relativePath);
   const hashed = scan.cancelled ? scan : await hashCandidates(grant, scan, { ...options, exclude: protectedPaths });
-  return { preview: buildPreview(hashed, { protectedPaths, ...(profile ? { profile } : {}), ...(options.overrides ? { overrides: options.overrides } : {}) }),
+  // A stale profile (reference folder moved/renamed/copied) is not applied until re-confirmed; protection above still holds.
+  const applied = stored.stale === null ? profile : undefined;
+  const built = buildPreview(hashed, { protectedPaths, ...(applied ? { profile: applied } : {}), ...(options.overrides ? { overrides: options.overrides } : {}) });
+  const preview = stored.stale === null ? built : PreviewSchema.parse({ ...built, profileNotice: { code: 'PROFILE_STALE', reason: stored.stale } });
+  return { preview,
     suggestedProfile: reference ? suggestProfile(reference) : null, reference, protected: protectedEntries };
 }
 

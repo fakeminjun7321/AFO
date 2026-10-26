@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { CLASSIFICATION_VERSION, RelativePathSchema } from '../../contracts/src/index.js';
+import { CLASSIFICATION_VERSION, RelativePathSchema, TargetDirectorySchema } from '../../contracts/src/index.js';
 import type { ClassificationReason } from '../../contracts/src/index.js';
 import { classifyPersonal, parseProfile } from './rules.js';
 import type { AnyProfile } from './rules.js';
@@ -32,7 +32,7 @@ export function classifyFile(relativePath: string, options: { profile?: AnyProfi
   const name = path.posix.basename(RelativePathSchema.parse(relativePath));
   const ext = extensionOf(name);
   if (options.override !== undefined)
-    return { targetDirectory: RelativePathSchema.parse(options.override), category: null, ruleId: null, source: 'override',
+    return { targetDirectory: TargetDirectorySchema.parse(options.override), category: null, ruleId: null, source: 'override',
       reasonCode: 'USER_OVERRIDE', reason: '사용자가 명시적으로 지정한 이번 분류입니다.' };
   const inner = ext === '' ? '' : extensionOf(name.slice(0, -ext.length)).slice(1);
   // "report.pdf.exe": two known type extensions make the real type ambiguous. ".tar.gz" is one archive format.

@@ -25,11 +25,12 @@ const labelOf = (canonicalPath: string): string | null =>
  * Confirmed v1 → v2. Drafts and disabled v1 profiles are refused: only rules the user confirmed become saved rules.
  * The absolute reference path and the full reference file list are dropped; at most PROFILE_EVIDENCE_LIMIT examples stay.
  */
-export function profileFromV1(input: unknown, now: Date = new Date()): RuleProfileV2 {
+export function profileFromV1(input: unknown, now: Date = new Date(),
+  identity: { device: string; inode: string } | null = null): RuleProfileV2 {
   const v1 = ProfileSchema.parse(input);
   if (v1.status !== 'confirmed') throw new Error('확인한 규칙 프로필만 저장할 수 있습니다(초안·비활성 v1 거부).');
   return RuleProfileV2Schema.parse({ formatVersion: 2, id: v1.id, revision: v1.revision, status: 'confirmed',
-    referenceRootId: v1.referenceRoot.id, referenceRootLabel: labelOf(v1.referenceRoot.canonicalPath),
+    referenceRootId: v1.referenceRoot.id, referenceRootIdentity: identity, referenceRootLabel: labelOf(v1.referenceRoot.canonicalPath),
     rules: v1.rules.map((r) => ({ id: r.id, extension: r.extension, keyword: r.keyword, targetDirectory: r.targetDirectory,
       evidence: [...r.evidence].sort(compare).slice(0, PROFILE_EVIDENCE_LIMIT), evidenceCount: r.evidence.length, enabled: true })),
     corrections: [], updatedAt: now.toISOString() });

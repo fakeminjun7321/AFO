@@ -1,11 +1,12 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { rename } from 'node:fs/promises';
+import { lstat, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import { AfoError, ProfileSchema, ProfileStoreSchema, RuleProfileV2Schema, isAfoError } from '../../contracts/src/index.js';
-import type { CorrectionMatch, ProfileStore, ProtectedEntry, RuleProfileV2, ScanResult } from '../../contracts/src/index.js';
-import { digest, emptyProfile, makeCorrection, profileFromV1, withCorrection, withRuleEnabled, withStatus, withoutCorrection }
+import type { CorrectionMatch, ProfileStore, ProtectedEntry, RuleProfile, RuleProfileV2, ScanResult } from '../../contracts/src/index.js';
+import { digest, emptyProfile, makeCorrection, pathKey, profileFromV1, withCorrection, withRuleEnabled, withStatus, withoutCorrection }
   from '../../engine/src/index.js';
+import type { AnyProfile } from '../../engine/src/index.js';
 import { readJson, resolveStateDir, statePaths, writeJsonAtomic } from './state.js';
 
 /**
@@ -13,48 +14,116 @@ import { readJson, resolveStateDir, statePaths, writeJsonAtomic } from './state.
  * Only app-local state is written. Reference folders and work roots are never read or touched here.
  * No cross-process lock yet (#13): `expectedRevision` lets a caller refuse a profile another process changed meanwhile.
  */
-export interface ProfileStoreOptions { stateDir?: string; now?: () => Date; expectedRevision?: number }
-export interface CorruptProfile { status: 'corrupt'; reason: string }
-
 /**
- * Work-root files that belong to a saved profile's reference folder, found by its root ID (no path is stored).
- * Reference folder inside the work root: files under it. Work root equal to or inside the reference folder: every file.
- * Applies whatever the profile status is. A renamed or moved reference folder is no longer recognised.
+ * expectedRevision: the revision the caller saw, or null for "no saved profile (empty store)".
+ * expectedCorrupt: the fingerprint of the damaged file the caller saw (CorruptProfile.fingerprint), for save/reset over it.
+ * Either one, when given, makes the call fail with PROFILE_CHANGED if the store is no longer in that state.
  */
-export function storedReferenceEntries(scan: ScanResult, profile: { formatVersion: number; referenceRootId?: string | null }): ProtectedEntry[] {
-  const id = profile.formatVersion === 2 ? profile.referenceRootId ?? null : null;
-  if (id === null) return [];
+export interface ProfileStoreOptions { stateDir?: string; now?: () => Date; expectedRevision?: number | null; expectedCorrupt?: string }
+export interface CorruptProfile { status: 'corrupt'; reason: string; fingerprint: string }
+
+const REFERENCE_REASON = '참고한 기존 파일이라 이동·삭제하지 않습니다.';
+const MOVED = '저장한 참고 폴더의 이름이나 위치가 바뀌었습니다. 규칙을 다시 확인할 때까지 개인 규칙을 적용하지 않습니다(참고 파일 보호는 유지).';
+const found = (where: string): string =>
+  `저장한 규칙의 근거 파일이 다른 위치(${where})에서 발견됐습니다. 규칙을 다시 확인할 때까지 개인 규칙을 적용하지 않습니다(그 폴더는 보호).`;
+type Identity = { device: string; inode: string };
+async function identityOf(absolute: string): Promise<Identity | null> {
+  try {
+    const s = await lstat(absolute, { bigint: true });
+    return s.isDirectory() && !s.isSymbolicLink() ? { device: String(s.dev), inode: String(s.ino) } : null;
+  } catch { return null; }
+}
+
+/** dev/inode of a v1 profile's reference folder, only if that folder is still the one the profile was read from (same real-path ID). */
+export async function referenceIdentity(input: RuleProfile): Promise<Identity | null> {
+  const v1 = ProfileSchema.parse(input);
+  const where = v1.referenceRoot.canonicalPath;
+  if (!path.isAbsolute(where) || digest(where) !== v1.referenceRoot.id) return null;
+  return identityOf(where);
+}
+/** Confirmed v1 → v2 with the reference folder's dev/inode recorded (metadata only; nothing is opened or written). */
+export async function profileFromConfirmed(input: unknown, now: Date = new Date()): Promise<RuleProfileV2> {
+  const v1 = ProfileSchema.parse(input);
+  return profileFromV1(v1, now, await referenceIdentity(v1));
+}
+
+export interface ReferenceCheck { entries: ProtectedEntry[]; stale: string | null }
+/**
+ * Work-root files that belong to a saved v2 profile's reference folder, plus whether that folder looks changed (stale).
+ * Recognised by real-path ID or by dev/inode (survives a same-volume rename/move); either match protects the folder.
+ * A match by only one of the two, or two or more saved evidence examples found under another folder of the work root
+ * (e.g. a copy or cross-volume move), marks the profile stale and protects that folder too. Reference folder inside the
+ * work root: files under it; work root equal to or inside it: every file. Applies whatever the profile status is.
+ */
+export async function storedReferenceCheck(scan: ScanResult, input: AnyProfile): Promise<ReferenceCheck> {
+  if (input.formatVersion !== 2) return { entries: [], stale: null };
+  const id = input.referenceRootId; const identity = input.referenceRootIdentity ?? null;
   const root = scan.root.canonicalPath;
-  let all = false;
+  const prefixes = new Set<string>(); // '' = the whole work root
+  let stale: string | null = null;
+  const match = async (absolute: string): Promise<boolean> => {
+    const byId = id !== null && digest(absolute) === id;
+    const real = identity === null ? null : await identityOf(absolute);
+    const byIdentity = real !== null && identity !== null && real.device === identity.device && real.inode === identity.inode;
+    if (identity !== null && byId !== byIdentity) stale ??= MOVED;
+    return byId || byIdentity;
+  };
   for (let dir = root; ; dir = path.dirname(dir)) {
-    if (digest(dir) === id) { all = true; break; }
+    if (await match(dir)) { prefixes.add(''); break; }
     if (path.dirname(dir) === dir) break;
   }
-  const folders = all ? [] : scan.directories.filter((d) => digest(path.join(root, ...d.split('/'))) === id);
-  return scan.files.filter((f) => all || folders.some((d) => f.relativePath.startsWith(`${d}/`)))
-    .map((f) => ({ relativePath: f.relativePath, code: 'REFERENCE_FILE' as const, reason: '참고한 기존 파일이라 이동·삭제하지 않습니다.' }));
+  if (!prefixes.has('')) for (const d of scan.directories) if (await match(path.join(root, ...d.split('/')))) prefixes.add(d);
+  const covered = (rel: string): boolean => [...prefixes].some((p) => p === '' || rel === p || rel.startsWith(`${p}/`));
+  if (!prefixes.has('')) {
+    const examples = [...new Set(input.rules.flatMap((r) => r.evidence))].map((e) => e.split('/').map(pathKey));
+    const hits = new Map<string, Set<number>>();
+    for (const f of scan.files) {
+      const parts = f.relativePath.split('/');
+      examples.forEach((e, i) => {
+        if (e.length > parts.length || !e.every((seg, j) => seg === pathKey(parts[parts.length - e.length + j]!))) return;
+        const prefix = parts.slice(0, parts.length - e.length).join('/');
+        hits.set(prefix, (hits.get(prefix) ?? new Set<number>()).add(i));
+      });
+    }
+    for (const [prefix, seen] of [...hits].sort(([a], [b]) => a.length - b.length)) {
+      if (seen.size < 2 || prefixes.has('') || (prefix !== '' && covered(prefix))) continue;
+      prefixes.add(prefix); stale ??= found(prefix === '' ? '작업 폴더 자체' : prefix);
+    }
+  }
+  const entries = scan.files.filter((f) => covered(f.relativePath))
+    .map((f) => ({ relativePath: f.relativePath, code: 'REFERENCE_FILE' as const, reason: REFERENCE_REASON }));
+  return { entries, stale };
 }
 
 export const profileFile = (stateDir: string = resolveStateDir()): string => path.join(statePaths(stateDir).profiles, 'active.json');
 const fileOf = (o: ProfileStoreOptions): string => profileFile(o.stateDir ?? resolveStateDir());
 const clock = (o: ProfileStoreOptions): Date => o.now?.() ?? new Date();
 
-type Current = { kind: 'active'; profile: RuleProfileV2 } | { kind: 'empty'; lastRevision: number } | { kind: 'corrupt'; reason: string };
+type Current = { kind: 'active'; profile: RuleProfileV2 } | { kind: 'empty'; lastRevision: number } |
+  { kind: 'corrupt'; reason: string; fingerprint: string };
+/** Changes whenever the damaged entry is rewritten, replaced or set aside (identity, size and times). */
+async function fingerprint(file: string): Promise<string> {
+  try {
+    const s = await lstat(file, { bigint: true });
+    return digest([s.dev, s.ino, s.size, s.mtimeNs, s.ctimeNs, s.mode].join(':')).slice(0, 32);
+  } catch { return 'unreadable'; }
+}
 
 /** Classifies the stored file without trusting it. Unreadable, invalid, old-format or draft content is 'corrupt'. */
 async function current(file: string): Promise<Current> {
   let raw: unknown;
+  const corrupt = async (reason: string): Promise<Current> => ({ kind: 'corrupt', reason, fingerprint: await fingerprint(file) });
   try { raw = await readJson(file, z.unknown()); }
-  catch (error) { if (isAfoError(error, 'STATE_CORRUPT')) return { kind: 'corrupt', reason: error.message }; throw error; }
+  catch (error) { if (isAfoError(error, 'STATE_CORRUPT')) return corrupt(error.message); throw error; }
   if (raw === null) return { kind: 'empty', lastRevision: 0 };
   const v1 = ProfileSchema.safeParse(raw);
-  if (v1.success) return { kind: 'corrupt', reason: v1.data.status === 'draft'
+  if (v1.success) return corrupt(v1.data.status === 'draft'
     ? '확인되지 않은 초안(v1) 프로필입니다. 규칙을 확인한 뒤 다시 저장하세요.'
-    : '이전 형식(v1) 프로필은 자동 적용하지 않습니다. 다시 확인해 저장하세요.' };
+    : '이전 형식(v1) 프로필은 자동 적용하지 않습니다. 다시 확인해 저장하세요.');
   const parsed = ProfileStoreSchema.safeParse(raw);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
-    return { kind: 'corrupt', reason: `저장된 프로필이 계약과 다릅니다${first?.path.length ? ` (${first.path.join('.')})` : ''}.` };
+    return corrupt(`저장된 프로필이 계약과 다릅니다${first?.path.length ? ` (${first.path.join('.')})` : ''}.`);
   }
   return parsed.data.state === 'active' ? { kind: 'active', profile: parsed.data.profile }
     : { kind: 'empty', lastRevision: parsed.data.lastRevision };
@@ -63,14 +132,17 @@ async function current(file: string): Promise<Current> {
 /** Saved profile; null when none is saved or after reset; { status: 'corrupt' } needs the user to re-confirm. Never deletes anything. */
 export async function loadProfile(options: ProfileStoreOptions = {}): Promise<RuleProfileV2 | CorruptProfile | null> {
   const state = await current(fileOf(options));
-  return state.kind === 'active' ? state.profile : state.kind === 'empty' ? null : { status: 'corrupt', reason: state.reason };
+  return state.kind === 'active' ? state.profile : state.kind === 'empty' ? null
+    : { status: 'corrupt', reason: state.reason, fingerprint: state.fingerprint };
 }
 
 const changed = (message: string): AfoError => new AfoError('PROFILE_CHANGED', message);
 function checkExpected(state: Current, options: ProfileStoreOptions): void {
-  if (options.expectedRevision === undefined) return;
-  const revision = state.kind === 'active' ? state.profile.revision : state.kind === 'empty' ? null : undefined;
-  if (revision !== options.expectedRevision) throw changed('프로필이 그 사이에 바뀌었습니다. 다시 불러온 뒤 확인하세요.');
+  const { expectedRevision, expectedCorrupt } = options;
+  if (expectedRevision === undefined && expectedCorrupt === undefined) return;
+  const ok = state.kind === 'corrupt' ? expectedCorrupt === state.fingerprint && expectedRevision === undefined
+    : expectedCorrupt === undefined && expectedRevision === (state.kind === 'active' ? state.profile.revision : null);
+  if (!ok) throw changed('프로필이 그 사이에 바뀌었습니다. 다시 불러온 뒤 확인하세요.');
 }
 const write = (file: string, value: ProfileStore): Promise<void> => writeJsonAtomic(file, value, ProfileStoreSchema);
 
@@ -91,7 +163,7 @@ async function setAside(file: string): Promise<void> {
 export async function saveConfirmedProfile(input: unknown, options: ProfileStoreOptions = {}): Promise<RuleProfileV2> {
   const now = clock(options);
   const version = input !== null && typeof input === 'object' && 'formatVersion' in input ? input.formatVersion : undefined;
-  const profile = version === 2 ? RuleProfileV2Schema.parse(input) : profileFromV1(input, now);
+  const profile = version === 2 ? RuleProfileV2Schema.parse(input) : await profileFromConfirmed(input, now);
   if (profile.status !== 'confirmed') throw new Error('확인한(confirmed) 프로필만 저장할 수 있습니다.');
   const file = fileOf(options);
   const state = await current(file);

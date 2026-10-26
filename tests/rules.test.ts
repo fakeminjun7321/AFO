@@ -189,3 +189,11 @@ test('v2 contract rejects drafts, hidden targets, duplicate matches, path labels
   ];
   for (const [label, value] of bad) assert.equal(RuleProfileV2Schema.safeParse(value).success, false, label);
 });
+
+test('O-3 one-off overrides use the same destination rule as saved corrections (no hidden folders)', () => {
+  const scan = scanFixture(['a.pdf']);
+  for (const bad of ['.숨김', '보관/.cache', '../밖'])
+    assert.throws(() => buildPreview(scan, { overrides: { [scan.files[0]!.id]: bad } }), Error, bad);
+  assert.throws(() => classifyFile('a.pdf', { override: '.숨김' }));
+  assert.equal(classifyFile('a.pdf', { override: '보관/숨김아님' }).targetDirectory, '보관/숨김아님');
+});

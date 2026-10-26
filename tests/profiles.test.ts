@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { cp, lstat, mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { AfoError, ProfileStoreSchema } from '../packages/contracts/src/index.js';
 import type { ErrorCode, RuleProfile, RuleProfileV2 } from '../packages/contracts/src/index.js';
@@ -222,4 +222,134 @@ test('overlapping roots after restart: the saved reference folder is recognised 
   const { preview } = await analyzeRoot(await issueRootGrant(path.join(root, 'inbox')), { profile });
   assert.deepEqual(outcome(preview.items), { '수학_과제3.pdf': ['move', '수학/수학_과제3.pdf'] });
   assert.deepEqual(await manifest(root), before);
+});
+
+/* ---- verifier follow-ups: F-1, O-2, O-3, O-4 ---- */
+const IN_WORK = { '정리/수학/수학_과제1.pdf': 'm1', '정리/수학/수학_과제2.pdf': 'm2', '정리/국어/국어_a.pdf': 'k1', '정리/국어/국어_b.pdf': 'k2',
+  '수학_과제5.pdf': 'new' };
+const ORIGINALS = ['수학/수학_과제1.pdf', '수학/수학_과제2.pdf', '국어/국어_a.pdf', '국어/국어_b.pdf'];
+async function savedInside(t: TestContext): Promise<{ root: string; o: ProfileStoreOptions; profile: RuleProfileV2 }> {
+  const { root } = await createFixture(IN_WORK, t);
+  const o = { stateDir: (await createFixture({}, t)).root };
+  return { root, o, profile: await saveConfirmedProfile(await confirmedFrom(path.join(root, '정리')), o) };
+}
+
+test('F-1 saved profiles record the reference folder dev/inode; an unchanged reference is not stale', async (t) => {
+  const { root, o, profile } = await savedInside(t);
+  const s = await lstat(path.join(root, '정리'), { bigint: true });
+  assert.deepEqual(profile.referenceRootIdentity, { device: String(s.dev), inode: String(s.ino) });
+  const { preview } = await analyzeRoot(await issueRootGrant(root), { profile, ...o });
+  assert.equal(preview.profileNotice, undefined);
+  assert.equal(preview.profileId, profile.id);
+  assert.deepEqual(outcome(preview.items)['수학_과제5.pdf'], ['move', '수학/수학_과제5.pdf']);
+});
+
+test('F-1 reference folder renamed or moved inside the work root: originals kept, profile stale and not applied', async (t) => {
+  const { root, o, profile } = await savedInside(t);
+  await mkdir(path.join(root, '보관'));
+  for (const [from, to] of [['정리', '정리2'], ['정리2', '보관/정리3']] as const) {
+    await rename(path.join(root, ...from.split('/')), path.join(root, ...to.split('/')));
+    const before = await manifest(root);
+    const { preview, protected: kept } = await analyzeRoot(await issueRootGrant(root), { profile, ...o });
+    const rows = outcome(preview.items);
+    for (const p of ORIGINALS) assert.deepEqual(rows[`${to}/${p}`], ['keep', null], `${to}/${p}`);
+    assert.deepEqual(kept.map((k) => k.relativePath).sort(), ORIGINALS.map((p) => `${to}/${p}`).sort());
+    assert.equal(preview.profileNotice?.code, 'PROFILE_STALE');
+    assert.equal(preview.profileId, null, 'stale profile is not applied');
+    assert.deepEqual(rows['수학_과제5.pdf'], ['move', '문서/수학_과제5.pdf'], 'default rules only until re-confirmed');
+    assert.deepEqual(await manifest(root), before);
+    assert.equal(asProfile(await loadProfile(o)).status, 'confirmed', 'analysis never writes the store');
+  }
+});
+
+test('F-1 dev/inode alone recognises a renamed reference whose example files were also renamed', async (t) => {
+  const { root, o, profile } = await savedInside(t);
+  await rename(path.join(root, '정리'), path.join(root, '새이름'));
+  // Only one saved example keeps its name, so evidence matching alone could not find the folder.
+  for (const [from, to] of [['수학/수학_과제1.pdf', '수학/수학_과제1_v2.pdf'], ['국어/국어_a.pdf', '국어/국어_a2.pdf'], ['국어/국어_b.pdf', '국어/국어_b2.pdf']] as const)
+    await rename(path.join(root, '새이름', ...from.split('/')), path.join(root, '새이름', ...to.split('/')));
+  const { preview } = await analyzeRoot(await issueRootGrant(root), { profile, ...o });
+  const kept = preview.items.filter((i) => i.source.startsWith('새이름/'));
+  assert.equal(kept.length, 4);
+  assert.ok(kept.every((i) => i.action === 'keep' && i.reasonCode === 'PROTECTED_REFERENCE'));
+  assert.equal(preview.profileNotice?.code, 'PROFILE_STALE');
+  assert.match(preview.profileNotice!.reason, /이름이나 위치/u);
+});
+
+test('F-1 a copy of the reference (new inode) is caught by its evidence examples, with or without a stored identity', async (t) => {
+  const { root, o, profile } = await savedInside(t);
+  await cp(path.join(root, '정리'), path.join(root, '사본'), { recursive: true });
+  const { referenceRootIdentity: _unused, ...legacy } = profile;
+  for (const candidate of [profile, { ...profile, referenceRootIdentity: null }, legacy]) {
+    const { preview } = await analyzeRoot(await issueRootGrant(root), { profile: candidate, ...o });
+    const rows = outcome(preview.items);
+    for (const p of ORIGINALS) {
+      assert.deepEqual(rows[`사본/${p}`], ['keep', null], `사본/${p}`);
+      assert.deepEqual(rows[`정리/${p}`], ['keep', null], `정리/${p}`);
+    }
+    assert.equal(preview.profileNotice?.code, 'PROFILE_STALE');
+    assert.match(preview.profileNotice!.reason, /사본/u);
+  }
+  // A work root that is itself a copy of the reference folder: everything kept.
+  const { preview } = await analyzeRoot(await issueRootGrant(path.join(root, '사본')), { profile, ...o });
+  assert.ok(preview.items.every((i) => i.action === 'keep' && i.reasonCode === 'PROTECTED_REFERENCE'));
+  assert.equal(preview.profileNotice?.code, 'PROFILE_STALE');
+});
+
+test('O-2 analysis refuses a state folder inside, equal to or containing the work root, and inside the reference folder', async (t) => {
+  const { root } = await createFixture({ 'work/a.pdf': 'a', 'work/appstate/': '', 'ref/수학/x.pdf': 'x', 'ref/수학/y.pdf': 'y' }, t);
+  const work = path.join(root, 'work');
+  const grant = await issueRootGrant(work);
+  for (const stateDir of [path.join(work, 'appstate'), work, root])
+    await assert.rejects(analyzeRoot(grant, { stateDir }), code('STATE_DIR_CONFLICT'), stateDir);
+  const reference = await issueReferenceGrant(path.join(root, 'ref'));
+  await assert.rejects(analyzeRoot(grant, { stateDir: path.join(root, 'ref', '.afo'), reference }), code('STATE_DIR_CONFLICT'));
+  const outside = (await createFixture({}, t)).root;
+  assert.equal((await analyzeRoot(grant, { stateDir: outside, reference })).preview.items.length, 1);
+  // AFO_STATE_DIR is the default when no stateDir is passed.
+  const previous = process.env['AFO_STATE_DIR'];
+  process.env['AFO_STATE_DIR'] = path.join(work, 'appstate');
+  try { await assert.rejects(analyzeRoot(grant), code('STATE_DIR_CONFLICT')); }
+  finally { if (previous === undefined) delete process.env['AFO_STATE_DIR']; else process.env['AFO_STATE_DIR'] = previous; }
+});
+
+test('O-3 one-off override destinations follow the saved-correction rule: hidden, escaping or absolute folders are refused', async (t) => {
+  const { root } = await createFixture({ 'a.pdf': 'a' }, t);
+  const o = { stateDir: (await createFixture({}, t)).root };
+  const grant = await issueRootGrant(root);
+  const id = (await analyzeRoot(grant, o)).preview.items[0]!.fileId;
+  for (const bad of ['.숨김', '보관/.git', '../밖', '/abs', ''])
+    await assert.rejects(analyzeRoot(grant, { ...o, overrides: { [id]: bad } }), Error, bad);
+  assert.deepEqual(outcome((await analyzeRoot(grant, { ...o, overrides: { [id]: '보관/2026' } })).preview.items), { 'a.pdf': ['move', '보관/2026/a.pdf'] });
+});
+
+test('O-4 expectedRevision null pins an empty store; expectedCorrupt pins the damaged file seen', async (t) => {
+  const { reference, state, o } = await setup(t);
+  const v1 = await confirmedFrom(reference);
+  const file = profileFile(state);
+  // Empty store: null passes for a first correction or save; another writer in between is refused.
+  const first = await addCorrection({ type: 'file-name', name: 'a.pdf' }, '보관', { ...o, expectedRevision: null });
+  await assert.rejects(addCorrection({ type: 'file-name', name: 'b.pdf' }, '보관', { ...o, expectedRevision: null }), code('PROFILE_CHANGED'));
+  await assert.rejects(saveConfirmedProfile(v1, { ...o, expectedRevision: null }), code('PROFILE_CHANGED'));
+  assert.equal(asProfile(await loadProfile(o)).revision, first.revision);
+  await resetProfile({ ...o, expectedRevision: first.revision });
+  const saved = await saveConfirmedProfile(v1, { ...o, expectedRevision: null });
+  await assert.rejects(resetProfile({ ...o, expectedRevision: null }), code('PROFILE_CHANGED'));
+  // Damaged store: only the fingerprint of the file that was seen allows save/reset over it.
+  await writeFile(file, '{ broken');
+  const seen = await loadProfile(o);
+  assert.ok(seen !== null && seen.status === 'corrupt');
+  const fp = (seen as { fingerprint: string }).fingerprint;
+  await assert.rejects(resetProfile({ ...o, expectedRevision: saved.revision }), code('PROFILE_CHANGED'));
+  await assert.rejects(resetProfile({ ...o, expectedRevision: null }), code('PROFILE_CHANGED'));
+  await writeFile(file, '{ broken differently');
+  await assert.rejects(resetProfile({ ...o, expectedCorrupt: fp }), code('PROFILE_CHANGED'));
+  await assert.rejects(saveConfirmedProfile(v1, { ...o, expectedCorrupt: fp }), code('PROFILE_CHANGED'));
+  assert.equal(await readFile(file, 'utf8'), '{ broken differently', 'refused calls leave the damaged file in place');
+  assert.deepEqual((await readdir(path.dirname(file))).filter((n) => n.startsWith('corrupt-')), []);
+  const now = await loadProfile(o) as { fingerprint: string };
+  await resetProfile({ ...o, expectedCorrupt: now.fingerprint });
+  assert.equal(await loadProfile(o), null);
+  // A fingerprint is not accepted for a healthy store.
+  await assert.rejects(saveConfirmedProfile(v1, { ...o, expectedCorrupt: now.fingerprint }), code('PROFILE_CHANGED'));
 });

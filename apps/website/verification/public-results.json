@@ -1,0 +1,30 @@
+{
+  "url": "https://afo-hackathon-2026-7321--website-design-l2p0zktg.web.app",
+  "project": "afo-hackathon-2026-7321",
+  "channel": "website-design",
+  "expires": "2026-11-02 20:44:27 Asia/Seoul",
+  "version": "da977dcb8d38cb97",
+  "intentionalTopLevelNavigations": 1,
+  "observedResourceRequests": 6,
+  "requests": [
+    "https://afo-hackathon-2026-7321--website-design-l2p0zktg.web.app/",
+    "https://afo-hackathon-2026-7321--website-design-l2p0zktg.web.app/assets/index-Bc2ayohy.js",
+    "https://afo-hackathon-2026-7321--website-design-l2p0zktg.web.app/assets/index-DxVxYjKj.css",
+    "https://afo-hackathon-2026-7321--website-design-l2p0zktg.web.app/assets/hero-art.png",
+    "https://afo-hackathon-2026-7321--website-design-l2p0zktg.web.app/assets/PretendardVariable.woff2",
+    "https://afo-hackathon-2026-7321--website-design-l2p0zktg.web.app/assets/hero-art-mobile.png"
+  ],
+  "errors": [],
+  "status": 200,
+  "checks": [
+    "HTTP+CSP",
+    "heading",
+    "generated art+font",
+    "preview",
+    "personal rule",
+    "reset",
+    "FAQ",
+    "mobile layout+asset"
+  ],
+  "scope": "public static frontend only; no authentication, cloud persistence or real filesystem integration"
+}

@@ -29,7 +29,7 @@ test('state folder comes from AFO_STATE_DIR or the OS app-data default, never a 
   const layout = statePaths('/s');
   assert.deepEqual(Object.keys(layout), ['profiles', 'plans', 'approvals', 'journal', 'locks']);
   assert.equal(journalFile('/s', 'run-00000001'), path.join('/s', 'journal', 'run-00000001.jsonl'));
-  for (const bad of ['../../../etc', 'a/b', 'short']) assert.throws(() => journalFile('/s', bad), bad);
+  for (const bad of ['../../../etc', 'a/b', 'short', 'RUN-00000001']) assert.throws(() => journalFile('/s', bad), bad);
 });
 
 test('state folders overlapping the work root are rejected by real path', async (t) => {
@@ -40,6 +40,7 @@ test('state folders overlapping the work root are rejected by real path', async 
   await assert.rejects(assertStateDirOutside(work, work), code('STATE_DIR_CONFLICT'));
   await assert.rejects(assertStateDirOutside(path.join(work, '.afo', 'deep'), work), code('STATE_DIR_CONFLICT'));
   await assert.rejects(assertStateDirOutside(base, work), code('STATE_DIR_CONFLICT'));
+  await assert.rejects(assertStateDirOutside(path.join(base, 'state'), path.join(base, 'missing-root')), code('ROOT_FORBIDDEN'));
   if (process.platform !== 'win32') {
     await symlink(work, path.join(base, 'alias'));
     await assert.rejects(assertStateDirOutside(path.join(base, 'alias', 'state'), work), code('STATE_DIR_CONFLICT'));
@@ -56,7 +57,7 @@ test('atomic JSON writes replace whole files, validate first and leave no temp f
   await writeJsonAtomic(file, { name: '둘째', count: 2 }, Doc);
   assert.deepEqual(await readJson(file, Doc), { name: '둘째', count: 2 });
   assert.throws(() => Doc.parse({ name: 3 }));
-  await assert.rejects(writeJsonAtomic(file, { name: 3 }, Doc));
+  await assert.rejects(writeJsonAtomic(file, { name: 3 }, Doc), code('STATE_CORRUPT'));
   assert.deepEqual(await readJson(file, Doc), { name: '둘째', count: 2 }, 'invalid value must not replace the file');
   await assert.rejects(writeJsonAtomic(file, 'x'.repeat(1024 * 1024)), code('STATE_CORRUPT'));
   await mkdir(path.join(root, 'plans', 'blocked.json'));
@@ -89,7 +90,8 @@ test('journal appends validated lines and reports torn, invalid and out-of-order
   await appendJournal(file, entry(1, { phase: 'done' }));
   assert.deepEqual((await readJournal(file))?.entries.map((e) => [e.seq, e.phase]), [[0, 'intent'], [1, 'done']]);
   const before = await readFile(file);
-  await assert.rejects(appendJournal(file, entry(2, { phase: 'failed' })), 'failed entry without error code');
+  await assert.rejects(appendJournal(file, entry(2, { phase: 'failed' })), code('JOURNAL_FAILED'), 'failed entry without error code');
+  await assert.rejects(appendJournal(file, entry(2, { runId: 'RUN-00000001' })), code('JOURNAL_FAILED'), 'uppercase run id');
   assert.deepEqual(await readFile(file), before, 'rejected entries are not written');
 
   await appendFile(file, '{"formatVersion":1,"runId":"run-0000'); // simulated crash mid-line

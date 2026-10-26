@@ -22,7 +22,7 @@ npm test
 | --- | --- | --- |
 | `npm ci --ignore-scripts --no-audit --no-fund` | 0 | 4개 패키지 설치 |
 | `npm run typecheck` | 0 | 오류 없음 |
-| `npm test` | 0 | tests 45, pass 45, fail 0, skipped 0 |
+| `npm test` | 0 | tests 46, pass 46, fail 0, skipped 0 |
 
 Windows: 이 Mac에서 실행하지 않았습니다. `.github/workflows/engine.yml`의 Windows·macOS CI는 이 변경에서 아직 실행되지 않았습니다(미실행). CI 결과는 VM 검증이며 실물 검증이 아닙니다.
 
@@ -53,7 +53,7 @@ mkdir -p /tmp/afo-state-test   # 예시 경로. 시험마다 새 temp 폴더를 
 AFO_STATE_DIR=/tmp/afo-state-test npm test
 ```
 
-실제 확인: 세션 temp 폴더를 `AFO_STATE_DIR`로 지정해 `npm test`를 실행했고 45개 모두 통과했습니다. 실행 뒤 그 폴더는 비어 있었고 기본 경로 `~/Library/Application Support/AFO`는 생기지 않았습니다.
+실제 확인: 세션 temp 폴더를 `AFO_STATE_DIR`로 지정해 `npm test`를 실행했고 46개 모두 통과했습니다. 실행 뒤 그 폴더는 비어 있었고 기본 경로 `~/Library/Application Support/AFO`는 생기지 않았습니다.
 `AFO_STATE_DIR=rel`로 `resolveStateDir()`를 호출하면 `STATE_DIR_INVALID`가 발생했습니다.
 현재 `tests/state.test.ts`는 환경 변수 대신 `resolveStateDir(env, platform, home)`에 값을 직접 넘기고, 파일 쓰기는 `mkdtemp` 폴더 안에서만 합니다.
 
@@ -63,8 +63,8 @@ AFO_STATE_DIR=/tmp/afo-state-test npm test
 
 - `createFixture(spec, t?)`: 항상 새 `mkdtemp(os.tmpdir()/afo-test-*)` 폴더에 만듭니다. 기존 폴더를 대상으로 지정하는 옵션은 없습니다. 키는 `/`로 나눈 상대 경로이고, `/`로 끝나면 빈 폴더입니다. `..`·절대 경로·역슬래시는 거부합니다. `t`를 넘기면 테스트 종료 때 폴더를 지웁니다.
 - `sampleSpec()`: 한글(NFC·NFD), 공백, 이모지, 빈 파일, 깊은 중첩, 같은 내용의 두 파일, 빈 폴더를 담은 표본.
-- `createManifest(root)`: 숨김 파일을 포함하고 링크를 따라가지 않는 독립 baseline(종류·크기·수정 시각·SHA-256).
-- `diffManifest(before, after, { ignoreModified? })`: `added`/`removed`/`changed` 정렬 목록. 기본은 수정 시각 변경도 `changed`로 셉니다.
+- `createManifest(root)`: 숨김 파일을 포함하고 링크를 따라가지 않는 독립 baseline(종류·크기·수정 시각·SHA-256). 결과는 prototype 없는 객체라 `__proto__`·`constructor` 같은 이름도 일반 항목입니다.
+- `diffManifest(before, after, { ignoreModified? })`: `added`/`removed`/`changed` 정렬 목록. 기본은 수정 시각 변경도 `changed`로 셉니다. JSON에서 다시 읽은 baseline도 `Object.hasOwn`으로 비교합니다.
 
 ## 공용 계약
 

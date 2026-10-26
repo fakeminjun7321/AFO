@@ -70,7 +70,16 @@ const contains = (outer: string, inner: string): boolean => {
 
 /** Rejects a state folder inside, equal to, or containing the work root (compared by real path). */
 export async function assertStateDirOutside(stateDir: string, rootPath: string): Promise<void> {
-  const [state, root] = await Promise.all([realish(stateDir), realpath(rootPath)]);
+  let root: string;
+  try { root = await realpath(rootPath); }
+  catch (error) {
+    // A root that cannot be resolved can never be granted; SOURCE_MISSING stays reserved for operation sources.
+    throw new AfoError(fsCode(error) === 'EACCES' || fsCode(error) === 'EPERM' ? 'PERMISSION_DENIED' : 'ROOT_FORBIDDEN',
+      '작업 폴더의 실제 경로를 확인할 수 없습니다.', { cause: error });
+  }
+  let state: string;
+  try { state = await realish(stateDir); }
+  catch (error) { throw failure('STATE_DIR_INVALID', '상태 폴더의 실제 경로를 확인할 수 없습니다.', error); }
   if (contains(root, state) || contains(state, root))
     throw new AfoError('STATE_DIR_CONFLICT', '상태 폴더와 작업 폴더가 겹칩니다. AFO_STATE_DIR를 작업 폴더 밖으로 지정하세요.');
 }
@@ -85,7 +94,13 @@ async function syncDirectory(directory: string): Promise<void> {
 
 /** temp file in the same folder → fsync → rename → parent fsync. Readers never see a partial file. */
 export async function writeJsonAtomic(file: string, value: unknown, schema?: z.ZodType): Promise<void> {
-  const data = JSON.stringify(schema ? schema.parse(value) : value, null, 2);
+  let checked = value;
+  if (schema) {
+    const parsed = schema.safeParse(value);
+    if (!parsed.success) throw new AfoError('STATE_CORRUPT', '저장할 상태가 계약과 다릅니다.', { cause: parsed.error });
+    checked = parsed.data;
+  }
+  const data = JSON.stringify(checked, null, 2);
   if (data === undefined) throw new TypeError('JSON으로 저장할 수 없는 값입니다.');
   const bytes = Buffer.from(`${data}\n`);
   if (bytes.length > MAX_STATE_JSON_BYTES) throw new AfoError('STATE_CORRUPT', '상태 파일이 크기 한도를 넘습니다.');
@@ -142,7 +157,9 @@ export async function readJson<S extends z.ZodType>(file: string, schema: S): Pr
 
 /** One validated JSON line per entry, fsynced before returning. A torn previous line is fenced off first. */
 export async function appendJournal(file: string, entry: JournalEntry): Promise<void> {
-  const line = Buffer.from(`${JSON.stringify(JournalEntrySchema.parse(entry))}\n`);
+  const parsed = JournalEntrySchema.safeParse(entry);
+  if (!parsed.success) throw new AfoError('JOURNAL_FAILED', '저널 기록이 계약과 다릅니다.', { cause: parsed.error });
+  const line = Buffer.from(`${JSON.stringify(parsed.data)}\n`);
   try {
     const directory = path.dirname(path.resolve(file));
     await mkdir(directory, { recursive: true, mode: 0o700 });

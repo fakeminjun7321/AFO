@@ -26,6 +26,23 @@ test('fixture specs cannot escape the temp root', async () => {
     await assert.rejects(createFixture({ [bad]: 'x' }), /단순 상대 경로/u, bad);
 });
 
+test('manifest treats prototype-like file names as ordinary entries', async (t) => {
+  const { root } = await createFixture({ 'a.txt': 'a', constructor: 'c', ['__proto__']: 'p', hasOwnProperty: 'h' }, t);
+  const before = await createManifest(root);
+  assert.deepEqual(Object.keys(before).sort(), ['__proto__', 'a.txt', 'constructor', 'hasOwnProperty']);
+  assert.equal(Object.hasOwn(before, '__proto__') && before['__proto__']?.type, 'file');
+  await writeFile(path.join(root, 'toString'), 't');
+  await rm(path.join(root, 'constructor'));
+  await writeFile(path.join(root, '__proto__'), 'changed');
+  const after = await createManifest(root);
+  const expectedDiff = { added: ['toString'], removed: ['constructor'], changed: ['__proto__'] };
+  assert.deepEqual(diffManifest(before, after, { ignoreModified: true }), expectedDiff);
+  // Baselines reloaded from JSON are plain objects; the diff must not consult the prototype chain either.
+  const reload = (m: object) => JSON.parse(JSON.stringify(m)) as typeof before;
+  assert.deepEqual(diffManifest(reload(before), reload(after), { ignoreModified: true }), expectedDiff);
+  assert.deepEqual(diffManifest({}, reload(after)).added, ['__proto__', 'a.txt', 'hasOwnProperty', 'toString']);
+});
+
 test('manifest diff detects added, removed, content, size and timestamp changes', async (t) => {
   const old = new Date('2020-01-02T03:04:05Z');
   const { root } = await createFixture({ 'keep.txt': 'same', 'edit.txt': 'aaaa', 'grow.txt': 'a', 'gone.txt': 'x',

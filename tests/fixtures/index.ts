@@ -55,7 +55,8 @@ export type Manifest = Record<string, ManifestEntry>;
 
 /** Independent oracle: includes hidden/excluded names, never follows links, does not reuse product code. */
 export async function createManifest(root: string): Promise<Manifest> {
-  const result: Manifest = {};
+  // Null prototype: names such as __proto__, constructor or toString are ordinary keys.
+  const result: Manifest = Object.create(null) as Manifest;
   async function visit(folder: string, prefix: string): Promise<void> {
     for (const name of (await readdir(folder)).sort()) {
       const full = path.join(folder, name);
@@ -78,9 +79,9 @@ export function diffManifest(before: Manifest, after: Manifest, options: { ignor
   const strip = (entry: ManifestEntry): string => JSON.stringify(options.ignoreModified && entry.type === 'file'
     ? { ...entry, modified: undefined } : entry);
   const sorted = (values: string[]): string[] => values.sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
-  const removed = Object.keys(before).filter((name) => !(name in after));
-  const added = Object.keys(after).filter((name) => !(name in before));
-  const changed = Object.keys(before).filter((name) => name in after && strip(before[name]!) !== strip(after[name]!));
+  const removed = Object.keys(before).filter((name) => !Object.hasOwn(after, name));
+  const added = Object.keys(after).filter((name) => !Object.hasOwn(before, name));
+  const changed = Object.keys(before).filter((name) => Object.hasOwn(after, name) && strip(before[name]!) !== strip(after[name]!));
   return { added: sorted(added), removed: sorted(removed), changed: sorted(changed) };
 }
 export const sameManifest = (diff: ManifestDiff): boolean =>

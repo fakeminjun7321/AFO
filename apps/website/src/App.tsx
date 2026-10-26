@@ -14,7 +14,9 @@ import { Footer } from "./components/Footer";
 import { GuidePage } from "./pages/GuidePage";
 import { AuthPage } from "./pages/AuthPage";
 import { AccountPage } from "./pages/AccountPage";
-const RulesPage = lazy(() => import("./pages/RulesPage").then((module) => ({ default: module.RulesPage })));
+const RulesPage = lazy(() =>
+  import("./pages/RulesPage").then((module) => ({ default: module.RulesPage })),
+);
 import { AdminPage } from "./pages/AdminPage";
 import { AuthProvider } from "./auth/AuthProvider";
 
@@ -66,7 +68,20 @@ function Shell() {
             element={<AuthPage key="reset" mode="reset" />}
           />
           <Route path="/account" element={<AccountPage />} />
-          <Route path="/rules" element={<Suspense fallback={<p className="route-status" role="status">규칙 화면을 열고 있어요.</p>}><RulesPage /></Suspense>} />
+          <Route
+            path="/rules"
+            element={
+              <Suspense
+                fallback={
+                  <p className="route-status" role="status">
+                    규칙 화면을 열고 있어요.
+                  </p>
+                }
+              >
+                <RulesPage />
+              </Suspense>
+            }
+          />
           <Route path="/admin" element={<AdminPage />} />
           <Route
             path="*"

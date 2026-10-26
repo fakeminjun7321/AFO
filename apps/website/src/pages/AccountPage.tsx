@@ -82,7 +82,9 @@ export function AccountPage() {
         <Link to="/demo" className="button button--orange">
           정리 흐름 체험하기 <Arrow />
         </Link>
-        <Link to="/rules" className="quiet-link">나의 정리 기준 관리하기 <Arrow /></Link>
+        <Link to="/rules" className="quiet-link">
+          나의 정리 기준 관리하기 <Arrow />
+        </Link>
       </div>
     </section>
   );

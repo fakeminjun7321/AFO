@@ -6,4 +6,5 @@ await copyFile(new URL("../../../firebase/firestore.rules", import.meta.url), ne
 const child = spawn(process.execPath, ["../../firebase/node_modules/firebase-tools/lib/bin/firebase.js", "emulators:start", "--only", "auth,firestore,hosting", "--config", "firebase.emulator.json", "--project", "demo-afo-website", "--non-interactive"], { stdio: "inherit", env: process.env });
 child.on("error", (error) => { console.error(error); process.exitCode = 1; });
 child.on("exit", (code) => { process.exitCode = code ?? 1; });
-for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, () => child.kill(signal));
+// Playwright signals the entire process group. Forwarding it again interrupts CLI cleanup.
+for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, () => {});

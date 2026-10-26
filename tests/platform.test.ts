@@ -121,6 +121,7 @@ test('free space is null when not observable', async (t) => {
 
 test('OS trash moves one synthetic file and touches nothing else', async (t) => {
   if (!await isTrashSupported()) { t.skip(`${process.platform}: NOT_SUPPORTED`); return; }
+  if (process.env['AFO_REAL_TRASH_TEST'] !== '1') { t.skip('실제 OS 휴지통 검사는 AFO_REAL_TRASH_TEST=1에서만 실행'); return; }
   const root = await fixture(t, { 'keep.pdf': 'keep', 'folder/inner.pdf': 'i' });
   const name = `afo-test-trash-${randomBytes(6).toString('hex')}.txt`;
   const target = path.join(root, name);

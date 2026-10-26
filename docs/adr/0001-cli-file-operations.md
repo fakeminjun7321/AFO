@@ -55,6 +55,7 @@ Electron 초기 메모리·배포 크기는 **측정하지 않았습니다**(의
 
 - macOS: `execFile('/usr/bin/trash', [abs])`, shell 없음, 절대 경로만(선행 `-`로 옵션 해석되는 일 없음). 성공 후 원래 경로 부재를 확인하고, 실패하면 `TRASH_FAILED`. 영구 삭제로 우회하지 않습니다.
 - 실측: `afo-test-trash-*.txt` 합성 파일이 원래 경로에서 사라지고 같은 폴더의 다른 파일·폴더·링크 manifest는 그대로였습니다. 파일은 `~/.Trash/`에 같은 이름·크기로 존재함을 `ls`로 확인했습니다. 없는 파일에 대해 도구는 종료 코드 5와 `NSCocoaErrorDomain Code=4`를 냈습니다(어댑터는 그 전에 `SOURCE_MISSING`으로 거부). TCC 권한 창은 뜨지 않았습니다.
+- 실행 조건: 실제 휴지통 테스트는 `AFO_REAL_TRASH_TEST=1`일 때만 실행하고 기본 `npm test`에서는 명시적으로 건너뜁니다(사용자 휴지통에 합성 파일이 쌓이지 않게). CI에서는 `AFO_REAL_TRASH_TEST=1`로 실행합니다.
 - 복원: 앱 내 복원은 제공하지 않고 사용자가 Finder 휴지통에서 "되돌려 놓기"를 합니다. **Finder 복원의 실물 확인은 하지 않았습니다(미검증)**. GUI 제어를 하지 않기 위해서입니다.
 - Windows: `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -Command ...DeleteFile($env:AFO_TRASH_PATH,'OnlyErrorDialogs','SendToRecycleBin')`. 경로는 환경변수로만 전달하고 명령 문자열에 넣지 않습니다. `OnlyErrorDialogs`는 오류 시 대화상자를 띄울 수 있습니다. **구현만, 미검증(CI 대기)**.
 - `/usr/bin/trash`가 처음 제공된 macOS 버전은 확인하지 않았습니다. 도구가 없으면 `isTrashSupported()`가 false, `moveToTrash`는 `NOT_SUPPORTED`입니다.

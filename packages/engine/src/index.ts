@@ -14,6 +14,8 @@ export { SPACE_NOTE, chooseKeeper, findDuplicates, spaceEstimate } from './dupli
 export { activeRules, classifyPersonal, emptyProfile, makeCorrection, parseProfile, profileFromV1, withCorrection, withRuleEnabled,
   withStatus, withoutCorrection } from './rules.js';
 export type { AnyProfile } from './rules.js';
+export { approvalChoices, approvalCode, buildPlan, canonicalJson, diffPlans, planHash, selectOperations } from './plan.js';
+export type { BuildPlanOptions, DeleteSelection, PlanDiff } from './plan.js';
 /** Informational only: size or age is never a reason to delete. */
 export const LARGE_FILE_BYTES = 100 * 1024 * 1024;
 

@@ -85,8 +85,8 @@ export const isAfoError = (value: unknown, code?: ErrorCode): value is AfoError 
 /** Approvals live at most this long after issue. */
 export const APPROVAL_TTL_MS = 10 * 60 * 1000;
 const Sha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
-/** Opaque random IDs (session, approval, run): UUID-like and safe as a file name. */
-export const OpaqueIdSchema = z.string().regex(/^[A-Za-z0-9-]{8,128}$/u);
+/** Opaque random IDs (session, approval, run): lowercase UUID-like, so two IDs never share a file name on case-insensitive volumes. */
+export const OpaqueIdSchema = z.string().regex(/^[a-z0-9-]{8,128}$/u);
 export const OperationIdSchema = z.string().regex(/^[a-f0-9]{8,64}$/u);
 const InstantSchema = z.iso.datetime();
 const DigitsSchema = z.string().regex(/^\d+$/u);

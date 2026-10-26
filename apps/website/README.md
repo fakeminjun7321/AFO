@@ -26,7 +26,7 @@
 - Google 버튼은 `GoogleAuthProvider`/`signInWithPopup`을 사용합니다. 팝업 취소·차단·기존 인증 방식 충돌을 처리합니다. 공식 Google 로고 자료를 사용했습니다.
 - 운영자 계정은 사용자 지정 이메일로 서버에 비밀번호 없이 생성하고 custom claim `admin: true`를 부여했습니다. `email_verified`를 대신 true로 바꾸지 않았습니다. 실제 Google 본인 확인을 마쳐야 관리자 화면에 접근합니다.
 - 프런트엔드의 관리자 이메일 목록·임의 비밀번호·관리자 서비스 계정 키는 없습니다. 서버 발급 토큰의 `admin === true` 및 `email_verified === true`를 확인합니다.
-- `/admin`은 계정과 권한 확인 범위입니다. 회원 차단/삭제·타인 규칙 편집·파일 실행 등 관리 API는 아직 제공하지 않습니다. 클라이언트 route guard는 서버 권한 강제 장치가 아니며, 이후 관리 API/Rules에서 같은 조건을 별도로 강제해야 합니다.
+- `/admin`은 계정·권한 확인과 읽기 전용 사용자/서버 조회 화면입니다. 조회 API는 로컬 검증을 마쳤지만 공개 배포 전이므로 현재 공개 화면은 연결 대기와 Firebase 콘솔 링크를 제공합니다. 회원 차단/삭제·타인 규칙 편집·파일 실행 API는 제공하지 않습니다. 클라이언트 route guard는 서버 권한 강제 장치가 아니며, 이후 관리 API/Rules에서 같은 조건을 별도로 강제해야 합니다.
 
 ## 개인 규칙과 클라우드
 
@@ -80,3 +80,7 @@ npm run test:e2e
 관리자 API의 source와 배포 조건은 `server/README.md`에 있습니다. Unit-verified는 웹3+서버3=6개, Simulator-verified는 전체 브라우저 시나리오4개입니다. 미로그인·일반 사용자·이메일 미확인 관리자 HTTP 거부, 관리자 실제 목록·runtime·DB 읽기를 포함합니다. 합성 데이터의 Emulator 결과이며 공개 관리자 정보 조회 완료로 확대하지 않습니다.
 
 **Blocked / 차단됨:** 공개 관리자 API는 billingEnabled=false로 Blaze/결제 연결 및 최소 읽기 권한 서비스 계정 배포 승인을 기다립니다. 공개 UI의 adminApi=false를 유지합니다. 무료 Firebase 콘솔 조회 링크는 제공하며, 공개 서버 데이터나 사용자 수를 가짜로 채우지 않습니다. 마케팅·안내·다운로드 페이지는 이 제약과 독립적으로 배포합니다.
+
+### 자료실 공개 검증 (2026-10-27)
+
+앱 소스 cef4df5, Hosting version 60c4032c3c2ee0fe, preview 만료 2026-11-03 08:42:33 Asia/Seoul. 공개 자료실→ZIP/JSON 다운로드→규칙 가져오기→브라우저 저장→새로고침을 확인했습니다. ZIP 해시와 JSON 규칙 유지가 일치했고 모바일 개발 노트도 확인했습니다. 문서 접속2+의도적 다운로드2, 브라우저 전체 관측12건, runtime 오류0입니다. 공개 관리자 API 요청은 0이며 결제/요금제/IAM/Functions 공개 배포는 변경하지 않았습니다.

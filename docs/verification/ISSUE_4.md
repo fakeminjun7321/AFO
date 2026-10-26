@@ -100,3 +100,29 @@ paths 필터에 `tests/**`가 있어 검증 테스트 변경도 CI를 실행합�
 
 `tests/verify-4.test.ts` (19개): V4-C1~C8 계약, V4-S1~S7 상태 폴더·원자적 쓰기·읽기·저널·runId, V4-F1~F3 fixture·manifest, V4-Z 기본 상태 폴더 미생성.
 builder 테스트를 재사용하지 않았고, 파일 작업은 모두 새 temp 폴더에서 수행한 뒤 지웠습니다.
+
+## 재검증: builder 수정 61c737d·bfd5970 (integ/m1)
+
+날짜: 2026-10-26. 브랜치 `verify-4b` = `integ/m1`(bfd5970) + 검증 테스트 갱신. 환경은 위와 같은 실물 Mac(macOS 27.0.1 arm64, Node v24.18.0, npm 11.16.0)입니다. 제품 코드는 수정하지 않았습니다.
+
+```text
+rm -rf node_modules dist && npm ci --ignore-scripts --no-audit --no-fund   -> exit 0, 4 packages
+npm run typecheck                                                          -> exit 0
+AFO_STATE_DIR=<scratchpad>/afo-state-v4 npm test                           -> exit 0
+tests 87 / pass 85 / fail 0 / cancelled 0 / skipped 2 / todo 0
+```
+
+건너뛴 2개는 #3의 실제 OS 휴지통 검사입니다(`AFO_REAL_TRASH_TEST=1`이 아니라서 건너뜀). #4 범위가 아니며 통과로 세지 않습니다. verify-4 19개는 모두 통과했습니다.
+실행 후 AFO_STATE_DIR은 비어 있었고, `~/Library/Application Support/AFO`는 생기지 않았으며, `$TMPDIR/afo-test-*`는 남지 않았습니다.
+`docs/DEVELOPMENT.md`의 "tests 46"은 builder 커밋 단독의 수치입니다. integ/m1에는 #3 테스트와 검증 테스트가 더 있어 87개입니다(모순이 아니라 기준 커밋 차이입니다).
+
+| 이전 지적 | 재검증 결과 | 근거 |
+| --- | --- | --- |
+| 결함 1: 특수 이름 manifest | **PASS(해결)** | V4-F3를 일반 테스트로 바꿈. `__proto__` 파일이 manifest의 own key로 나타나고, 내용 변경은 `changed`, 삭제는 `removed`, `toString`·`hasOwnProperty`·`valueOf` 추가는 `added`로 잡힘. manifest는 계속 일반 객체(prototype = Object.prototype) |
+| 위험 2: 대소문자 runId 충돌 | **PASS(해결)** | V4-S7을 바꿈. 대문자나 대소문자 혼합 runId는 `journalFile`에서 거부, 항목 안의 대문자 runId·approvalId는 `appendJournal`에서 `JOURNAL_FAILED`. 상태 폴더에 아무것도 생기지 않음. RootGrant·Approval·ExecutionReport의 대문자 opaque ID도 거부 |
+| 위험 6: 원시 오류 전파 | **PASS(해결)** | 스키마 오류·추가 키는 `writeJsonAtomic` → `STATE_CORRUPT`, `appendJournal` → `JOURNAL_FAILED`. 없는 루트 → `ROOT_FORBIDDEN`, 읽을 수 없는 루트(chmod 000 부모) → `PERMISSION_DENIED`, 파일 아래 상태 경로 → `STATE_DIR_INVALID`. 기존 파일 보존과 temp 잔여 없음은 유지 |
+| 위험 1, 3, 4, 5 | 변경 없음(열림) | 장치 경로·`/` 허용, move 목적지 = keep 파일 허용, `usedAt` > `expiresAt` 허용, delete `keeper: null` 허용은 그대로. #6/#8 서비스에서 처리하거나 coordinator가 결정 |
+| 문서 차이(README 종료 코드·DEVELOPMENT.md 링크) | 변경 없음(열림) | README·docs에서 DEVELOPMENT.md를 링크하는 곳이 아직 없음 |
+
+검증 테스트 정정: 처음 V4-F3 재현에서는 객체 리터럴 `{ '__proto__': 'p' }`를 썼습니다. 이 구문은 prototype을 설정할 뿐 파일을 만들지 않습니다. 계산된 키 `['__proto__']`로 바꾸고 fixture가 실제로 그 파일을 만들었는지 확인하도록 했습니다.
+같은 입력으로 eae4872의 원래 `tests/fixtures/index.ts`를 실행하면 `__proto__` 파일이 존재해도 manifest 키가 `['a.txt', 'constructor']`이고 diff는 `{added:[], removed:[], changed:['constructor']}`였습니다. 따라서 결함 1의 원래 판정(FAIL)은 유효합니다. 같은 입력에서 수정본은 `{added:['toString'], removed:['constructor'], changed:['__proto__']}`입니다.

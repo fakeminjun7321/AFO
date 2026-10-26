@@ -1,6 +1,6 @@
 /**
  * #4 verifier tests (independent of the builder's tests). Synthetic temp data only.
- * Tests marked { todo } reproduce defects found during verification; they run and report but do not fail the suite.
+ * V4-F3 and V4-S7 were updated after the builder fixes in 61c737d/bfd5970 (re-verification on integ/m1).
  */
 import test from 'node:test';
 import type { TestContext } from 'node:test';
@@ -323,7 +323,16 @@ test('V4-S2 state folder overlapping the work root is rejected by real path, inc
   await assertStateDirOutside(path.join(outside, 'state'), root);
   await assertStateDirOutside(`${root}-state`, root);
   await assertStateDirOutside(`${root}state`, root);
-  await assert.rejects(assertStateDirOutside(path.join(outside, 'state'), path.join(base, 'missing-root')), 'missing root is not accepted');
+  await assert.rejects(assertStateDirOutside(path.join(outside, 'state'), path.join(base, 'missing-root')), code('ROOT_FORBIDDEN'), 'missing root');
+  await writeFile(path.join(outside, 'plain-file'), 'f');
+  await assert.rejects(assertStateDirOutside(path.join(outside, 'plain-file', 'state'), root), code('STATE_DIR_INVALID'), 'state under a file');
+  if (process.platform !== 'win32' && process.getuid?.() !== 0) {
+    const locked = path.join(base, 'locked');
+    await mkdir(path.join(locked, 'root'), { recursive: true });
+    await chmod(locked, 0o000);
+    try { await assert.rejects(assertStateDirOutside(path.join(outside, 'state'), path.join(locked, 'root')), code('PERMISSION_DENIED'), 'unreadable root'); }
+    finally { await chmod(locked, 0o700); }
+  }
 });
 
 test('V4-S3 writeJsonAtomic failures keep the previous file intact and leave no temp files', async (t) => {
@@ -335,8 +344,8 @@ test('V4-S3 writeJsonAtomic failures keep the previous file intact and leave no 
   if (process.platform !== 'win32') assert.equal((await stat(file)).mode & 0o777, 0o600);
   assert.deepEqual(await readJson(file, Doc), { name: '원본', n: 1 });
 
-  await assert.rejects(writeJsonAtomic(file, { name: '원본', n: 1.5 }, Doc), 'schema-invalid value');
-  await assert.rejects(writeJsonAtomic(file, { name: '원본', n: 1, approved: true }, Doc), 'extra key');
+  await assert.rejects(writeJsonAtomic(file, { name: '원본', n: 1.5 }, Doc), code('STATE_CORRUPT'), 'schema-invalid value');
+  await assert.rejects(writeJsonAtomic(file, { name: '원본', n: 1, approved: true }, Doc), code('STATE_CORRUPT'), 'extra key');
   await assert.rejects(writeJsonAtomic(file, 'x'.repeat(MAX_STATE_JSON_BYTES)), code('STATE_CORRUPT'));
   await assert.rejects(writeJsonAtomic(file, undefined), 'undefined value');
   assert.deepEqual(await readFile(file), original);
@@ -427,11 +436,11 @@ test('V4-S5 journal: appended lines parse independently; torn tail, seq regressi
     [[3, '순번이 증가하지 않음'], [4, '순번이 증가하지 않음'], [6, '다른 실행 ID']]);
 
   const before = await readFile(file);
-  await assert.rejects(appendJournal(file, entry(-1)), 'invalid entry is not written');
-  await assert.rejects(appendJournal(file, { ...entry(9), approved: true } as JournalEntry), 'extra key is not written');
+  await assert.rejects(appendJournal(file, entry(-1)), code('JOURNAL_FAILED'), 'invalid entry is not written');
+  await assert.rejects(appendJournal(file, { ...entry(9), approved: true } as JournalEntry), code('JOURNAL_FAILED'), 'extra key is not written');
   assert.deepEqual(await readFile(file), before);
   const fresh = journalFile(state, 'run-v4-0003');
-  await assert.rejects(appendJournal(fresh, entry(0, { runId: 'run-v4-0003', phase: 'done', kind: 'move' })));
+  await assert.rejects(appendJournal(fresh, entry(0, { runId: 'run-v4-0003', phase: 'done', kind: 'move' })), code('JOURNAL_FAILED'));
   assert.equal(await exists(fresh), false, 'rejected first entry creates no file');
 
   if (process.platform !== 'win32') {
@@ -450,24 +459,24 @@ test('V4-S6 runId cannot escape the journal folder', async (t) => {
   for (const id of ['../x', '../../../../tmp/afo-escape', '..', '.', '', 'a/b-0001', 'a\\b-0001', '/etc/passwd', 'run 00001',
     'run-0001.jsonl/../x', 'x'.repeat(129), 'run\u0000-0001', '런-00000001'])
     assert.throws(() => journalFile(state, id), JSON.stringify(id));
-  await assert.rejects(appendJournal(path.join(state, 'journal', 'ok.jsonl'), entry(0, { runId: '../escape' })), 'runId inside entry is validated');
+  await assert.rejects(appendJournal(path.join(state, 'journal', 'ok.jsonl'), entry(0, { runId: '../escape' })), code('JOURNAL_FAILED'), 'runId inside entry is validated');
   assert.deepEqual(await readdir(state), [], 'nothing created in the state folder');
   await assert.rejects(access(path.join(tmpdir(), 'afo-escape.jsonl')));
 });
 
-test('V4-S7 risk: runIds differing only in case share one journal file on case-insensitive volumes; reader flags the foreign run', async (t) => {
+test('V4-S7 uppercase or case-variant runIds are rejected by journalFile and appendJournal and create no file', async (t) => {
   const state = await tempDir(t, 'case');
-  const upper = journalFile(state, 'RUN-V4-CASE1');
+  for (const id of ['RUN-V4-CASE1', 'Run-v4-case1', 'run-v4-casE1', 'ABCDEFGH'])
+    assert.throws(() => journalFile(state, id), JSON.stringify(id));
   const lower = journalFile(state, 'run-v4-case1');
-  assert.notEqual(upper, lower);
-  await appendJournal(upper, entry(0, { runId: 'RUN-V4-CASE1' }));
-  await appendJournal(lower, entry(1, { runId: 'run-v4-case1' }));
-  const files = await readdir(statePaths(state).journal);
-  const read = await readJournal(lower);
-  if (files.length === 1) {
-    t.diagnostic('case-insensitive volume: two runIds map to one journal file');
-    assert.deepEqual(read?.corrupt.map((c) => c.reason), ['다른 실행 ID'], 'mixing is at least detected');
-  } else assert.equal(files.length, 2);
+  await assert.rejects(appendJournal(lower, entry(0, { runId: 'RUN-V4-CASE1' })), code('JOURNAL_FAILED'), 'uppercase runId in entry');
+  await assert.rejects(appendJournal(lower, entry(0, { approvalId: 'Approval-0001' })), code('JOURNAL_FAILED'), 'uppercase approvalId');
+  assert.deepEqual(await readdir(state), [], 'no journal folder or file created');
+  await appendJournal(lower, entry(0, { runId: 'run-v4-case1' }));
+  assert.deepEqual(await readdir(statePaths(state).journal), ['run-v4-case1.jsonl']);
+  for (const [schema, value] of [[RootGrantSchema, { ...rootGrant, sessionId: 'Session-0001' }],
+    [ApprovalSchema, { ...approval, id: 'APPROVAL-0001' }], [ExecutionReportSchema, { ...report, runId: 'RUN-00000001' }]] as const)
+    bad(schema, value, 'uppercase opaque id');
 });
 
 /* ---------------- fixtures and manifest ---------------- */
@@ -513,9 +522,10 @@ test('V4-F2 diffManifest detects add, remove, content-only, mtime-only, type swa
   assert.equal(sameManifest(diff), false);
 });
 
-test('V4-F3 DEFECT: manifest is blind to file names that collide with Object.prototype members',
-  { todo: 'tests/fixtures/index.ts uses a plain object and the `in` operator; fix in a builder task' }, async (t) => {
-    const { root } = await createFixture({ 'a.txt': 'a', 'constructor': 'c', '__proto__': 'p' }, t);
+test('V4-F3 manifest and diff handle file names that collide with Object.prototype members (fixed in 61c737d/bfd5970)', async (t) => {
+    // Computed key: a literal `'__proto__': 'p'` would set the prototype and never create the file.
+    const { root } = await createFixture({ 'a.txt': 'a', 'constructor': 'c', ['__proto__']: 'p' }, t);
+    assert.ok(await exists(path.join(root, '__proto__')), 'fixture really created __proto__');
     const before = await createManifest(root);
     assert.ok(Object.hasOwn(before, '__proto__'), '__proto__ file must appear in the manifest');
     await writeFile(path.join(root, 'toString'), 'added');
@@ -523,6 +533,15 @@ test('V4-F3 DEFECT: manifest is blind to file names that collide with Object.pro
     const diff = diffManifest(before, await createManifest(root));
     assert.deepEqual(diff.added, ['toString']);
     assert.deepEqual(diff.removed, ['constructor']);
+    assert.deepEqual(diff.changed, []);
+    const mid = await createManifest(root);
+    await writeFile(path.join(root, '__proto__'), 'changed');
+    await writeFile(path.join(root, 'hasOwnProperty'), 'h'); await writeFile(path.join(root, 'valueOf'), 'v');
+    const later = diffManifest(mid, await createManifest(root));
+    assert.deepEqual(later, { added: ['hasOwnProperty', 'valueOf'], removed: [], changed: ['__proto__'] });
+    await rm(path.join(root, '__proto__'));
+    assert.deepEqual(diffManifest(mid, await createManifest(root)).removed, ['__proto__']);
+    assert.equal(Object.getPrototypeOf(mid), Object.prototype, 'still a plain object for deepEqual callers');
   });
 
 test('V4-Z default app-data state folder was not created by this run', async () => {

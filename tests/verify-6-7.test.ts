@@ -106,7 +106,7 @@ async function withHome<T>(home: string, body: () => Promise<T>): Promise<T> {
 /* ======================================================================= #6 roots and grants */
 
 test('V67-R1 refused roots: fake home, its Library and projects, disk root, OS folders, bundles, projects, links, files, Win32 device paths', async (t) => {
-  const root = await make(t, { 'home/.git/HEAD': 'ref', 'home/Library/Prefs/p.plist': 'p', 'home/Docs/a.pdf': 'a',
+  const root = await make(t, { 'home/.git/HEAD': 'ref', 'home/Library/Prefs/p.plist': 'p', 'home/AppData/Local/l.txt': 'l', 'home/Docs/a.pdf': 'a',
     'home/Proj/package.json': '{}', 'home/Proj/src/x.ts': 'x', 'Viewer.app/Contents/Resources/r.txt': 'r', 'Kit.FRAMEWORK/v/a.txt': 'a',
     'repo/.git/HEAD': 'h', 'repo/notes/n.txt': 'n', 'swift/Package.swift': 's', 'swift/Sources/a.swift': 'a', 'plain/a.pdf': 'a',
     'real/a.pdf': 'a', 'file.pdf': 'f' });
@@ -114,7 +114,10 @@ test('V67-R1 refused roots: fake home, its Library and projects, disk root, OS f
   const home = path.join(root, 'home');
   const before = await oracle(root);
   await withHome(home, async () => {
-    const refused: string[] = [home, path.join(home, 'Library'), path.join(home, 'Library/Prefs'), path.join(home, 'Proj'),
+    // Per-OS user data containers: ~/Library on macOS, the AppData containers on Windows.
+    const userData = process.platform === 'win32' ? [path.join(home, 'AppData'), path.join(home, 'AppData', 'Local')]
+      : [path.join(home, 'Library'), path.join(home, 'Library/Prefs')];
+    const refused: string[] = [home, ...userData, path.join(home, 'Proj'),
       path.join(home, 'Proj/src'), '/', path.join(root, 'Viewer.app'), path.join(root, 'Viewer.app/Contents/Resources'),
       path.join(root, 'Kit.FRAMEWORK/v'), path.join(root, 'repo'), path.join(root, 'repo/notes'), path.join(root, 'swift/Sources'),
       path.join(root, 'dir-link'), `${path.join(root, 'dir-link')}/`, path.join(root, 'file.pdf'), path.join(root, 'missing'),

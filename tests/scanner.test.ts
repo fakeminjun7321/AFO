@@ -168,6 +168,7 @@ test('depth and count limits are reported with codes and an incomplete result', 
 });
 test('access-denied folders and files give an accurate partial result instead of stopping', async (t) => {
   if (process.platform === 'win32') { t.skip('POSIX chmod is not a Windows ACL test.'); return; }
+  if (process.getuid?.() === 0) { t.skip('root ignores POSIX permissions; run as a normal user.'); return; }
   const root = await fixture(t, { 'locked/private.pdf': 'private', 'same-a.pdf': 'same!', 'same-b.pdf': 'same!',
     'same-c.pdf': 'same!', 'ok.txt': 'ok' });
   await chmod(path.join(root, 'locked'), 0); await chmod(path.join(root, 'same-b.pdf'), 0);

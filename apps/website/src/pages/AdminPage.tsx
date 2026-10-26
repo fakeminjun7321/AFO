@@ -32,7 +32,7 @@ export function AdminPage() {
   return (
     <section className="admin-page section-wrap">
       <div className="page-heading">
-        <h1>AFO 관리.</h1>
+        <h1>관리자</h1>
         <p>운영 계정과 서비스 화면을 확인하세요.</p>
       </div>
       <dl className="admin-details">
@@ -46,14 +46,11 @@ export function AdminPage() {
         </div>
       </dl>
       <div className="admin-links">
-        <Link to="/guide">
-          사용 방법 확인 <Arrow />
-        </Link>
         <Link to="/demo">
           분류 체험 확인 <Arrow />
         </Link>
-        <Link to="/faq">
-          도움말 확인 <Arrow />
+        <Link to="/help">
+          도움말 <Arrow />
         </Link>
       </div>
       <p className="admin-scope-note">

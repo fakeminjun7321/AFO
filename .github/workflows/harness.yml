@@ -1,0 +1,28 @@
+name: 개발 하네스 검증
+on:
+  pull_request:
+    paths:
+      - 'scripts/harness/**'
+      - '.claude/**'
+      - 'docs/status/tasks.json'
+      - '.github/workflows/harness.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  harness:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: 하네스 자체 테스트(정책·훅·상태 도구)
+        run: node --test scripts/harness/test/policy.test.mjs scripts/harness/test/hooks-cli.test.mjs
+      - name: 과업 목록 형식 확인
+        run: node scripts/harness/task.mjs status --brief

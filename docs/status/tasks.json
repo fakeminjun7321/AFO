@@ -1,0 +1,2080 @@
+{
+  "schemaVersion": 1,
+  "source": "docs/DETAILED_PLAN.md 12절(2차 수정) → GitHub Issue 매핑(D11), CLI 우선(D10), MVD-B(D13)",
+  "updatedAt": "2026-10-26T10:20:16.433Z",
+  "tasks": [
+    {
+      "id": "HX-1",
+      "title": "하네스 구축(에이전트·훅·스킬·상태 기록)과 시험 사이클",
+      "slug": "harness",
+      "tier": "하네스",
+      "executor": "pm",
+      "owner": "구민준",
+      "deps": [],
+      "estimateH": 3,
+      "plannedDate": "2026-10-26",
+      "allowedPaths": [],
+      "protectedPaths": [],
+      "acceptance": [
+        "developer·reviewer 서브에이전트와 역할별 편집 범위 훅이 실제 Claude Code에서 동작",
+        "작업 상태 기록·세션 재개 체계",
+        "시험 과업으로 Developer→Reviewer→수정→재검증 흐름 확인"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "done",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "result": {
+        "summary": "PM·developer·reviewer 체계, 역할 범위 훅, 상태 기록, 시험 사이클(T-000 FAIL→수정→PASS) 검증",
+        "tests": "하네스 23·프로젝트 7·리뷰 2 통과(run-checks), Claude Code 2.1.310 실측",
+        "commit": null,
+        "review": "docs/verification/HARNESS_PILOT.md",
+        "by": "agent",
+        "completedAt": "2026-10-26T06:00:07.911Z",
+        "externalReview": "n/a"
+      },
+      "issues": [
+        5
+      ],
+      "role": "coordinator",
+      "notes": [
+        {
+          "at": "2026-10-26T11:30:00Z",
+          "text": "로컬 파일럿 당시 역할 이름 PM·developer·reviewer. HX-2에서 GitHub 설계 이름으로 이식"
+        }
+      ]
+    },
+    {
+      "id": "HX-2",
+      "title": "하네스를 GitHub 설계에 맞춰 이식(역할·경로·Issue 동기화·CI)",
+      "slug": "harness-github-align",
+      "tier": "하네스",
+      "executor": "pm",
+      "owner": "구민준",
+      "deps": [
+        "HX-1"
+      ],
+      "estimateH": 2,
+      "plannedDate": "2026-10-26",
+      "allowedPaths": [],
+      "protectedPaths": [],
+      "acceptance": [
+        "HARNESS.md의 4역할·scripts/harness 경로로 훅·에이전트·스킬 이식",
+        "과업 role과 다른 구현 담당의 편집 거부",
+        "하네스 자체 테스트가 로컬과 두 OS CI에서 통과",
+        "실제 Claude Code에서 새 역할 이름으로 거부·허용 실측",
+        "PR로 제출하고 병합은 사용자 승인"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "in_progress",
+      "issue": 5,
+      "branch": "harness/5-align-pilot",
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        5
+      ],
+      "role": "coordinator",
+      "notes": []
+    },
+    {
+      "id": "T-000",
+      "title": "하네스 시험 과업: 시간 길이 표시 함수(sandbox)",
+      "slug": "trial-format-duration",
+      "tier": "하네스",
+      "executor": "agent",
+      "owner": "구민준",
+      "deps": [],
+      "estimateH": 0.5,
+      "plannedDate": "2026-10-26",
+      "allowedPaths": [
+        "sandbox/harness-trial/**",
+        "tests/unit/harness-trial/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "sandbox/harness-trial/format-duration.mjs에 formatDuration(ms) 내보내기",
+        "0 이상 정수 밀리초를 \"1h 02m 03s\" 형식으로: 시간이 0이면 \"2m 03s\", 분도 0이면 \"3s\"",
+        "초 미만은 버림(1999 → \"1s\"), 0 → \"0s\"",
+        "24시간 이상은 일 단위 추가: 90061000 → \"1d 1h 01m 01s\"",
+        "음수·NaN·정수 아님·Infinity는 RangeError",
+        "tests/unit/harness-trial/에 위 경우를 모두 다루는 node:test 테스트"
+      ],
+      "tests": [
+        "T-000-unit"
+      ],
+      "needsExternalReview": false,
+      "status": "done",
+      "issue": null,
+      "branch": "feat/t-000-trial-format-duration",
+      "fails": 1,
+      "reviewRounds": 2,
+      "startedAt": "2026-10-26T05:44:30.340Z",
+      "result": {
+        "summary": "formatDuration 구현, 주입 결함을 reviewer r1이 포착해 r2에서 PASS",
+        "tests": "프로젝트 7·리뷰 2·하네스 22 통과, node scripts/harness/run-checks.mjs",
+        "commit": "e75c4e7",
+        "review": "docs/reviews/T-000-r2.md",
+        "by": "agent",
+        "completedAt": "2026-10-26T05:50:39.252Z",
+        "externalReview": "n/a"
+      },
+      "issues": [
+        5
+      ],
+      "role": "core-builder"
+    },
+    {
+      "id": "P-1",
+      "title": "1쪽 기획서 작성·제출",
+      "slug": "p-1",
+      "tier": "MVD",
+      "executor": "human",
+      "owner": "장민서",
+      "deps": [],
+      "estimateH": 1.5,
+      "plannedDate": "2026-10-26",
+      "allowedPaths": [],
+      "protectedPaths": [],
+      "acceptance": [
+        "제출 완료 화면 캡처",
+        "1쪽 분량"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        2
+      ],
+      "role": "human"
+    },
+    {
+      "id": "P-2",
+      "title": "Firebase Hosting 배포 연습(SPK-6)",
+      "slug": "p-2",
+      "tier": "MVD",
+      "executor": "human",
+      "owner": "장민서",
+      "deps": [],
+      "estimateH": 1,
+      "plannedDate": "2026-10-26",
+      "allowedPaths": [],
+      "protectedPaths": [],
+      "acceptance": [
+        "다른 기기에서 URL 접속",
+        "제출 완료"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        2
+      ],
+      "role": "human"
+    },
+    {
+      "id": "P-4",
+      "title": "합의 사항 기록, GitHub Issue 대조·과업 매핑(D11)",
+      "slug": "p-4",
+      "tier": "MVD",
+      "executor": "pm",
+      "owner": "구민준",
+      "deps": [],
+      "estimateH": 1.5,
+      "plannedDate": "2026-10-26",
+      "allowedPaths": [],
+      "protectedPaths": [],
+      "acceptance": [
+        "상세 계획 17.1의 1~8번 상태가 docs/PLAN_MAPPING.md 4절에 기록되고 두 사람이 확인",
+        "G0 결과(MVD-B) 명시(D13)",
+        "GitHub Issue와 상세 계획의 차이·매핑 기록(D11, PLAN_MAPPING.md)",
+        "대응 Issue가 없는 과업만 신규 Issue로 생성(#22)"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        1
+      ],
+      "role": "coordinator"
+    },
+    {
+      "id": "ER-1",
+      "title": "계획 외부 검토(ChatGPT, 4.2·4.4·5·6·13절)",
+      "slug": "er-1",
+      "tier": "MVD",
+      "executor": "human",
+      "owner": "공동",
+      "deps": [],
+      "estimateH": 1,
+      "plannedDate": "2026-10-27",
+      "allowedPaths": [],
+      "protectedPaths": [],
+      "acceptance": [
+        "docs/reviews/ER-1.md 작성(차단·수정·참고 분류, 모델·날짜)",
+        "차단 지적 0건 또는 계획 반영",
+        "기각 지적은 두 사람 합의와 근거 기록"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": 22,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        22
+      ],
+      "role": "human"
+    },
+    {
+      "id": "P-3",
+      "title": "주변 사용자 3명 인터뷰",
+      "slug": "p-3",
+      "tier": "MVP",
+      "executor": "human",
+      "owner": "장민서",
+      "deps": [],
+      "estimateH": 1,
+      "plannedDate": "2026-10-27",
+      "allowedPaths": [],
+      "protectedPaths": [],
+      "acceptance": [],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        2
+      ],
+      "role": "human",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "상세 계획은 권장이었으나 #2 완료 조건(3명 인터뷰)을 따름"
+        }
+      ]
+    },
+    {
+      "id": "H-0",
+      "title": "H-0 남은 범위: 패키지 경계 검사·CLI 종료 코드·검사 연결(#4, #19 이후)",
+      "slug": "monorepo-skeleton",
+      "tier": "MVD",
+      "executor": "agent",
+      "owner": "구민준",
+      "deps": [
+        "P-4"
+      ],
+      "estimateH": 1.5,
+      "plannedDate": "2026-10-27",
+      "allowedPaths": [
+        "package.json",
+        "scripts/check-boundaries.mjs",
+        "apps/cli/src/**",
+        "README.md",
+        "tests/boundaries.test.ts",
+        "tests/cli.test.ts"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "npm run lint가 패키지 경계(contracts: I/O 금지, engine: node:fs 금지, apps/cli·engine의 상위 import 방향)를 검사하고 위반 시 종료 코드 1",
+        "금지 import를 넣은 합성 소스로 lint 실패를 확인하는 부정 테스트",
+        "CLI 종료 코드(성공·사용법 오류·입력 거부·불완전 스캔 등)를 정의하고 테스트",
+        "README에 실제 scripts와 종료 코드를 적고 없는 검사를 성공으로 쓰지 않음",
+        "두 OS CI(engine.yml)에서 lint·typecheck·test 통과"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        4
+      ],
+      "role": "core-builder",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "#20에서 상당 부분 구현됨 — 남은 범위는 docs/PLAN_MAPPING.md H-0 절"
+        },
+        {
+          "at": "2026-10-26T11:30:00Z",
+          "text": "상세 계획 H-0의 Vitest·Electron 골격은 저장소 결정(Node test runner, D10)으로 대체. 승인 전 구현하지 않음"
+        }
+      ],
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "C-1",
+      "title": "공용 계약 v1 + planHash 정규화(4.4) + T-DET 테스트",
+      "slug": "contracts-v1",
+      "tier": "MVD",
+      "executor": "agent",
+      "owner": "구민준",
+      "deps": [
+        "H-0",
+        "ER-1"
+      ],
+      "estimateH": 2.5,
+      "plannedDate": "2026-10-27",
+      "allowedPaths": [
+        "packages/contracts/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "4.2 타입·4.3 IPC·onRuntimeConflict·스키마 버전 1 정의",
+        "4.4 정규화 함수와 T-DET-1~5 통과, T-DET-6 명세",
+        "두 사람 승인 후 병합(병합은 사용자 별도 승인)",
+        "packages/executor는 빈 패키지, 파일 변경 코드 없음"
+      ],
+      "tests": [
+        "T-DET-1",
+        "T-DET-2",
+        "T-DET-3",
+        "T-DET-4",
+        "T-DET-5"
+      ],
+      "needsExternalReview": true,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        4
+      ],
+      "role": "core-builder",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "#20의 읽기 전용 계약 위에 Plan·Approval·Journal·planHash(4.4)·onRuntimeConflict 추가"
+        }
+      ],
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "H-1",
+      "title": "최소 하네스: 지침·에이전트·훅",
+      "slug": "h-1",
+      "tier": "하네스",
+      "executor": "pm",
+      "owner": "구민준",
+      "deps": [
+        "H-0"
+      ],
+      "estimateH": 2,
+      "plannedDate": "2026-10-28",
+      "allowedPaths": [],
+      "protectedPaths": [],
+      "acceptance": [
+        "HX-1로 선행 완료"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "done",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "result": {
+        "summary": "HX-1로 선행 완료(최소 하네스)",
+        "tests": "HX-1 검증 기록 참조",
+        "commit": null,
+        "review": null,
+        "by": "user",
+        "completedAt": "2026-10-26T06:00:07.838Z",
+        "externalReview": "n/a"
+      },
+      "issues": [
+        5
+      ],
+      "role": "coordinator",
+      "notes": [
+        {
+          "at": "2026-10-26T11:30:00Z",
+          "text": "HX-1·HX-2로 대부분 충족. 남은 것: GitHub 흐름(브랜치·PR·Issue 코멘트) 실사용 1회"
+        }
+      ]
+    },
+    {
+      "id": "SPK-1",
+      "title": "휴지통 동작·OS 복원 검증",
+      "slug": "spk-trash",
+      "tier": "MVD",
+      "executor": "joint",
+      "owner": "구민준",
+      "deps": [
+        "H-0"
+      ],
+      "estimateH": 1.5,
+      "plannedDate": "2026-10-28",
+      "allowedPaths": [
+        "spikes/spk-1/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "계획 8절 매트릭스 결과표 docs/verification/spk-1.md",
+        "이동식 드라이브 정책 결정"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        3
+      ],
+      "role": "joint",
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "SPK-2",
+      "title": "링크 방식 이동 검증",
+      "slug": "spk-link-move",
+      "tier": "MVD",
+      "executor": "joint",
+      "owner": "구민준",
+      "deps": [
+        "H-0"
+      ],
+      "estimateH": 2,
+      "plannedDate": "2026-10-28",
+      "allowedPaths": [
+        "spikes/spk-2/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "계획 8절 SPK-2 항목 결과 docs/verification/spk-2.md",
+        "동기화 폴더·exFAT 정책 확정"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        3
+      ],
+      "role": "joint",
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "SPK-5",
+      "title": "서명 없는 설치 파일",
+      "slug": "spk-installer",
+      "tier": "MVP",
+      "executor": "joint",
+      "owner": "장민서",
+      "deps": [
+        "H-0"
+      ],
+      "estimateH": 2,
+      "plannedDate": "2026-10-27",
+      "allowedPaths": [
+        "apps/desktop/electron-builder.*",
+        "apps/desktop/build/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "다른 기기에서 설치·실행 성공",
+        "실행 경고 우회 절차 문서화"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        15
+      ],
+      "role": "joint",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "D10에 따라 CLI 배포 방식 검증으로 변경(설치 파일 → CLI 실행 패키지)"
+        }
+      ]
+    },
+    {
+      "id": "A-1",
+      "title": "합성 폴더 생성기 + 스냅샷 비교기",
+      "slug": "fixtures-snapshot",
+      "tier": "MVD",
+      "executor": "agent",
+      "owner": "장민서",
+      "deps": [
+        "C-1"
+      ],
+      "estimateH": 3,
+      "plannedDate": "2026-10-28",
+      "allowedPaths": [
+        "tests/fixtures/**",
+        "tests/helpers.ts"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "같은 시드 → 같은 트리",
+        "비교기가 추가·삭제·변경·이동 구분",
+        "생성 경로는 os.tmpdir()/afo-test-* 만 허용"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        4
+      ],
+      "role": "core-builder",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "#20의 tests/helpers.ts(fixture·manifest)를 확장"
+        }
+      ],
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "SPK-3",
+      "title": "권한·보안 기능 검증",
+      "slug": "spk-permissions",
+      "tier": "MVP",
+      "executor": "joint",
+      "owner": "장민서",
+      "deps": [
+        "H-0"
+      ],
+      "estimateH": 1.5,
+      "plannedDate": "2026-10-28",
+      "allowedPaths": [
+        "spikes/spk-3/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "권한 거부 시 동작·안내 문구 확정"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        3
+      ],
+      "role": "joint",
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "SPK-4",
+      "title": "Playwright Electron E2E",
+      "slug": "spk-e2e",
+      "tier": "후속",
+      "executor": "joint",
+      "owner": "장민서",
+      "deps": [
+        "H-0"
+      ],
+      "estimateH": 1.5,
+      "plannedDate": "2026-10-27",
+      "allowedPaths": [
+        "tests/e2e/**",
+        "playwright.config.*",
+        ".github/workflows/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "두 OS 러너 통과 또는 대체안 확정"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        9
+      ],
+      "role": "joint",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "D10(CLI 우선)으로 Electron E2E는 GUI(M5) 후속. CLI E2E는 #14에서"
+        }
+      ]
+    },
+    {
+      "id": "E-1",
+      "title": "스캐너(F1)",
+      "slug": "scanner",
+      "tier": "MVD",
+      "executor": "agent",
+      "owner": "장민서",
+      "deps": [
+        "C-1"
+      ],
+      "estimateH": 2,
+      "plannedDate": "2026-10-29",
+      "allowedPaths": [
+        "packages/filesystem/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "링크·숨김 분리",
+        "bigint 메타데이터",
+        "1만 개 폴더 스캔 시간 기록"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        6
+      ],
+      "role": "core-builder",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "#20에서 읽기 전용 스캔 구현됨 — 남은 것: 취소·작업 큐·RootGrant"
+        }
+      ],
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "E-2",
+      "title": "토크나이저 + 확장자 표 150~200개",
+      "slug": "features",
+      "tier": "MVD",
+      "executor": "agent",
+      "owner": "구민준",
+      "deps": [
+        "C-1"
+      ],
+      "estimateH": 2,
+      "plannedDate": "2026-10-29",
+      "allowedPaths": [
+        "packages/engine/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "한글·영문 혼합 40건 이상 테스트 통과"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        7
+      ],
+      "role": "core-builder",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "#20에서 기본 분류 일부 구현됨"
+        }
+      ],
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "E-3",
+      "title": "규칙 엔진·기본 규칙·충돌 해결·이유 문장(F2)",
+      "slug": "rule-engine",
+      "tier": "MVD",
+      "executor": "agent",
+      "owner": "구민준",
+      "deps": [
+        "E-2"
+      ],
+      "estimateH": 3,
+      "plannedDate": "2026-10-29",
+      "allowedPaths": [
+        "packages/engine/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "충돌 4단계 테스트",
+        "모든 결정에 reason"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        7
+      ],
+      "role": "core-builder",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "#20에서 일부 구현됨"
+        }
+      ],
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "E-4",
+      "title": "계획 생성기: 4.4 정규화, 계획 단계 이름 충돌 해소(F5)",
+      "slug": "planner",
+      "tier": "MVD",
+      "executor": "agent",
+      "owner": "구민준",
+      "deps": [
+        "E-1",
+        "E-3"
+      ],
+      "estimateH": 2.5,
+      "plannedDate": "2026-10-30",
+      "allowedPaths": [
+        "packages/engine/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "T-DET-1~5, T-COL-1~4·7 통과"
+      ],
+      "tests": [
+        "T-DET-1",
+        "T-DET-2",
+        "T-DET-3",
+        "T-DET-4",
+        "T-DET-5",
+        "T-COL-1",
+        "T-COL-2",
+        "T-COL-3",
+        "T-COL-4",
+        "T-COL-7"
+      ],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        8
+      ],
+      "role": "core-builder",
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "V-1",
+      "title": "실행기 수용 테스트 + 실패 주입 장치",
+      "slug": "executor-acceptance-tests",
+      "tier": "MVD",
+      "executor": "agent",
+      "owner": "장민서",
+      "deps": [
+        "C-1",
+        "A-1"
+      ],
+      "estimateH": 3.5,
+      "plannedDate": "2026-10-29",
+      "allowedPaths": [
+        "tests/integration/**",
+        "packages/filesystem/src/testing/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "T-COL·T-APR·FI 테스트가 구현 전 실패 상태로 커밋",
+        "강제 종료 장치가 빈 실행기로 두 OS CI에서 동작",
+        "배포 빌드에 테스트 훅이 포함되지 않음을 확인하는 검사"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        10,
+        13
+      ],
+      "role": "core-builder",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "실행기 구현과 다른 세션·작성자가 수행(구현·검증 분리)"
+        }
+      ],
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "U-1",
+      "title": "렌더러 골격·P1·P2(가짜 IPC)",
+      "slug": "renderer-shell",
+      "tier": "후속",
+      "executor": "agent",
+      "owner": "장민서",
+      "deps": [
+        "C-1"
+      ],
+      "estimateH": 3,
+      "plannedDate": "2026-10-30",
+      "allowedPaths": [
+        "apps/desktop/**",
+        "apps/web/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "가짜 IPC로 폴더 선택~분석 화면 동작"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        9
+      ],
+      "role": "interface-builder",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "D10: GUI는 #14 이후 M5"
+        }
+      ]
+    },
+    {
+      "id": "E-6",
+      "title": "참고 폴더 규칙 추출(F3)",
+      "slug": "ref-analyzer",
+      "tier": "MVD",
+      "executor": "agent",
+      "owner": "구민준",
+      "deps": [
+        "E-3",
+        "A-1"
+      ],
+      "estimateH": 4,
+      "plannedDate": "2026-10-31",
+      "allowedPaths": [
+        "packages/engine/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "합성 참고 폴더 정답 규칙 재현",
+        "참고 폴더 스냅샷 불변"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        18
+      ],
+      "role": "core-builder",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "#20에서 규칙 제안·확인 구현됨. MVD-B: 단일 특징 규칙만"
+        }
+      ],
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "E-7",
+      "title": "규칙 저장소·\"이번만/이후에도\"(F4·F6)",
+      "slug": "rule-store",
+      "tier": "MVD",
+      "executor": "agent",
+      "owner": "장민서",
+      "deps": [
+        "E-3"
+      ],
+      "estimateH": 2,
+      "plannedDate": "2026-10-31",
+      "allowedPaths": [
+        "packages/filesystem/**",
+        "packages/engine/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "재시작 유지",
+        "초기화 백업",
+        "승인 전 미저장"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        18
+      ],
+      "role": "core-builder",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "CLI 우선(D10): 앱 로컬 프로필 저장은 filesystem 서비스"
+        }
+      ],
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "E-5",
+      "title": "중복·큰 파일 후보(F7·F8)",
+      "slug": "dup",
+      "tier": "MVD",
+      "executor": "agent",
+      "owner": "장민서",
+      "deps": [
+        "E-1"
+      ],
+      "estimateH": 2.5,
+      "plannedDate": "2026-10-31",
+      "allowedPaths": [
+        "packages/engine/**",
+        "packages/filesystem/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "하드 링크·0바이트·같은 크기 다른 내용 테스트 통과"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        7
+      ],
+      "role": "core-builder",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "#20에서 streaming SHA-256 중복 후보 구현됨"
+        }
+      ],
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "X-1",
+      "title": "실행기: 링크 방식 이동 M0~M5, 휴지통 T0~T2, L3, 6.3 정책",
+      "slug": "executor-link-move",
+      "tier": "MVD",
+      "executor": "agent",
+      "owner": "구민준",
+      "deps": [
+        "SPK-1",
+        "SPK-2",
+        "V-1",
+        "ER-1"
+      ],
+      "estimateH": 4,
+      "plannedDate": "2026-10-31",
+      "allowedPaths": [
+        "packages/filesystem/**"
+      ],
+      "protectedPaths": [
+        "tests/integration/**",
+        "packages/filesystem/src/testing/**"
+      ],
+      "acceptance": [
+        "T-COL 전부, FI-2·3·4·5·6 두 OS CI 통과",
+        "외부 검토 기록",
+        "실제 사용자 폴더 미사용"
+      ],
+      "tests": [
+        "T-COL-1",
+        "T-COL-5",
+        "T-COL-6",
+        "T-COL-8",
+        "FI-2",
+        "FI-3",
+        "FI-4",
+        "FI-5",
+        "FI-6"
+      ],
+      "needsExternalReview": true,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        10,
+        11
+      ],
+      "role": "core-builder",
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "A-2",
+      "title": "사후 감사기(L5, 6.1)",
+      "slug": "auditor",
+      "tier": "MVD",
+      "executor": "agent",
+      "owner": "장민서",
+      "deps": [
+        "A-1"
+      ],
+      "estimateH": 2.5,
+      "plannedDate": "2026-11-01",
+      "allowedPaths": [
+        "packages/filesystem/src/audit/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "T-APR-8·10·11 통과"
+      ],
+      "tests": [
+        "T-APR-8",
+        "T-APR-10",
+        "T-APR-11"
+      ],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        13
+      ],
+      "role": "core-builder",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "실행기 작성자가 아닌 사람이 작성"
+        }
+      ],
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "U-2",
+      "title": "P3 계획 확인(탭·상세·수정·새 규칙)",
+      "slug": "plan-screen",
+      "tier": "후속",
+      "executor": "agent",
+      "owner": "장민서",
+      "deps": [
+        "U-1"
+      ],
+      "estimateH": 5,
+      "plannedDate": "2026-11-01",
+      "allowedPaths": [
+        "apps/desktop/**",
+        "apps/web/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "계획 9.1 요소 전부",
+        "수정 후 새 planId 반영"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        9
+      ],
+      "role": "interface-builder",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "D10"
+        }
+      ]
+    },
+    {
+      "id": "X-2",
+      "title": "승인 저장·L2·L4 + 메인 IPC",
+      "slug": "approval-ipc",
+      "tier": "MVD",
+      "executor": "agent",
+      "owner": "구민준",
+      "deps": [
+        "E-4",
+        "X-1"
+      ],
+      "estimateH": 2.5,
+      "plannedDate": "2026-11-01",
+      "allowedPaths": [
+        "packages/engine/**",
+        "packages/filesystem/**"
+      ],
+      "protectedPaths": [
+        "tests/integration/**",
+        "packages/filesystem/src/testing/**"
+      ],
+      "acceptance": [
+        "T-APR-1·2·5·6·7·9, T-DET-6 통과",
+        "외부 검토 기록"
+      ],
+      "tests": [],
+      "needsExternalReview": true,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        8
+      ],
+      "role": "core-builder",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "공용 승인 서비스(INTERFACES.md). 앱 main 프로세스 대신 packages"
+        }
+      ],
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "X-3",
+      "title": "저널(JSONL+fsync)·정합 복구(5.5)",
+      "slug": "journal-recovery",
+      "tier": "MVD",
+      "executor": "agent",
+      "owner": "구민준",
+      "deps": [
+        "X-2"
+      ],
+      "estimateH": 4,
+      "plannedDate": "2026-11-02",
+      "allowedPaths": [
+        "packages/filesystem/**"
+      ],
+      "protectedPaths": [
+        "tests/integration/**",
+        "packages/filesystem/src/testing/**"
+      ],
+      "acceptance": [
+        "FI-1·7·8·9·10 통과",
+        "복구 2회 결과 동일",
+        "외부 검토 기록"
+      ],
+      "tests": [],
+      "needsExternalReview": true,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        10,
+        13
+      ],
+      "role": "core-builder",
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "U-3",
+      "title": "P4·P5·P6 승인(충돌 정책 선택)·실행·결과",
+      "slug": "approve-run-result",
+      "tier": "후속",
+      "executor": "agent",
+      "owner": "장민서",
+      "deps": [
+        "U-2"
+      ],
+      "estimateH": 3,
+      "plannedDate": "2026-11-02",
+      "allowedPaths": [
+        "apps/desktop/**",
+        "apps/web/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "결과 수치 = 감사 결과",
+        "\"번호를 붙여 이동함\" 배지"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        9
+      ],
+      "role": "interface-builder",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "D10"
+        }
+      ]
+    },
+    {
+      "id": "ER-2",
+      "title": "X-1·X-3 상태 기계 외부 검토",
+      "slug": "er-2",
+      "tier": "MVD",
+      "executor": "human",
+      "owner": "공동",
+      "deps": [
+        "X-3"
+      ],
+      "estimateH": 1,
+      "plannedDate": "2026-11-02",
+      "allowedPaths": [],
+      "protectedPaths": [],
+      "acceptance": [
+        "docs/reviews/ER-2.md, 차단 지적 처리 완료"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": 22,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        22
+      ],
+      "role": "human"
+    },
+    {
+      "id": "I-1",
+      "title": "실제 IPC 연결, MVD 시나리오",
+      "slug": "integration-mvd",
+      "tier": "MVD",
+      "executor": "joint",
+      "owner": "공동",
+      "deps": [
+        "X-3",
+        "CLI-3",
+        "A-2",
+        "E-5",
+        "E-6",
+        "E-7"
+      ],
+      "estimateH": 3,
+      "plannedDate": "2026-11-02",
+      "allowedPaths": [
+        "apps/cli/**",
+        "packages/filesystem/**",
+        "packages/engine/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "계획 13.1 MVD 시나리오가 한 OS 실제 기기(샘플 폴더)에서 통과",
+        "감사 경고 0"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        14
+      ],
+      "role": "joint",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "MVD-B: 한 OS 실제 기기, CLI"
+        }
+      ],
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "EV-1",
+      "title": "임계값 실험·확정(7절)",
+      "slug": "threshold-eval",
+      "tier": "제외(MVD-B)",
+      "executor": "joint",
+      "owner": "구민준",
+      "deps": [
+        "E-6",
+        "A-1"
+      ],
+      "estimateH": 2,
+      "plannedDate": "2026-11-02",
+      "allowedPaths": [
+        "tools/eval/**",
+        "docs/eval/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "24개 조합 결과표",
+        "임계값 확정 PR"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        18
+      ],
+      "role": "joint",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "MVD-B: 초기 임계값 사용"
+        }
+      ],
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "X-4",
+      "title": "이동 되돌리기(F13)",
+      "slug": "undo",
+      "tier": "결정필요",
+      "executor": "agent",
+      "owner": "구민준",
+      "deps": [
+        "X-3"
+      ],
+      "estimateH": 1.5,
+      "plannedDate": "2026-11-03",
+      "allowedPaths": [
+        "packages/filesystem/**"
+      ],
+      "protectedPaths": [
+        "tests/integration/**",
+        "packages/filesystem/src/testing/**"
+      ],
+      "acceptance": [
+        "조건 위반 시 거부·사유",
+        "외부 검토 기록"
+      ],
+      "tests": [],
+      "needsExternalReview": true,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        10
+      ],
+      "role": "core-builder",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "상세 계획 MVD-B는 제외하나 #10 완료 조건에 역이동 포함 — 사용자 결정 필요"
+        }
+      ],
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "U-4",
+      "title": "P7 규칙 관리·시작 시 복구 안내",
+      "slug": "rules-screen",
+      "tier": "후속",
+      "executor": "agent",
+      "owner": "장민서",
+      "deps": [
+        "U-3",
+        "E-7"
+      ],
+      "estimateH": 2,
+      "plannedDate": "2026-11-03",
+      "allowedPaths": [
+        "apps/desktop/**",
+        "apps/web/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "수정·비활성화·초기화가 재시작 후 유지"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        9
+      ],
+      "role": "interface-builder",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "D10"
+        }
+      ]
+    },
+    {
+      "id": "I-2",
+      "title": "두 OS 실제 기기 검증(14.2 범주 6·7·8)",
+      "slug": "i-2",
+      "tier": "MVP",
+      "executor": "joint",
+      "owner": "공동",
+      "deps": [
+        "I-1"
+      ],
+      "estimateH": 3,
+      "plannedDate": "2026-11-03",
+      "allowedPaths": [],
+      "protectedPaths": [],
+      "acceptance": [
+        "수동 체크리스트 전부 기록"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        14
+      ],
+      "role": "joint",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "MVD-B: 두 번째 OS는 분석·미리보기 전용 가능"
+        }
+      ],
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "ER-3",
+      "title": "통합 테스트 결과 외부 검토",
+      "slug": "er-3",
+      "tier": "MVP",
+      "executor": "human",
+      "owner": "공동",
+      "deps": [
+        "I-2"
+      ],
+      "estimateH": 0.5,
+      "plannedDate": "2026-11-03",
+      "allowedPaths": [],
+      "protectedPaths": [],
+      "acceptance": [
+        "docs/reviews/ER-3.md"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": 22,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        22
+      ],
+      "role": "human"
+    },
+    {
+      "id": "ER-4",
+      "title": "릴리스 외부 검토(R-1 전, R-2 전 변경분)",
+      "slug": "er-4",
+      "tier": "MVP",
+      "executor": "human",
+      "owner": "공동",
+      "deps": [
+        "I-2"
+      ],
+      "estimateH": 0.5,
+      "plannedDate": "2026-11-03",
+      "allowedPaths": [],
+      "protectedPaths": [],
+      "acceptance": [
+        "docs/reviews/ER-4.md, 출시 차단 지적 0"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": 22,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        22
+      ],
+      "role": "human"
+    },
+    {
+      "id": "R-1",
+      "title": "릴리스 후보 v0.9(GitHub Releases)",
+      "slug": "rc",
+      "tier": "MVP",
+      "executor": "joint",
+      "owner": "구민준",
+      "deps": [
+        "I-2",
+        "SPK-5",
+        "ER-4"
+      ],
+      "estimateH": 1.5,
+      "plannedDate": "2026-11-03",
+      "allowedPaths": [],
+      "protectedPaths": [],
+      "acceptance": [
+        "깨끗한 두 기기에서 설치·실행"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        15
+      ],
+      "role": "joint"
+    },
+    {
+      "id": "H-2",
+      "title": "하네스 확장(외부 검토 패킷 자동화 등)",
+      "slug": "h-2",
+      "tier": "제외(MVD-B)",
+      "executor": "pm",
+      "owner": "구민준",
+      "deps": [
+        "HX-1"
+      ],
+      "estimateH": 1.5,
+      "plannedDate": "2026-11-04",
+      "allowedPaths": [],
+      "protectedPaths": [],
+      "acceptance": [
+        "각 스킬 1회 실사용 기록"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        5
+      ],
+      "role": "coordinator",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "MVD-B(3~4시간)로 제외. 스킬은 HX-1에서 일부 구현됨"
+        }
+      ]
+    },
+    {
+      "id": "T-1",
+      "title": "외부 사용자 1명 테스트·개선",
+      "slug": "t-1",
+      "tier": "MVP",
+      "executor": "human",
+      "owner": "장민서",
+      "deps": [
+        "R-1"
+      ],
+      "estimateH": 2,
+      "plannedDate": "2026-11-04",
+      "allowedPaths": [],
+      "protectedPaths": [],
+      "acceptance": [
+        "소요 시간·수정 수·잘못된 변경 여부 기록"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        16
+      ],
+      "role": "human"
+    },
+    {
+      "id": "D-1",
+      "title": "5분 소개 영상",
+      "slug": "d-1",
+      "tier": "MVP",
+      "executor": "human",
+      "owner": "장민서",
+      "deps": [
+        "R-1"
+      ],
+      "estimateH": 3,
+      "plannedDate": "2026-11-04",
+      "allowedPaths": [],
+      "protectedPaths": [],
+      "acceptance": [
+        "5분 이내, 실제 기기·샘플 폴더 시연"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        16
+      ],
+      "role": "human"
+    },
+    {
+      "id": "R-2",
+      "title": "최종 릴리스 v1.0 + 버그 수정 예비",
+      "slug": "release",
+      "tier": "MVP",
+      "executor": "joint",
+      "owner": "구민준",
+      "deps": [
+        "T-1",
+        "ER-4"
+      ],
+      "estimateH": 3,
+      "plannedDate": "2026-11-05",
+      "allowedPaths": [],
+      "protectedPaths": [],
+      "acceptance": [
+        "두 OS 설치 파일",
+        "알려진 치명 결함 0",
+        "11/5 12:00 동결"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        15
+      ],
+      "role": "joint"
+    },
+    {
+      "id": "D-2",
+      "title": "소개·다운로드 페이지, README, 최종 제출",
+      "slug": "d-2",
+      "tier": "MVP",
+      "executor": "human",
+      "owner": "장민서",
+      "deps": [
+        "R-2",
+        "D-1"
+      ],
+      "estimateH": 1.5,
+      "plannedDate": "2026-11-05",
+      "allowedPaths": [],
+      "protectedPaths": [],
+      "acceptance": [
+        "15:00까지 제출 완료"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        16
+      ],
+      "role": "human"
+    },
+    {
+      "id": "S2",
+      "title": "미분류 상위 3개 후보",
+      "slug": "rank-stats",
+      "tier": "제외(MVD-B)",
+      "executor": "agent",
+      "owner": "구민준",
+      "deps": [
+        "E-6"
+      ],
+      "estimateH": 1.5,
+      "plannedDate": null,
+      "allowedPaths": [
+        "packages/core/src/rankStats/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "후보 3개·점수 표시"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        18
+      ],
+      "role": "core-builder",
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "S3",
+      "title": "임시·빈·미완료 다운로드 후보",
+      "slug": "junk-candidates",
+      "tier": "제외(MVD-B)",
+      "executor": "agent",
+      "owner": "구민준",
+      "deps": [
+        "E-5"
+      ],
+      "estimateH": 1,
+      "plannedDate": null,
+      "allowedPaths": [
+        "packages/core/src/dup/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "기본 미선택"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        7
+      ],
+      "role": "core-builder",
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "S1",
+      "title": "영구 삭제 모드(사용자 별도 승인 필요)",
+      "slug": "permanent-delete",
+      "tier": "결정필요",
+      "executor": "agent",
+      "owner": "구민준",
+      "deps": [
+        "X-2"
+      ],
+      "estimateH": 2,
+      "plannedDate": null,
+      "allowedPaths": [
+        "packages/filesystem/src/delete/**"
+      ],
+      "protectedPaths": [
+        "tests/integration/**",
+        "packages/filesystem/src/testing/**"
+      ],
+      "acceptance": [
+        "T-APR-9",
+        "외부 검토 기록",
+        "구현 시작 전 사용자 명시 승인"
+      ],
+      "tests": [],
+      "needsExternalReview": true,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        12
+      ],
+      "role": "core-builder",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "상세 계획은 권장(S1)·MVD-B 제외, GitHub #12는 P0 — 사용자 결정 필요"
+        }
+      ],
+      "externalOwner": "code-session"
+    },
+    {
+      "id": "S5",
+      "title": "복사 방식 이동(다른 볼륨·링크 미지원)",
+      "slug": "copy-move",
+      "tier": "후속",
+      "executor": "agent",
+      "owner": "구민준",
+      "deps": [
+        "X-3"
+      ],
+      "estimateH": 3,
+      "plannedDate": null,
+      "allowedPaths": [
+        "packages/executor/src/copy/**"
+      ],
+      "protectedPaths": [
+        "tests/integration/executor/**",
+        "packages/executor/src/testing/**"
+      ],
+      "acceptance": [
+        "FI-11 통과",
+        "외부 검토 기록"
+      ],
+      "tests": [],
+      "needsExternalReview": true,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [],
+      "role": "core-builder",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "BACKLOG: 교차 볼륨 이동은 첫 버전 범위 밖"
+        }
+      ]
+    },
+    {
+      "id": "W-1",
+      "title": "브라우저 시연 페이지",
+      "slug": "web-demo",
+      "tier": "제외(MVD-B)",
+      "executor": "agent",
+      "owner": "장민서",
+      "deps": [
+        "E-6",
+        "U-2"
+      ],
+      "estimateH": 3,
+      "plannedDate": null,
+      "allowedPaths": [
+        "apps/web/**"
+      ],
+      "protectedPaths": [],
+      "acceptance": [
+        "URL에서 샘플 분석·계획·규칙 확인",
+        "실제 파일 접근 없음"
+      ],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "issues": [
+        15
+      ],
+      "role": "interface-builder",
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "#2 교사 답변이 URL 실행을 요구하면 재검토"
+        }
+      ]
+    },
+    {
+      "slug": "cli-1",
+      "executor": "agent",
+      "owner": "장민서",
+      "estimateH": null,
+      "plannedDate": null,
+      "protectedPaths": [],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "D10(CLI 우선)에 따라 상세 계획의 U-1~U-4(Electron 화면)를 대신하는 CLI 과업으로 추가"
+        }
+      ],
+      "id": "CLI-1",
+      "title": "CLI 분석·미리보기 출력(이유·충돌·보호 표시, 한국어/JSON)",
+      "issues": [
+        6,
+        7
+      ],
+      "role": "interface-builder",
+      "tier": "MVD",
+      "deps": [
+        "E-4"
+      ],
+      "allowedPaths": [
+        "apps/cli/**"
+      ],
+      "acceptance": [
+        "계획 9.1의 정보(원래→목적지, 이유, 충돌·보호·미분류)를 CLI 표와 JSON으로 출력",
+        "#20의 preview 명령 확장, 핵심 정책을 CLI에 재구현하지 않음(INTERFACES.md)"
+      ],
+      "externalOwner": "code-session"
+    },
+    {
+      "slug": "cli-2",
+      "executor": "agent",
+      "owner": "장민서",
+      "estimateH": null,
+      "plannedDate": null,
+      "protectedPaths": [],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "D10(CLI 우선)에 따라 상세 계획의 U-1~U-4(Electron 화면)를 대신하는 CLI 과업으로 추가"
+        }
+      ],
+      "id": "CLI-2",
+      "title": "CLI 계획 수정(목적지 변경·제외·이번만/이후에도)",
+      "issues": [
+        8,
+        18
+      ],
+      "role": "interface-builder",
+      "tier": "MVD",
+      "deps": [
+        "CLI-1",
+        "E-7"
+      ],
+      "allowedPaths": [
+        "apps/cli/**"
+      ],
+      "acceptance": [
+        "수정 후 새 planId·planHash 발급",
+        "\"이후에도\"는 규칙 후보로만 생성, 승인 전 저장 안 됨"
+      ],
+      "externalOwner": "code-session"
+    },
+    {
+      "slug": "cli-3",
+      "executor": "agent",
+      "owner": "장민서",
+      "estimateH": null,
+      "plannedDate": null,
+      "protectedPaths": [],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "D10(CLI 우선)에 따라 상세 계획의 U-1~U-4(Electron 화면)를 대신하는 CLI 과업으로 추가"
+        }
+      ],
+      "id": "CLI-3",
+      "title": "CLI 배치 승인·실행·결과(충돌 정책 선택, 감사 결과 표시)",
+      "issues": [
+        8,
+        10,
+        11
+      ],
+      "role": "interface-builder",
+      "tier": "MVD",
+      "deps": [
+        "CLI-2",
+        "X-3",
+        "A-2"
+      ],
+      "allowedPaths": [
+        "apps/cli/**"
+      ],
+      "acceptance": [
+        "한 번의 배치 확인, --yes만으로 실행 권한 없음",
+        "결과 수치 = 감사 결과, onRuntimeConflict 선택 표시"
+      ],
+      "externalOwner": "code-session"
+    },
+    {
+      "slug": "cli-4",
+      "executor": "agent",
+      "owner": "장민서",
+      "estimateH": null,
+      "plannedDate": null,
+      "protectedPaths": [],
+      "tests": [],
+      "needsExternalReview": false,
+      "status": "todo",
+      "issue": null,
+      "branch": null,
+      "fails": 0,
+      "reviewRounds": 0,
+      "notes": [
+        {
+          "at": "2026-10-26T10:40:00Z",
+          "text": "D10(CLI 우선)에 따라 상세 계획의 U-1~U-4(Electron 화면)를 대신하는 CLI 과업으로 추가"
+        }
+      ],
+      "id": "CLI-4",
+      "title": "CLI 규칙 관리·미완료 작업 복구 안내",
+      "issues": [
+        18,
+        13
+      ],
+      "role": "interface-builder",
+      "tier": "MVP",
+      "deps": [
+        "CLI-3",
+        "E-7"
+      ],
+      "allowedPaths": [
+        "apps/cli/**"
+      ],
+      "acceptance": [
+        "규칙 목록·비활성화·초기화가 재시작 후 유지",
+        "시작 시 미완료 저널이 있으면 정합 복구 안내"
+      ],
+      "externalOwner": "code-session"
+    }
+  ]
+}

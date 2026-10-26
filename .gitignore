@@ -9,3 +9,6 @@ __pycache__/
 dist/
 .afo/
 *.afo-profile.json
+# Claude Code 개인 설정·작업 트리(공유하지 않음)
+.claude/settings.local.json
+.claude/worktrees/

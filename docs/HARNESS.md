@@ -1,7 +1,7 @@
 # AFO 에이전트와 하네스 운영 계획
 
-상태: **개발 하네스는 설계만 작성**. 플러그인 설치, `.claude/agents/`, hooks, 자동 실행과 하네스 전용 검증은 미구현·미검증입니다.
-#19의 앱 엔진 테스트·CLI·CI 정의와 개발 에이전트 실행 하네스를 구분합니다. 첫 구현은 단일 작성자가 진행하며 자동 다중 에이전트를 실행하지 않습니다.
+상태: **파일럿 구현(#5)**. `.claude/agents/`(4역할 중 구현 2 + 검증 1), `.claude/skills/`, `.claude/settings.json` 훅, `scripts/harness/`가 있습니다. 검증 범위와 미검증은 아래 "구현 현황과 편차"와 [harness/PILOT.md](harness/PILOT.md)에 구분합니다.
+#19의 앱 엔진 테스트·CLI·CI 정의와 개발 에이전트 실행 하네스를 구분합니다.
 개발 에이전트가 AFO를 만드는 하네스와, AFO 사용자 파일을 처리하는 앱 실행 계층은 다른 시스템입니다.
 
 ## 역할: 팀을 크게 만들지 않기
@@ -92,5 +92,23 @@ Codex는 AGENTS.md와 동일 작업 패킷을 사용합니다. `.claude` 설정�
 필수 부정 사례는 잘못된 역할·경로, 없는 증거, 실패 테스트, 승인 없는 파일 작업, 기존 산출물의 성공으로 오인하는 경우입니다.
 하네스 효과는 유사한 작은 과제의 수동/하네스 수행 시간·재작업·오류·도구 사용량으로 비교합니다. 측정 전에는 품질/토큰/시간이 개선됐다고 주장하지 않습니다.
 실패가 확인되면 해당 규칙·회귀 사례·근거를 저장소에 연결하고 같은 종류의 후속 작업에서 효과를 관찰합니다. 사용자 전역 메모리는 별도 명시 요청 없이는 수정하지 않습니다.
+
+## 구현 현황과 편차(2026-10-26, D12)
+
+| 계획 | 구현 | 검증 수준 |
+| --- | --- | --- |
+| coordinator | 메인 세션 + `/afo-workflow`, `/afo-resume` 스킬 | 로컬 파일럿 실측(직렬) |
+| core-builder·interface-builder | `.claude/agents/*.md`. 프로젝트 훅이 `agent_type`으로 역할을 구분하고 과업 `allowedPaths`·`role` 밖 편집을 거부 | 정책 단위 테스트, Claude Code 2.1.310 실측(파일럿 당시 이름 developer) |
+| verifier | 제품 코드 편집 거부, `docs/reviews/<ID>-r<n>.md`의 `VERDICT` 줄과 리뷰 테스트 이후의 전체 검사 기록이 있어야 종료 | 단위 테스트 + 파일럿 T-000(FAIL→수정→PASS) |
+| 셸 우회 탐지 | 서브에이전트 시작·종료 파일 스냅샷 비교 → `docs/status/violations.jsonl` | 단위 테스트 |
+| 실행되지 않은 검사 거부 | `run-checks.mjs`: 의존성 미설치·Node 버전 차이를 실패/경고로 표시 | 단위 실행 |
+| 같은 결함 2회 | FAIL 3회째 `blocked` | 단위 테스트 |
+| Issue 상태 | `task.mjs start/done --sync`가 Issue에 REST 코멘트 | 미실측(이 PR 이후 첫 과업에서 확인) |
+| 하네스 CI | `.github/workflows/harness.yml` windows·macos | PR CI 결과로 확인 |
+
+편차:
+- **과업 단위 상태**: 한 Issue에 여러 과업이 매핑되므로(PLAN_MAPPING.md) Issue 라벨만으로는 과업을 재개할 수 없습니다. 과업 단위 기록은 `docs/status/`에 두고 Issue에 코멘트로 동기화합니다. 정본은 계속 Issue이며 문서에 진행률 숫자를 두지 않습니다.
+- **서브에이전트 frontmatter 훅 미동작**: 설치 버전에서 에이전트 파일의 `hooks`가 실행되지 않아 프로젝트 훅 하나에서 역할별로 판단합니다.
+- **미검증**: worktree 병렬(구현 2 동시), 학교 안내 `revfactory/harness` 플러그인 설치(승인 대기, D18), Windows·macOS 실물에서의 훅 동작, 대화형 세션의 `ask` 확인 흐름(헤드리스에서는 거부로 동작).
 
 공식 근거는 [DECISIONS.md](DECISIONS.md)를 참고합니다.

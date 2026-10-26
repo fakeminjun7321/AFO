@@ -57,6 +57,9 @@ async function checkRoot(input: unknown): Promise<{ canonicalPath: string; stat:
   // "a/../b" means different folders lexically and physically once a link is involved; refuse instead of guessing.
   if (input.split(process.platform === 'win32' ? /[\\/]/u : /\//u).some((part) => part === '.' || part === '..'))
     throw forbidden('"."·".."가 들어간 경로는 받지 않습니다. 폴더를 직접 선택하세요.');
+  // Device/namespace (\\?\, \\.\) and UNC network paths bypass Win32 path rules; the first version accepts local drive folders only.
+  if (process.platform === 'win32' && /^[\\/]{2}/u.test(input))
+    throw forbidden('장치·네트워크(UNC) 경로는 받지 않습니다. 로컬 드라이브의 폴더를 선택하세요.');
   const unreadable = (error: unknown): AfoError =>
     new AfoError(fsCode(error) === 'EACCES' || fsCode(error) === 'EPERM' ? 'PERMISSION_DENIED' : 'ROOT_FORBIDDEN',
       '선택한 폴더를 찾거나 읽을 수 없습니다.', { cause: error });

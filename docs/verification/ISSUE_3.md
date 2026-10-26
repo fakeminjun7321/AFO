@@ -79,6 +79,18 @@ Release blocker and unblock condition: 데이터 손실·덮어쓰기는 관측�
 - **O-1 (관측된 한계, #10 위험)**: 목적지의 조부모 이상 경로에 있는 링크는 어댑터가 거부하지 않습니다(V3-11). 루트 밖 링크라면 루트 이탈 이동이 됩니다. ADR이 서비스 책임으로 명시했으므로 이번 FAIL은 아니며, #10에서 realpath·전체 부모 검사의 부정 테스트가 필요합니다.
 - **O-2 (분류, 테스트하지 않음)**: `EPERM`을 `NOT_SUPPORTED`로 매핑합니다. macOS의 잠긴 파일(`uchg`)·SIP 경로 같은 권한 실패가 `PERMISSION_DENIED`가 아닌 `NOT_SUPPORTED`로 보고될 수 있습니다. 데이터 안전 문제는 아닙니다.
 
+## 후속: Windows CI 결과에 따른 verify-3 수정
+
+coordinator가 hosted runner 결과를 전달했습니다(VM/CI 수준이며 verifier가 로그를 직접 보지는 않았습니다). macOS CI는 66/66 통과, Windows(windows-latest)는 V3-12 휴지통 통과, V3-03·V3-05 실패였습니다.
+
+- V3-03: NTFS는 대소문자를 무시하지만 NFC/NFD 정규화는 구분하므로 Windows에서는 정규화 충돌이 `DEST_EXISTS`가 아닙니다. 대소문자 사례는 모든 OS에서 `DEST_EXISTS`로 유지했습니다. 정규화 사례는 OS별로 기대값을 나눴습니다. macOS는 `DEST_EXISTS`와 manifest 동일, win32는 이동 성공 후 두 이름이 공존하고 기존 NFD 파일의 해시·식별이 그대로인지 확인합니다(덮어쓰기 없음).
+- V3-05: win32에는 `/usr/bin/mkfifo`가 없습니다. FIFO 사례만 하위 테스트로 분리하고 win32에서 사유를 적어 skip합니다. 나머지 거부 사례는 계속 실행합니다.
+- V3-12: win32에서는 `~/.Trash`를 보지 않고 "Recycle Bin 내부 관측 안 함"으로 기록합니다.
+- V3-06 이름에서 `V3-12` 문자열을 뺐습니다. 이제 `--test-name-pattern='V3-12'`가 휴지통 사례만 고릅니다.
+
+수정 후 이 Mac에서 `npm run typecheck`는 exit 0, `npm test`는 53 tests(V3-05 FIFO 하위 테스트 포함) / 51 pass / 0 fail / 2 skip, exit 0입니다.
+V3-03의 win32 분기는 이 Mac에서 실행할 수 없어 다음 Windows CI 실행 전까지 **미검증**입니다.
+
 ## 검증하지 못한 것
 
 - Windows 전체(link no-clobber, junction·reparse, PowerShell 휴지통, statfs). 이 Mac에서 검증 불가, F-1 때문에 CI 휴지통도 미실행

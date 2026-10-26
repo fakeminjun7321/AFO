@@ -85,7 +85,7 @@ test('V3-02 existing destination file, folder, same path and dangling link are n
   assert.equal(await lstat(path.join(root, 'nowhere.txt')).then(() => true, () => false), false, 'link target not created');
 });
 
-test('V3-03 case-only and Unicode-normalization-only collisions are refused on this filesystem', async (t) => {
+test('V3-03 case-only collisions are refused; Unicode-normalization collisions follow the platform and never overwrite', async (t) => {
   const root = await synth(t, { 'Report.txt': 'src', 'dest/report.txt': 'existing', 'dest/.keep': '' });
   const nfc = '보고서 😀.txt'.normalize('NFC'); const nfd = nfc.normalize('NFD');
   await writeFile(path.join(root, nfc), 'src-nfc');
@@ -94,9 +94,20 @@ test('V3-03 case-only and Unicode-normalization-only collisions are refused on t
   const before = await snap(root);
   await rejectsWith(linkMoveNoClobber(path.join(root, 'Report.txt'), path.join(root, 'dest', 'REPORT.TXT')), 'DEST_EXISTS');
   await rejectsWith(linkMoveNoClobber(path.join(root, 'Report.txt'), path.join(root, 'report.txt')), 'DEST_EXISTS');
-  await rejectsWith(linkMoveNoClobber(path.join(root, nfc), path.join(root, 'dest', nfc)), 'DEST_EXISTS');
   assert.deepEqual(await snap(root), before);
-  t.diagnostic('case-insensitive + normalization-insensitive lookup observed; existing hashes preserved');
+  if (process.platform === 'win32') {
+    // NTFS ignores case but distinguishes NFC/NFD: both names must coexist and nothing is overwritten.
+    await linkMoveNoClobber(path.join(root, nfc), path.join(root, 'dest', nfc));
+    const after = await snap(root);
+    assert.deepEqual(after, renamed(before, nfc, `dest/${nfc}`));
+    assert.deepEqual(after[`dest/${nfd}`], before[`dest/${nfd}`], 'existing NFD file untouched');
+    assert.equal((await readdir(path.join(root, 'dest'))).filter((n) => n.normalize('NFC') === nfc).length, 2);
+    t.diagnostic('win32: case-insensitive, normalization-sensitive; NFC and NFD names coexist, hashes preserved');
+  } else {
+    await rejectsWith(linkMoveNoClobber(path.join(root, nfc), path.join(root, 'dest', nfc)), 'DEST_EXISTS');
+    assert.deepEqual(await snap(root), before);
+    t.diagnostic(`${process.platform}: case-insensitive + normalization-insensitive lookup; existing hashes preserved`);
+  }
 });
 
 test('V3-04 destination parent that is a symlink (inside or outside) or a file is refused', async (t) => {
@@ -117,7 +128,8 @@ test('V3-05 source symlink, dir symlink, hard link, folder and FIFO are refused;
   await symlink(path.join(root, 'f.txt'), path.join(root, 'ln.txt'));
   await symlink(path.join(root, 'folder'), path.join(root, 'ln-dir'));
   await link(path.join(root, 'h.txt'), path.join(root, 'h-twin.txt'));
-  execFileSync('/usr/bin/mkfifo', [path.join(root, 'pipe')]);
+  const fifoSkip = process.platform === 'win32' ? 'win32: POSIX FIFO(mkfifo) 없음 - FIFO 사례만 건너뜀' : false;
+  if (!fifoSkip) execFileSync('/usr/bin/mkfifo', [path.join(root, 'pipe')]);
   const before = await snap(root);
   const to = (n: string): string => path.join(root, 'dest', n);
   await rejectsWith(linkMoveNoClobber(path.join(root, 'ln.txt'), to('ln.txt')), 'LINK_REJECTED');
@@ -125,12 +137,14 @@ test('V3-05 source symlink, dir symlink, hard link, folder and FIFO are refused;
   await rejectsWith(linkMoveNoClobber(path.join(root, 'h.txt'), to('h.txt')), 'LINK_REJECTED');
   await rejectsWith(linkMoveNoClobber(path.join(root, 'h-twin.txt'), to('h-twin.txt')), 'LINK_REJECTED');
   await rejectsWith(linkMoveNoClobber(path.join(root, 'folder'), to('folder')), 'NOT_SUPPORTED');
-  await rejectsWith(linkMoveNoClobber(path.join(root, 'pipe'), to('pipe')), 'NOT_SUPPORTED');
+  await t.test('FIFO source is refused', { skip: fifoSkip }, async () => {
+    await rejectsWith(linkMoveNoClobber(path.join(root, 'pipe'), to('pipe')), 'NOT_SUPPORTED');
+  });
   assert.deepEqual(await snap(root), before);
   assert.deepEqual(before['h.txt'] && before['h.txt'].type === 'file' ? before['h.txt'].nlink : null, '2');
 });
 
-test('V3-06 expected mismatch after size, mtime or inode change gives FILE_CHANGED for move and delete (trash not invoked outside V3-12)', async (t) => {
+test('V3-06 expected mismatch after size, mtime or inode change gives FILE_CHANGED for move and delete (trash is not invoked here)', async (t) => {
   const root = await synth(t, { 's.txt': 'same-size', 'm.txt': 'mtime', 'r.txt': 'replaced', 'dest/.keep': '' });
   const s = path.join(root, 's.txt'); const m = path.join(root, 'm.txt'); const r = path.join(root, 'r.txt');
   const [sId, mId, rId] = [(await fileIdentity(s))!, (await fileIdentity(m))!, (await fileIdentity(r))!];
@@ -234,7 +248,8 @@ test('V3-12 real OS trash: one synthetic file only; siblings kept; missing path 
   await moveToTrash(path.join(root, name), id);
   const expected = { ...before }; delete expected[name];
   assert.deepEqual(await snap(root), expected);
-  const inTrash = await lstat(path.join(homedir(), '.Trash', name), { bigint: true }).then(
-    (s) => `present size=${s.size}`, (e: { code?: string }) => `not observable (${e.code})`);
-  t.diagnostic(`trashed 1 synthetic file ${name}; ~/.Trash/<name>: ${inTrash}`);
+  const inTrash = process.platform === 'win32' ? 'Recycle Bin 내부 관측 안 함'
+    : await lstat(path.join(homedir(), '.Trash', name), { bigint: true }).then(
+      (s) => `~/.Trash/<name> present size=${s.size}`, (e: { code?: string }) => `~/.Trash/<name> not observable (${e.code})`);
+  t.diagnostic(`trashed 1 synthetic file ${name}; ${inTrash}`);
 });

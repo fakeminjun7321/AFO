@@ -3,6 +3,8 @@
 파일 정리가 귀찮거나 저장공간이 부족한 사용자를 위한 자동 파일 관리 프로그램입니다.
 교내 AI-SW 개발 해커톤 출품을 목표로 공동 개발합니다.
 
+**CLI 우선으로 개발하고, 이후 같은 엔진을 사용하는 GUI로 확장합니다.** CLI에서 분석·승인·정리·복구의 핵심 경로를 먼저 완성합니다. GUI 없이도 사용할 수 있게 하며 현재 구현은 읽기 전용입니다.
+
 ## 핵심 기능
 
 1. **자동 분류·저장**: 흩어진 파일을 종류와 용도에 맞게 분류하고 알맞은 폴더로 정리합니다. 선택한 기존 폴더의 정리 방식을 참고해 확인한 개인 분류 규칙을 저장·재사용합니다.
@@ -14,8 +16,7 @@
 이 버전에는 파일 이동·삭제·앱 내 규칙 자동 저장·데스크톱 UI가 없습니다. `move`는 이동 제안이며 실제 변경이 아닙니다.
 프로필 JSON의 `confirmed`는 분류 규칙의 확인 상태입니다. 파일 작업 승인이나 실행 권한이 아닙니다.
 
-목표 운영체제는 **Windows와 macOS**입니다. Electron + TypeScript 설치형 앱은 후속 기술검증 뒤 확정합니다.
-대회의 URL 직접 실행 조건과 설치형 앱의 양립 여부는 계속 미결정입니다. [첫 구현 검증 기록](docs/verification/READ_ONLY_ENGINE.md)을 참고하세요.
+목표 운영체제는 **Windows와 macOS**입니다. Node.js + TypeScript CLI가 주 인터페이스이며 Electron 등은 추후 GUI 후보입니다. 대회의 URL 직접 실행 조건에서 CLI 산출물이 인정되는 방식은 별도로 확인해야 합니다. [첫 구현 검증 기록](docs/verification/READ_ONLY_ENGINE.md)을 참고하세요.
 
 ## 로컬에서 실행하기
 
@@ -24,13 +25,14 @@ Node.js 24와 npm이 필요합니다. 의존성 버전과 lockfile을 고정했�
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund
 npm run build
-node dist/apps/cli/src/index.js --help
+npm run afo -- --help
 ```
 
 분석할 폴더를 직접 지정합니다. 아래 경로는 설명용이며 본인이 만든 테스트 폴더로 바꿉니다. 경로에 공백이 있으면 따옴표를 유지합니다.
 
 ```sh
 npm run preview -- "/path/to/test-folder"
+npm run afo -- preview "/path/to/test-folder"
 node dist/apps/cli/src/index.js preview "/path/to/test-folder" --json
 ```
 
@@ -59,6 +61,8 @@ npm test
 테스트는 새 temp 폴더에 합성 파일을 만들고, 실제 CLI 프로세스와 독립 전후 manifest를 검증합니다. `.github/workflows/engine.yml`은 Windows/macOS CI 정의이며, 통과 여부와 실제 하드웨어 검증은 구분합니다.
 
 ## 개발 시작점
+
+CLI와 GUI는 공용 계약·엔진·파일 서비스를 공유합니다. GUI가 CLI 출력이나 shell 명령을 파싱하지 않으며, 승인·루트 제한·저널·삭제 정책을 우회하지 않도록 합니다. [인터페이스 설계](docs/INTERFACES.md)를 참고하세요.
 
 | 문서 | 내용 |
 | --- | --- |

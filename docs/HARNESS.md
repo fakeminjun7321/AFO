@@ -9,13 +9,13 @@
 | 역할 | 하는 일 | 쓰기 범위 | 하지 않는 일 |
 | --- | --- | --- | --- |
 | coordinator | 선행 조건 확인, 작업 패킷, 공용 계약, 결과 통합, 사용자 보고 | 계획·계약·통합 브랜치, 충돌 조정 | 사람이 승인하지 않은 배포·병합·개인 파일 정리 |
-| core-builder | 스캔·분류·계획·파일 실행 | 맡은 packages/와 대응 tests/ | UI 구조 변경, 다른 작업의 경로 수정 |
-| desktop-builder | renderer·preload·main 연결·패키징 | 맡은 apps/와 대응 tests/ | 승인 검사 생략, 파일 어댑터 임의 우회 |
+| core-builder | 스캔·분류·계획·파일 실행 | 맡은 packages/와 대응 tests/ | 인터페이스 구조 변경, 다른 작업의 경로 수정 |
+| interface-builder | CLI 입력·출력·도움말과 후속 GUI 어댑터·패키징 | 맡은 apps/cli/ 또는 후속 GUI와 대응 tests/ | 승인 검사 생략, 파일 어댑터 임의 우회 |
 | verifier | 독립 테스트, 원본/결과 비교, 실패 재현, PR 검토 | 별도 합성 fixture·검증 로그, 합의한 테스트 경로 | 제품 코드 몰래 수정, 자기 평가만으로 통과 처리 |
 
 coordination은 현재 주 에이전트가 맡고 작업마다 역할을 호출합니다. 역할 네 개가 항상 동시에 실행되는 것은 아닙니다.
 동시 상한은 **조정 1 + 구현 2 + 검증 1**입니다. 구현 병렬화는 공용 계약 확정과 경로 분리 후에만 합니다.
-파일 실행 엔진·main의 권한 경계·lockfile·공용 스키마는 단일 작성자가 소유합니다. 검증자가 제품 코드를 고쳐야 하면 별도 구현 과제로 전환한 뒤 다른 검토를 받습니다.
+파일 실행 엔진·공용 승인 경계·lockfile·공용 스키마는 단일 작성자가 소유합니다. 검증자가 제품 코드를 고쳐야 하면 별도 구현 과제로 전환한 뒤 다른 검토를 받습니다.
 설치된 모델 설정을 상속하고 특정 모델 이름을 고정하지 않습니다. 모델 변경이나 추가 유료 서비스를 임의로 도입하지 않습니다.
 
 ## 한 이슈를 처리하는 순서
@@ -36,7 +36,7 @@ coordination은 현재 주 에이전트가 맡고 작업마다 역할을 호출�
 
 ```text
 Issue: URL
-Role: core-builder | desktop-builder | verifier
+Role: core-builder | interface-builder | verifier
 Base commit: SHA
 Objective: 사용자가 얻게 될 동작 한 가지
 Prerequisites: 선행 이슈·확정 계약·실행 환경
@@ -53,8 +53,8 @@ Return: commit, diff summary, evidence, verification level, unresolved risks
 ## 실제 병렬화 계획
 
 - 요구 조사와 플랫폼 검토는 독립적으로 진행할 수 있습니다.
-- 기반/계약 이후 core-builder는 스캔→기본 분류→개인화 규칙(#18)→계획을, desktop-builder는 그 계약을 사용하는 UI를 병렬 구현합니다. 참고 읽기·프로필·저장 계약은 #4의 공용 타입에 먼저 반영합니다.
-- #18의 엔진·규칙 저장은 core-builder, 참고 선택·규칙 편집 UI는 #9 desktop-builder 경로로 나눕니다. 같은 계약/경로를 동시에 고치지 않으며 실제 개인화 연동은 #14에서 확인합니다.
+- 기반/계약 이후 core-builder는 스캔→기본 분류→개인화 규칙(#18)→계획을, interface-builder는 그 계약을 사용하는 CLI 입력·출력을 병렬 구현합니다. GUI는 CLI 안정화 이후 별도 확장합니다. 참고 읽기·프로필·저장 계약은 #4의 공용 타입에 먼저 반영합니다.
+- #18의 엔진·규칙 저장은 core-builder, CLI 참고 선택·규칙 편집은 interface-builder의 apps/cli 경로로 나눕니다. 실제 CLI 개인화 연동은 #14에서 확인하고 GUI #9는 그 이후 확장합니다. 같은 계약/경로의 동시 편집은 금지합니다.
 - UI의 fixture/mock는 화면 개발용이라고 표시합니다. 파일 실행 완료 이슈의 증거로 쓰지 않습니다.
 - 파일 실행, 승인 경계 변경, 복구 작업은 같은 경로를 다루므로 순서대로 진행합니다. verifier는 고정된 snapshot을 검사합니다.
 - 실제 삭제·OS 휴지통 검증은 같은 기기·루트에서 한 작업만 수행합니다. CI도 고유 temp 루트로 격리합니다.
@@ -66,7 +66,7 @@ Return: commit, diff summary, evidence, verification level, unresolved risks
 | --- | --- |
 | AGENTS.md / CLAUDE.md | 도구 간 공통 규칙과 Claude 진입점. 이번에는 계획 안내만 존재 |
 | .claude/agents/core-builder.md | 담당 경로·완료 조건·설정 상속·작업 격리 정의 |
-| .claude/agents/desktop-builder.md | UI/IPC 경계, 같은 패킷 계약 |
+| .claude/agents/interface-builder.md | CLI/후속 GUI 경계, 같은 패킷 계약 |
 | .claude/agents/verifier.md | 제품 코드 읽기 중심, 독립 fixture 검증, 제한된 테스트 실행 |
 | .claude/skills/afo-workflow/SKILL.md | 이슈→구현→검증→PR→사람 검토 흐름 |
 | .claude/settings.json + scripts/harness/ | 로드/정책/산출물 검사. 공식 설치 버전의 스키마에 맞게 구현·부정 테스트 |

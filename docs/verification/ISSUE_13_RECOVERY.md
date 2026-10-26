@@ -1,6 +1,6 @@
 # #13 중단된 실행 보고(`inspectRuns`) 구현 기록
 
-역할: core-builder. 날짜: 2026-10-26. 브랜치 `feat/13-recovery`: 처음 `6231c6a`(origin/main) 기준, 이후 잠금 브랜치 `origin/feat/13-root-lock`(`2229898`, PR #30) 위로 rebase.
+역할: core-builder. 날짜: 2026-10-26. 브랜치 `feat/13-recovery`: 처음 `6231c6a`(origin/main) 기준, 이후 잠금 브랜치 `origin/feat/13-root-lock` 위로 rebase(현재 `8a00c24`: 잠금 키 = 폴더 device·inode).
 범위: #13 중 **보고 전용** 중단 실행 점검(DESIGN 실행 규칙 7). 잠금은 `readRootLock`으로 읽기만 합니다. 잠금 구현(`lock.ts`)·장애 주입 실행·CLI `recover`/`runs` 출력은 다른 작업자 범위이며 여기 포함하지 않습니다.
 이 문서는 구현자 기록입니다. 독립 verifier 검증은 아직 하지 않았습니다.
 
@@ -17,6 +17,8 @@
 ## 판정 규칙
 
 - 작업별로 유효 저널 항목을 순서대로 봅니다. `intent` 뒤 `done|failed|skipped`, `undo-intent` 뒤 `undone|failed|skipped`이면 완료(보고·재실행하지 않음). 첫 기록이 단독 `failed|skipped`인 작업은 시작 전에 거부된 것으로 보고 완료로 셉니다.
+- 예외: `failed`·`skipped`의 `errorCode`가 `UNKNOWN`이면 실행기가 결과를 확인하지 못했다는 뜻(세션 B 확인)이므로 완료로 세지 않습니다. 시작 기록 기준으로 실제 파일을 관측해 `state` = 관측 상태(관측할 수 없으면 `unknown`), `detail` = `RESULT_UNKNOWN`, 안내 = 실행기가 결과를 확인하지 못함·파일 직접 확인·다시 실행하지 않음 + 관측 상태 안내. 다른 오류 코드의 `failed`/`skipped`는 그대로 완료입니다.
+- 되돌리기 실패는 `undo-intent` 뒤 같은 opId의 kind `move` `failed`로 기록됩니다(세션 B 확인). 이것도 위 규칙을 따릅니다(코드 `UNKNOWN`만 미완료, 방향은 목적지→원래 경로). `undone.after`는 복원된 원래 경로의 식별이며 판정에는 쓰지 않습니다.
 - 같은 작업의 기록끼리 kind·source·destination·before(dev/ino/size, 둘 다 있을 때 sha256)가 다르거나, 시작 없는 `done/undone`, 이중 `intent`, 완료되지 않은 이동의 `undo-intent` → `unknown`(`JOURNAL_INCONSISTENT`).
 - 손상 줄이 하나라도 있으면 실행 상태는 `corrupt`, 열린 작업은 모두 `unknown`(`JOURNAL_DAMAGED`)이며 손상 줄 번호·이유를 함께 보고합니다. 손상 줄이 그 작업의 완료 기록이었을 수 있기 때문입니다. 실제로 관측한 상태는 `observed`에 참고로만 남깁니다.
 - 실행 ID가 파일 이름과 다르거나 한 저널에 다른 planId·rootGrantId가 섞이면 실행 전체를 `corrupt`, 열린 작업을 `unknown`으로 보고하고 계획을 찾지 않습니다.
@@ -36,11 +38,12 @@
 
 ### 루트 잠금 (읽기만)
 
-`rootGrantId`를 아는 실행마다 `readRootLock(stateDir, rootGrantId)`로 `locks/<rootGrantId>.lock`을 읽어 `lock: { state, pid, startedAt }`에 남깁니다. 잠금을 얻거나 지우거나 고치지 않습니다.
+잠금 키는 작업 폴더 식별(device·inode, lock.ts `8a00c24`)입니다. 식별은 loader가 준 `grant`의 `{ canonicalPath, device, inode }`를 우선 쓰고(실행기는 승인된 폴더 식별로 잠그므로 루트가 바뀐 `ROOT_CHANGED` 경우에도 grant로 찾음), `grant`가 없으면 루트 재검사(`checkRoot`)를 통과한 뒤 `lstat(plan.rootPath, { bigint: true })`로 만듭니다. 그 식별로 `readRootLock(stateDir, target)`을 읽어 `lock: { state, pid, startedAt }`에 남깁니다. 열린 작업이 없는 실행도 진행 중일 수 있으므로 저널에 항목이 있으면 계획을 불러 잠금을 확인합니다. 잠금을 얻거나 지우거나 고치지 않습니다.
 - `held`(이 컴퓨터의 살아 있는 pid) 또는 `foreign-host`(다른 컴퓨터): 실행이 아직 진행 중일 수 있으므로 실행 상태 `active`, 열린 작업은 모두 `unknown`(`LOCKED_BY_OTHER`)입니다. `observed`는 계산할 수 있으면 채웁니다. 안내: 진행 중일 수 있으니 끝난 뒤 다시 확인, 이 점검은 아무것도 바꾸지 않음. 진행 중인 실행이 마지막 줄을 쓰는 중일 수 있으므로 `active`가 `corrupt`보다 우선합니다.
 - `stale`(pid 없음): 저널대로 판정하고 `problem`에 "이전 실행이 비정상 종료돼 잠금 파일이 남아 있음, 지우지 않았음"을 덧붙입니다. 해제는 다음 `withRootLock` 획득 때 lock.ts 규칙으로만 일어납니다.
 - `corrupt`: 저널대로 판정, `problem`에 해석 불가 안내. `free`: 저널대로 판정.
-- `readRootLock` 오류(예: `locks`가 파일): `lock: null`, `problem`에 "잠금 상태를 읽지 못했습니다(코드)". 예외를 던지지 않습니다. `rootGrantId`를 모르는 실행(빈 저널, unreadable)도 `lock: null`입니다.
+- 루트 식별을 알 수 없음(loader 없음, 계획 없음·불일치·손상, 루트 없음, 저널 불일치): `lock: null`, `problem`에 "작업 폴더를 확인할 수 없어 잠금 상태를 확인하지 못했습니다". 이것을 `active`로 취급하지 않습니다.
+- `readRootLock` 오류(예: `locks`가 파일 → lock.ts가 모든 OS에서 `STATE_CORRUPT`): `lock: null`, `problem`에 "잠금 상태를 읽지 못했습니다(코드)". 예외를 던지지 않습니다. 항목이 없는 빈 저널은 `lock: null`이고 안내도 붙이지 않습니다.
 - 한계: 잠금은 루트 단위입니다. 같은 루트의 다른 실행이 진행 중이면 그 루트의 오래된 실행도 모두 `active`로 보입니다(보수적). pid 재사용 시 끝난 실행이 `held`로 보일 수 있습니다(lock.ts와 같은 한계).
 
 ### 상태와 안내(action)
@@ -69,14 +72,16 @@
 ```text
 npm ci --ignore-scripts --no-audit --no-fund   # 4 packages
 npm run typecheck                              # exit 0
-npm test                                       # tests 114, pass 112, fail 0, skipped 2 (기존 실제 휴지통 검사 2건: AFO_REAL_TRASH_TEST 미설정)
-node --test dist/tests/recovery.test.js        # tests 14, pass 14, fail 0, skipped 0
+npm test                                       # tests 117, pass 115, fail 0, skipped 2 (기존 실제 휴지통 검사 2건: AFO_REAL_TRASH_TEST 미설정)
+node --test dist/tests/recovery.test.js        # tests 15, pass 15, fail 0, skipped 0
 ```
 
-`tests/recovery.test.ts` 14개는 중단 상태를 실제 파일 조작으로 만듭니다(link만 → linked-both, link+unlink → moved, rm → missing, 같은 이름 새 파일·목적지 선점·하드링크 추가 → conflict).
+`tests/recovery.test.ts` 15개는 중단 상태를 실제 파일 조작으로 만듭니다(link만 → linked-both, link+unlink → moved, rm → missing, 같은 이름 새 파일·목적지 선점·하드링크 추가 → conflict).
 사례: 이동 5상태(conflict 2종), 되돌리기 3상태, 휴지통·영구 삭제 각 3상태, 완료 작업(done/failed/skipped/단독 skipped/undone) 미보고, 중간 손상 줄·루트 밖 경로를 담은 줄·잘린 마지막 줄, 계획 없음·rootGrantId/id/작업 불일치·`../` 경로·없는/비정규/상대 루트, 루트 안 부모 링크(원래 경로 쪽·목적지 쪽·밖을 가리키는 조부모), 기록 불일치 3종과 실행 ID/계획 혼합, 저널 폴더의 특이한 이름, 빈·없는 상태 폴더와 링크 저널 폴더.
 파일을 읽는 모든 `inspectRuns` 호출(경로 형식만 보고 거부하는 상대 경로 1건 제외) 전후 루트·상태 폴더(링크 사례는 밖 폴더 포함)의 manifest(경로·종류·크기·mtimeNs·sha256·링크 대상)가 같음을 확인했습니다.
 잠금 사례 3개: 같은 프로세스에서 `withRootLock`을 잡은 채 점검(→ `active`, `LOCKED_BY_OTHER`, observed `linked-both`/`not-started`, manifest에 잠금 파일 바이트 포함), 실제 자식 프로세스를 띄워 종료를 기다린 뒤 그 pid로 쓴 잠금(→ `stale`, 저널대로 `unfinished`, 잠금 파일 바이트 그대로), 다른 호스트 이름의 잠금(→ `active`)과 해석 불가 잠금(`corrupt`)·`locks`가 파일인 경우(`lock: null`, 예외 없음).
+잠금 식별 사례: `grant` 없이 계획만 주는 loader에서도 루트의 현재 dev/ino로 잠금을 찾아 `active`, loader가 없으면 잠금이 실제로 잡혀 있어도 `lock: null`·안내만 붙고 `active`가 아님. `locks`가 파일이면 `lock: null`과 `잠금 상태를 읽지 못했습니다(STATE_CORRUPT)`(macOS·Windows 공통 기대값, Windows는 CI에서 확인 필요).
+결과 불명 사례: link만 한 이동 + `failed UNKNOWN` → `linked-both`/`RESULT_UNKNOWN`, 휴지통 원래 경로 없음 + `failed UNKNOWN` → `missing`/`RESULT_UNKNOWN`, 되돌리기 `failed UNKNOWN` → 되돌리기 방향 `not-started`, `skipped UNKNOWN` → `not-started`, `failed DEST_EXISTS`와 되돌리기 `failed FILE_CHANGED`는 완료.
 계획 출처 사례: loader 없음(`PLAN_UNAVAILABLE`, observed 없음), `grant.canonicalPath` 불일치(`ROOT_CHANGED`), 루트를 옆으로 rename한 뒤 같은 경로에 같은 파일 이름으로 새 폴더를 만든 경우(dev/ino 불일치 → `ROOT_CHANGED`, 옆으로 옮긴 폴더 manifest도 그대로).
 oracle 점검: 빌드 산출물에 `unlink`를 일부러 넣었을 때 manifest 비교가 3개 테스트를 실패시키는 것을 확인한 뒤 다시 빌드했습니다.
 
@@ -88,7 +93,7 @@ oracle 점검: 빌드 산출물에 `unlink`를 일부러 넣었을 때 manifest 
 
 ## 남은 위험
 
-- 기본 loader 연결(#8 `loadSavedPlan`)은 아직 없습니다. undo 저널 형식(되돌리기도 앞 이동과 같은 source/destination/before를 기록한다고 가정)은 세션 B 구현과 맞춰 확인해야 합니다.
+- 기본 loader 연결(#8 `loadSavedPlan`)은 아직 없습니다. 되돌리기 저널 형식(앞 이동과 같은 source/destination/before, 실패는 kind `move` `failed`)과 `failed UNKNOWN` 의미는 세션 B가 확인했지만, 실제 executor 저널로 대조한 테스트는 아직 없습니다.
 - 손상 줄 안에만 있던 작업(시작 기록 자체가 손상)은 opId를 알 수 없어 작업 단위로 보고하지 못합니다. 실행 상태 `corrupt`와 줄 번호로만 드러납니다.
 - 같은 경로의 다른 폴더는 loader가 `grant`(dev/ino)를 줄 때만 `ROOT_CHANGED`로 구분합니다. `grant` 없이 계획만 주면 파일 dev/ino 비교로 `conflict`/`missing`이 됩니다.
 - 점검과 사용자의 확인 사이에 파일이 다시 바뀔 수 있습니다. 보고는 점검 시점의 관측입니다.

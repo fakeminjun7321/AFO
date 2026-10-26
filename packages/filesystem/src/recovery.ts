@@ -7,7 +7,7 @@ import type { JournalRead } from './state.js';
 import { classifyMoveState, fileIdentity } from './platform.js';
 import type { MoveState } from './platform.js';
 import { readRootLock } from './lock.js';
-import type { RootLockState } from './lock.js';
+import type { RootLockState, RootLockTarget } from './lock.js';
 
 /**
  * Report-only inspection of interrupted runs (#13, DESIGN 실행 규칙 7). It reads journals, plans and lstat results only:
@@ -123,14 +123,18 @@ async function observe(root: string, open: JournalEntry): Promise<MoveState> {
     ? 'not-started' : 'conflict';
 }
 
-interface Track { first: JournalEntry; open: JournalEntry | null; lastClose: JournalEntry['phase'] | null; bad: string | null }
+interface Track {
+  first: JournalEntry; open: JournalEntry | null; lastClose: JournalEntry['phase'] | null; bad: string | null;
+  /** Start record of an op the executor closed as failed/skipped with errorCode UNKNOWN: its result was never confirmed. */
+  unresolved: JournalEntry | null;
+}
 /** Walks one run's valid entries per op: intent → done|failed|skipped, then optionally undo-intent → undone|failed|skipped. */
 function track(entries: JournalEntry[]): Map<string, Track> {
   const ops = new Map<string, Track>();
   for (const e of entries) {
     let t = ops.get(e.opId);
     const fresh = !t;
-    if (!t) { t = { first: e, open: null, lastClose: null, bad: null }; ops.set(e.opId, t); }
+    if (!t) { t = { first: e, open: null, lastClose: null, bad: null, unresolved: null }; ops.set(e.opId, t); }
     if (e.kind !== t.first.kind || e.source !== t.first.source || e.destination !== t.first.destination || !sameBefore(e.before, t.first.before))
       t.bad ??= '같은 작업의 기록끼리 종류·경로·식별이 다릅니다.';
     if (e.phase === 'intent' || e.phase === 'undo-intent') {
@@ -143,36 +147,55 @@ function track(entries: JournalEntry[]): Map<string, Track> {
     // A lone failed/skipped as the first record means the op was refused before anything started.
     if (t.open ? needs !== null && t.open.phase !== needs : !(fresh && needs === null))
       t.bad ??= '시작 기록과 맞지 않는 완료 기록입니다.';
+    if (needs === null && e.errorCode === 'UNKNOWN') t.unresolved = t.open ?? e;
     t.open = null; t.lastClose = e.phase;
   }
   return ops;
 }
 
 type Issue = { detail: string; text: string };
-/** Plan of the run, validated and matched to the journal, with its work root re-checked. */
-async function loadRunPlan(report: RunInspection, options: InspectOptions): Promise<{ plan: OperationPlan | null; issue: Issue | null }> {
+interface RunPlan { plan: OperationPlan | null; issue: Issue | null; target: RootLockTarget | null }
+/** Plan of the run, validated and matched to the journal, with its work root re-checked; plus the root identity for the lock. */
+async function loadRunPlan(report: RunInspection, options: InspectOptions): Promise<RunPlan> {
   let plan: OperationPlan | null = null;
-  if (!options.loadPlan) return { plan, issue: { detail: 'PLAN_UNAVAILABLE', text: PLAN_UNAVAILABLE } };
+  let target: RootLockTarget | null = null;
+  if (!options.loadPlan) return { plan, target, issue: { detail: 'PLAN_UNAVAILABLE', text: PLAN_UNAVAILABLE } };
   try {
     const loaded = await options.loadPlan(report.planId);
-    if (loaded === null) return { plan, issue: { detail: 'PLAN_MISSING', text: PLAN_MISSING } };
+    if (loaded === null) return { plan, target, issue: { detail: 'PLAN_MISSING', text: PLAN_MISSING } };
     const parsed = OperationPlanSchema.safeParse(loaded.plan);
-    if (!parsed.success) return { plan, issue: { detail: 'STATE_CORRUPT', text: '계획 파일이 계약과 달라 실제 상태를 확인할 수 없습니다.' + CHECK } };
+    if (!parsed.success) return { plan, target, issue: { detail: 'STATE_CORRUPT', text: '계획 파일이 계약과 달라 실제 상태를 확인할 수 없습니다.' + CHECK } };
     if (parsed.data.id !== report.planId || parsed.data.rootGrantId !== report.rootGrantId)
-      return { plan, issue: { detail: 'PLAN_MISMATCH', text: '계획 파일의 ID·작업 폴더가 이 실행의 저널과 맞지 않아 실제 상태를 확인할 수 없습니다.' + CHECK } };
+      return { plan, target, issue: { detail: 'PLAN_MISMATCH', text: '계획 파일의 ID·작업 폴더가 이 실행의 저널과 맞지 않아 실제 상태를 확인할 수 없습니다.' + CHECK } };
     plan = parsed.data; report.rootPath = plan.rootPath;
     const grant = loaded.grant;
-    if (grant && grant.canonicalPath !== plan.rootPath) return { plan: null, issue: { detail: 'ROOT_CHANGED', text: ROOT_CHANGED } };
+    // The executor locks the granted folder identity, so the grant names the lock even when the root has changed since.
+    if (grant) target = { canonicalPath: grant.canonicalPath, device: grant.device, inode: grant.inode };
+    const changed: RunPlan = { plan: null, target, issue: { detail: 'ROOT_CHANGED', text: ROOT_CHANGED } };
+    if (grant && grant.canonicalPath !== plan.rootPath) return changed;
     await checkRoot(plan.rootPath);
-    if (grant) {
-      const now = await lstat(plan.rootPath, { bigint: true });
-      if (String(now.dev) !== grant.device || String(now.ino) !== grant.inode) return { plan: null, issue: { detail: 'ROOT_CHANGED', text: ROOT_CHANGED } };
-    }
-    return { plan, issue: null };
+    const now = await lstat(plan.rootPath, { bigint: true });
+    if (grant && (String(now.dev) !== grant.device || String(now.ino) !== grant.inode)) return changed;
+    target ??= { canonicalPath: plan.rootPath, device: String(now.dev), inode: String(now.ino) };
+    return { plan, target, issue: null };
   } catch (error) {
     const code = errorCode(error);
-    return { plan: null, issue: { detail: code, text: (plan ? `작업 폴더를 확인할 수 없어(${code}) 실제 상태를 알 수 없습니다.`
+    return { plan: null, target, issue: { detail: code, text: (plan ? `작업 폴더를 확인할 수 없어(${code}) 실제 상태를 알 수 없습니다.`
       : `계획 파일을 읽지 못해(${code}) 실제 상태를 확인할 수 없습니다.`) + CHECK } };
+  }
+}
+
+/** Read-only lock view; never throws. Fills report.lock and returns the problem note, if any. */
+async function lockNote(stateDir: string, target: RootLockTarget | null, report: RunInspection): Promise<{ note: string | null; host: string | null }> {
+  if (!target) return { note: '작업 폴더를 확인할 수 없어 잠금 상태를 확인하지 못했습니다. 다른 실행이 진행 중인지 알 수 없습니다.', host: null };
+  try {
+    const { state, holder } = await readRootLock(stateDir, target);
+    report.lock = { state, pid: holder?.pid ?? null, startedAt: holder?.startedAt ?? null };
+    return { host: holder?.hostname ?? null, note: state === 'stale'
+      ? `이전 실행(pid ${holder?.pid ?? '?'})이 비정상 종료돼 잠금 파일이 남아 있습니다. AFO는 이 점검에서 잠금을 지우지 않았습니다.`
+      : state === 'corrupt' ? '잠금 파일을 해석할 수 없습니다. AFO는 이 점검에서 잠금을 지우지 않았습니다.' : null };
+  } catch (error) {
+    return { host: null, note: `잠금 상태를 읽지 못했습니다(${errorCode(error)}). 다른 실행이 진행 중인지 확인할 수 없습니다.` };
   }
 }
 
@@ -201,31 +224,25 @@ async function inspectFile(stateDir: string, name: string, options: InspectOptio
   if (read.entries.some((e) => e.runId !== runId)) problem = { detail: 'JOURNAL_INCONSISTENT', text: '저널 안의 실행 ID가 파일 이름과 다릅니다.' };
   else if (read.entries.some((e) => e.planId !== first!.planId || e.rootGrantId !== first!.rootGrantId))
     problem = { detail: 'JOURNAL_INCONSISTENT', text: '한 실행의 저널에 서로 다른 계획·작업 폴더 기록이 섞여 있습니다.' };
+
+  const ops = track(read.entries);
+  const open = [...ops.entries()].filter(([, t]) => t.bad !== null || t.open !== null || t.unresolved !== null);
+  report.finished = ops.size - open.length;
+  // Only a consistent journal points at one plan; otherwise no root is trusted and nothing is looked up.
+  // The plan is loaded even without open ops: the root identity is needed to tell whether the run is still active.
+  const { plan, issue: planIssue, target }: RunPlan = !first || problem?.detail === 'JOURNAL_INCONSISTENT'
+    ? { plan: null, issue: null, target: null } : await loadRunPlan(report, options);
   const notes = problem ? [problem.text] : [];
-  let host: string | null = null;
-  if (report.rootGrantId) {
-    try {
-      const { state, holder } = await readRootLock(stateDir, report.rootGrantId);
-      report.lock = { state, pid: holder?.pid ?? null, startedAt: holder?.startedAt ?? null };
-      host = holder?.hostname ?? null;
-      if (state === 'stale') notes.push(`이전 실행(pid ${holder?.pid ?? '?'})이 비정상 종료돼 잠금 파일이 남아 있습니다. AFO는 이 점검에서 잠금을 지우지 않았습니다.`);
-      if (state === 'corrupt') notes.push('잠금 파일을 해석할 수 없습니다. AFO는 이 점검에서 잠금을 지우지 않았습니다.');
-    } catch (error) { notes.push(`잠금 상태를 읽지 못했습니다(${errorCode(error)}). 다른 실행이 진행 중인지 확인할 수 없습니다.`); }
-  }
+  const { note, host } = first ? await lockNote(stateDir, target, report) : { note: null, host: null };
+  if (note) notes.push(note);
   const active = report.lock?.state === 'held' || report.lock?.state === 'foreign-host';
   const ACTIVE = `${report.lock?.state === 'foreign-host' ? `다른 컴퓨터(${host ?? '?'})의 ` : '다른 '}AFO 실행(pid ${report.lock?.pid ?? '?'}, ` +
     `${report.lock?.startedAt ?? '?'} 시작)이 이 작업 폴더에서 아직 진행 중일 수 있습니다. 그 실행이 끝난 뒤 다시 확인하세요. 이 점검은 아무것도 바꾸지 않았습니다.`;
   if (active) notes.unshift(ACTIVE);
   report.problem = notes.length > 0 ? notes.join(' ') : null;
 
-  const ops = track(read.entries);
-  const open = [...ops.entries()].filter(([, t]) => t.bad !== null || t.open !== null);
-  report.finished = ops.size - open.length;
-  // Only a consistent journal points at one plan; otherwise no root is trusted and nothing is looked up.
-  const { plan, issue: planIssue } = open.length === 0 || problem?.detail === 'JOURNAL_INCONSISTENT'
-    ? { plan: null, issue: null } : await loadRunPlan(report, options);
   for (const [opId, t] of open) {
-    const entry = t.open ?? t.first;
+    const entry = t.open ?? t.unresolved ?? t.first;
     const base = { opId, kind: entry.kind, phase: entry.phase === 'undo-intent' ? 'undo-intent' as const : 'intent' as const,
       source: entry.source, destination: entry.destination };
     const unknown = (detail: string, text: string, observed: MoveState | null = null): UnfinishedOp =>
@@ -245,14 +262,14 @@ async function inspectFile(stateDir: string, name: string, options: InspectOptio
         blocked = { detail: code, text: `실제 파일 상태를 확인하는 중 문제가 있었습니다(${code}). 링크나 폴더 밖 경로는 따라가지 않았습니다.` + CHECK };
       }
     }
+    const group = entry.kind === 'move' ? (entry.phase === 'undo-intent' ? 'undo' : 'move') : entry.kind;
+    const described = (state: MoveState): string => actions[group][state] ?? `예상하지 못한 상태(${state})입니다.` + CHECK;
     if (active) report.unfinished.push(unknown('LOCKED_BY_OTHER', ACTIVE, observed));
     else if (blocked || observed === null) report.unfinished.push(unknown(blocked?.detail ?? 'UNKNOWN', blocked?.text ?? CHECK.trim()));
     else if (problem) report.unfinished.push(unknown(problem.detail, `${problem.text} 관측한 파일 상태(${observed})만 참고하세요.` + CHECK, observed));
-    else {
-      const group = entry.kind === 'move' ? (entry.phase === 'undo-intent' ? 'undo' : 'move') : entry.kind;
-      report.unfinished.push({ ...base, state: observed, observed, detail: null,
-        action: actions[group][observed] ?? `예상하지 못한 상태(${observed})입니다.` + CHECK });
-    }
+    else if (t.unresolved && !t.open) report.unfinished.push({ ...base, state: observed, observed, detail: 'RESULT_UNKNOWN',
+      action: `실행기가 이 작업의 결과를 확인하지 못했습니다(오류 코드 UNKNOWN). 파일을 직접 확인하세요. AFO는 다시 실행하지 않습니다. 관측한 상태: ${described(observed)}` });
+    else report.unfinished.push({ ...base, state: observed, observed, detail: null, action: described(observed) });
   }
   // A held lock wins over a damaged last line: the running process may still be writing it.
   report.status = active ? 'active' : problem ? 'corrupt' : report.unfinished.length > 0 ? 'unfinished' : 'clean';

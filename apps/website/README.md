@@ -16,7 +16,7 @@
 
 메뉴는 페이지를 이동하며 브라우저 뒤로 가기와 새로고침을 지원합니다. Hosting rewrite는 각 경로에서 index.html을 제공합니다. 로그인 없이도 샘플 체험을 사용할 수 있습니다.
 
-**실제 파일을 읽거나 이동·삭제하지 않습니다.** 샘플은 설명용으로 미리 정한 결과입니다. 개인 규칙은 `/rules`에서 편집·브라우저 보관·JSON 교환할 수 있습니다. 공개 Firestore 연결과 로컬 CLI 자동 적용은 아직 제공하지 않습니다. 공용 엔진·Firebase 연동 패키지·루트 lockfile은 수정하지 않습니다. 웹사이트는 기존 Firebase 패키지를 file dependency로 사용합니다.
+**실제 파일을 읽거나 이동·삭제하지 않습니다.** 샘플은 설명용으로 미리 정한 결과입니다. 개인 규칙은 `/rules`에서 편집·브라우저 보관·JSON 교환할 수 있습니다. 로그인 후 Firebase에 규칙을 저장·조회할 수 있습니다. 로컬 CLI 자동 적용은 아직 제공하지 않습니다. 공용 엔진·Firebase 연동 패키지·루트 lockfile은 수정하지 않습니다. 웹사이트는 기존 Firebase 패키지를 file dependency로 사용합니다.
 
 ## 실행과 빌드
 
@@ -101,7 +101,7 @@ JSON은 `RuleSetDraft` 계약이며 CLI의 `.afo-profile.json`과 다릅니다. 
 
 클라우드 UI는 `createRuleRepository` v2를 재사용합니다. 저장 전 최신 버전을 불러오며 다른 창의 변경은 충돌로 남깁니다. 오프라인·불확실한 저장·cleanup 미완료 뒤에는 이전 요청을 재실행하지 않고 먼저 서버에서 다시 조회합니다. 편집 상태와 늦게 도착한 응답은 계정 전환 시 초기화합니다.
 
-공개 빌드는 `VITE_AFO_CLOUD_RULES`를 설정하지 않아 클라우드를 비활성화합니다. 기존 실제 Firestore 규칙이 v1이기 때문입니다. 기존 데이터 확인/필요한 이관, 정확한 프로젝트의 v2 보안 규칙 배포 승인·readback·실제 계정의 저장/조회 검증 이후에만 `VITE_AFO_CLOUD_RULES=enabled npm run build`를 사용합니다. CSP에는 Firebase Auth·Firestore의 정확한 API 호스트만 허용합니다. 자세한 순서는 [로드맵](../../docs/WEBSITE_ROADMAP.md)에 있습니다.
+사용자 승인 후 기존 DB가 비어 있음을 확인하고 v2 보안 규칙을 배포·readback했습니다. 공개 빌드는 `src/config/services.public.json`의 `cloudRules=true`와 저장 형식 2를 확인해 연결합니다. `VITE_AFO_CLOUD_RULES=disabled npm run build`는 클라우드 UI 연결을 끄며 서버 보안 규칙을 바꾸지는 않습니다. 실제 공개 사이트의 가입·규칙 저장·재조회·수정과 서버 문서 일치를 확인했고 테스트 계정·자료는 삭제 후 부재를 재확인했습니다. 한 실제 계정의 다른 UID namespace와 비로그인 접근은 403이었습니다. 두 실제 계정의 기존 자료 교차 접근·Google OAuth·실물 휴대폰·CLI 자동 적용은 미검증입니다. 상세 결과는 [클라우드 v2 검증](../../docs/verification/CLOUD_RULES_V2.md)에 있습니다. CSP에는 Firebase Auth·Firestore의 정확한 API 호스트만 허용합니다. 자세한 순서는 [로드맵](../../docs/WEBSITE_ROADMAP.md)에 있습니다.
 
 ```sh
 npm run build

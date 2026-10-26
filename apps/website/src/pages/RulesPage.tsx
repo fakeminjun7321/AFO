@@ -214,7 +214,7 @@ function RulesEditor({ uid }: { uid?: string }) {
           </p>
         </div>
         <span className="rules-unsaved">
-          {dirty ? "저장하지 않은 변경" : "편집 준비됨"}
+          {dirty ? "브라우저 저장 전" : "편집 준비됨"}
         </span>
       </div>
       <form

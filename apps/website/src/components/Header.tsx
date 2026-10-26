@@ -34,6 +34,9 @@ export function Header() {
         <NavLink to="/faq" onClick={close}>
           자주 묻는 질문
         </NavLink>
+        <NavLink to="/rules" onClick={close}>
+          나의 규칙
+        </NavLink>
       </nav>
       <Link
         className="button button--outline header-cta"

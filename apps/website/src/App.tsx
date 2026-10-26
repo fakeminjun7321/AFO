@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -14,6 +14,7 @@ import { Footer } from "./components/Footer";
 import { GuidePage } from "./pages/GuidePage";
 import { AuthPage } from "./pages/AuthPage";
 import { AccountPage } from "./pages/AccountPage";
+const RulesPage = lazy(() => import("./pages/RulesPage").then((module) => ({ default: module.RulesPage })));
 import { AuthProvider } from "./auth/AuthProvider";
 
 const titles: Record<string, string> = {
@@ -25,6 +26,7 @@ const titles: Record<string, string> = {
   "/signup": "회원가입",
   "/reset-password": "비밀번호 재설정",
   "/account": "내 계정",
+  "/rules": "나의 정리 기준",
 };
 function Shell() {
   const { pathname } = useLocation();
@@ -62,6 +64,7 @@ function Shell() {
             element={<AuthPage key="reset" mode="reset" />}
           />
           <Route path="/account" element={<AccountPage />} />
+          <Route path="/rules" element={<Suspense fallback={<p className="route-status" role="status">규칙 화면을 열고 있어요.</p>}><RulesPage /></Suspense>} />
           <Route
             path="*"
             element={

@@ -1,0 +1,40 @@
+name: Website verification
+on:
+  push:
+    branches: [main]
+    paths: ['apps/website/**', 'firebase/**', '.github/workflows/website.yml']
+  pull_request:
+    paths: ['apps/website/**', 'firebase/**', '.github/workflows/website.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: website-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  website:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            firebase/package-lock.json
+            apps/website/package-lock.json
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: firebase
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: apps/website
+      - run: npm run build && npm test && npm run build:emulator
+        working-directory: apps/website
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/website
+      - run: npm run test:e2e
+        working-directory: apps/website

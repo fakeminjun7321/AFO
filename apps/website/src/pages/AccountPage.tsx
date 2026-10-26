@@ -62,11 +62,12 @@ export function AccountPage() {
         <p>
           샘플 파일로 분류 흐름을 체험할 수 있어요.
           <br />
-          개인 규칙의 클라우드 저장은 아직 연결하지 않았습니다.
+          나의 규칙에서 분류 기준을 편집하고 보관할 수 있습니다.
         </p>
         <Link to="/demo" className="button button--orange">
           정리 흐름 체험하기 <Arrow />
         </Link>
+        <Link to="/rules" className="quiet-link">나의 정리 기준 관리하기 <Arrow /></Link>
       </div>
     </section>
   );

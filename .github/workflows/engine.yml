@@ -1,5 +1,14 @@
-name: 읽기 전용 엔진 검증
+name: 엔진 검증
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/**'
+      - 'apps/cli/**'
+      - 'tests/**'
+      - 'package*.json'
+      - 'tsconfig.json'
+      - '.github/workflows/engine.yml'
   pull_request:
     paths:
       - 'packages/**'

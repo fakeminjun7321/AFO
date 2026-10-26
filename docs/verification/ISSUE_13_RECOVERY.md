@@ -21,12 +21,15 @@
 - 손상 줄이 하나라도 있으면 실행 상태는 `corrupt`, 열린 작업은 모두 `unknown`(`JOURNAL_DAMAGED`)이며 손상 줄 번호·이유를 함께 보고합니다. 손상 줄이 그 작업의 완료 기록이었을 수 있기 때문입니다. 실제로 관측한 상태는 `observed`에 참고로만 남깁니다.
 - 실행 ID가 파일 이름과 다르거나 한 저널에 다른 planId·rootGrantId가 섞이면 실행 전체를 `corrupt`, 열린 작업을 `unknown`으로 보고하고 계획을 찾지 않습니다.
 
-### 계획 파일 가정
+### 계획 출처 (주입한 loader만)
 
-루트 경로는 저널에 없으므로 **`statePaths(stateDir).plans/<planId>.json`에 `OperationPlanSchema` 형식으로 저장된 계획**에서 찾습니다(세션 A의 `approvals.ts`가 이 위치에 쓴다는 가정, #8에서 확인 필요). 다른 저장 위치는 `options.loadPlan`으로 주입할 수 있으며, 반환값은 다시 스키마로 검증합니다.
-- 계획 없음 → `unknown`, action "계획 파일이 없어 실제 상태를 확인할 수 없음…" (`PLAN_MISSING`)
-- 계획 손상·스키마 불일치(루트 밖 `../` 경로 포함) → `unknown`(`STATE_CORRUPT`)
+루트 경로는 저널에 없으므로 계획에서 찾습니다. 계획은 **`options.loadPlan(planId)`로 주입한 loader에서만** 가져옵니다. 반환 형식은 `{ plan: OperationPlan, grant?: { canonicalPath, device, inode } } | null`입니다.
+세션 A의 `approvals.ts`가 `statePaths(stateDir).plans/<planId>.json`에 `{ plan, grant }` 묶음으로 저장하고 `loadSavedPlan(stateDir, planId)`를 내보낼 예정입니다. #8이 main에 들어온 뒤 이것을 기본 loader로 연결합니다. 지금은 기본값이 없습니다(테스트는 같은 묶음 형식을 `writeJsonAtomic`으로 쓰고 읽는 로컬 loader를 씁니다).
+- loader 없음 → 열린 작업 모두 `unknown`(`PLAN_UNAVAILABLE`), observed 없음. 안내: 계획을 불러올 수단이 없어 실제 파일 상태를 확인하지 않았음. 아무것도 읽거나 바꾸지 않습니다.
+- loader가 null → `unknown`, action "계획 파일이 없어 실제 상태를 확인할 수 없음…" (`PLAN_MISSING`)
+- 계획 손상·스키마 불일치(루트 밖 `../` 경로 포함, loader 오류 포함) → `unknown`(`STATE_CORRUPT` 등 오류 코드). `plan`은 `OperationPlanSchema`로 다시 검증합니다.
 - `plan.id`·`plan.rootGrantId`가 저널과 다름, 계획에 해당 작업이 없거나 kind·경로가 다름 → `unknown`(`PLAN_MISMATCH`)
+- `grant`가 있으면 `grant.canonicalPath === plan.rootPath`이고 지금 루트의 `lstat` dev/ino(bigint → 문자열)가 `grant.device/inode`와 같아야 합니다. 다르면 열린 작업 모두 `unknown`(`ROOT_CHANGED`)입니다. 같은 경로에 새로 만든 다른 폴더를 이것으로 구분합니다.
 - 작업 폴더가 없음(`SOURCE_MISSING`), 링크(`LINK_REJECTED`), 실제 경로가 계획의 `rootPath`와 정확히 같지 않음(`ROOT_FORBIDDEN`) → `unknown`
 - 상대 경로는 `RelativePathSchema`로 다시 검증한 뒤 `path.join`. 루트 밖이면 `PATH_OUTSIDE_ROOT`, 루트 아래 이미 있는 부모 구성요소 중 링크가 있으면 `LINK_REJECTED`, 폴더가 아니면 `FILE_CHANGED`(각 구성요소 `lstat`, 따라가지 않음).
 - 점검 중 오류 → `unknown`, `detail`에 오류 코드.
@@ -66,14 +69,15 @@
 ```text
 npm ci --ignore-scripts --no-audit --no-fund   # 4 packages
 npm run typecheck                              # exit 0
-npm test                                       # tests 113, pass 111, fail 0, skipped 2 (기존 실제 휴지통 검사 2건: AFO_REAL_TRASH_TEST 미설정)
-node --test dist/tests/recovery.test.js        # tests 13, pass 13, fail 0, skipped 0
+npm test                                       # tests 114, pass 112, fail 0, skipped 2 (기존 실제 휴지통 검사 2건: AFO_REAL_TRASH_TEST 미설정)
+node --test dist/tests/recovery.test.js        # tests 14, pass 14, fail 0, skipped 0
 ```
 
-`tests/recovery.test.ts` 13개는 중단 상태를 실제 파일 조작으로 만듭니다(link만 → linked-both, link+unlink → moved, rm → missing, 같은 이름 새 파일·목적지 선점·하드링크 추가 → conflict).
+`tests/recovery.test.ts` 14개는 중단 상태를 실제 파일 조작으로 만듭니다(link만 → linked-both, link+unlink → moved, rm → missing, 같은 이름 새 파일·목적지 선점·하드링크 추가 → conflict).
 사례: 이동 5상태(conflict 2종), 되돌리기 3상태, 휴지통·영구 삭제 각 3상태, 완료 작업(done/failed/skipped/단독 skipped/undone) 미보고, 중간 손상 줄·루트 밖 경로를 담은 줄·잘린 마지막 줄, 계획 없음·rootGrantId/id/작업 불일치·`../` 경로·없는/비정규/상대 루트, 루트 안 부모 링크(원래 경로 쪽·목적지 쪽·밖을 가리키는 조부모), 기록 불일치 3종과 실행 ID/계획 혼합, 저널 폴더의 특이한 이름, 빈·없는 상태 폴더와 링크 저널 폴더.
 파일을 읽는 모든 `inspectRuns` 호출(경로 형식만 보고 거부하는 상대 경로 1건 제외) 전후 루트·상태 폴더(링크 사례는 밖 폴더 포함)의 manifest(경로·종류·크기·mtimeNs·sha256·링크 대상)가 같음을 확인했습니다.
 잠금 사례 3개: 같은 프로세스에서 `withRootLock`을 잡은 채 점검(→ `active`, `LOCKED_BY_OTHER`, observed `linked-both`/`not-started`, manifest에 잠금 파일 바이트 포함), 실제 자식 프로세스를 띄워 종료를 기다린 뒤 그 pid로 쓴 잠금(→ `stale`, 저널대로 `unfinished`, 잠금 파일 바이트 그대로), 다른 호스트 이름의 잠금(→ `active`)과 해석 불가 잠금(`corrupt`)·`locks`가 파일인 경우(`lock: null`, 예외 없음).
+계획 출처 사례: loader 없음(`PLAN_UNAVAILABLE`, observed 없음), `grant.canonicalPath` 불일치(`ROOT_CHANGED`), 루트를 옆으로 rename한 뒤 같은 경로에 같은 파일 이름으로 새 폴더를 만든 경우(dev/ino 불일치 → `ROOT_CHANGED`, 옆으로 옮긴 폴더 manifest도 그대로).
 oracle 점검: 빌드 산출물에 `unlink`를 일부러 넣었을 때 manifest 비교가 3개 테스트를 실패시키는 것을 확인한 뒤 다시 빌드했습니다.
 
 ## 검증 수준
@@ -84,7 +88,7 @@ oracle 점검: 빌드 산출물에 `unlink`를 일부러 넣었을 때 manifest 
 
 ## 남은 위험
 
-- 계획 저장 위치·undo 저널 형식(되돌리기도 앞 이동과 같은 source/destination/before를 기록한다고 가정)은 세션 A·B 구현과 맞춰 확인해야 합니다.
+- 기본 loader 연결(#8 `loadSavedPlan`)은 아직 없습니다. undo 저널 형식(되돌리기도 앞 이동과 같은 source/destination/before를 기록한다고 가정)은 세션 B 구현과 맞춰 확인해야 합니다.
 - 손상 줄 안에만 있던 작업(시작 기록 자체가 손상)은 opId를 알 수 없어 작업 단위로 보고하지 못합니다. 실행 상태 `corrupt`와 줄 번호로만 드러납니다.
-- 작업 폴더 경로가 같은 이름의 다른 폴더로 바뀐 경우는 루트 자체의 dev/ino를 계획에 저장하지 않아 직접 구분하지 못합니다. 파일 dev/ino 비교 때문에 다른 폴더의 파일은 `conflict`/`missing`으로 보고됩니다.
+- 같은 경로의 다른 폴더는 loader가 `grant`(dev/ino)를 줄 때만 `ROOT_CHANGED`로 구분합니다. `grant` 없이 계획만 주면 파일 dev/ino 비교로 `conflict`/`missing`이 됩니다.
 - 점검과 사용자의 확인 사이에 파일이 다시 바뀔 수 있습니다. 보고는 점검 시점의 관측입니다.

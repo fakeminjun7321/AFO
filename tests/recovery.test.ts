@@ -1,14 +1,15 @@
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendFile, link, lstat, mkdir, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises';
+import { appendFile, link, lstat, mkdir, readFile, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { hostname } from 'node:os';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { AfoError, OperationPlanSchema } from '../packages/contracts/src/index.js';
 import type { JournalEntry, OperationKind, OperationPlan, PlanOperation } from '../packages/contracts/src/index.js';
-import { appendJournal, journalFile, statePaths, writeJsonAtomic } from '../packages/filesystem/src/state.js';
+import { appendJournal, journalFile, readJson, statePaths, writeJsonAtomic } from '../packages/filesystem/src/state.js';
+import { z } from 'zod';
 import { inspectRuns } from '../packages/filesystem/src/recovery.js';
 import type { InspectOptions, RunInspection } from '../packages/filesystem/src/recovery.js';
 import { rootLockFile, withRootLock } from '../packages/filesystem/src/lock.js';
@@ -41,8 +42,17 @@ async function makePlan(root: string, specs: OpSpec[], extra: Partial<OperationP
     summary: { move: count('move'), trash: count('trash'), delete: count('delete'), logicalBytes: operations.reduce((a, o) => a + o.expected.size, 0) },
     ...extra };
 }
-const savePlan = (state: string, plan: OperationPlan): Promise<void> =>
-  writeJsonAtomic(path.join(statePaths(state).plans, `${plan.id}.json`), plan, OperationPlanSchema);
+/** Test stand-in for approvals.ts: plans/<planId>.json holds { plan, grant } like session A's wrapper. */
+const SavedSchema = z.strictObject({ plan: OperationPlanSchema,
+  grant: z.strictObject({ canonicalPath: z.string(), device: z.string(), inode: z.string(), sessionId: z.string() }) });
+const planFile = (state: string, id: string): string => path.join(statePaths(state).plans, `${id}.json`);
+async function grantOf(root: string) {
+  const s = await lstat(root, { bigint: true });
+  return { canonicalPath: root, device: String(s.dev), inode: String(s.ino), sessionId: 'session-0001' };
+}
+const savePlan = async (state: string, plan: OperationPlan): Promise<void> =>
+  writeJsonAtomic(planFile(state, plan.id), { plan, grant: await grantOf(plan.rootPath) }, SavedSchema);
+const loaderFor = (state: string): InspectOptions => ({ loadPlan: (id) => readJson(planFile(state, id), SavedSchema) });
 const entry = (plan: OperationPlan, seq: number, opId: string, phase: JournalEntry['phase'], extra: Partial<JournalEntry> = {}): JournalEntry => {
   const op = plan.operations.find((o) => o.id === opId)!;
   const before = { device: op.expected.device, inode: op.expected.inode, size: op.expected.size, sha256: null };
@@ -54,10 +64,10 @@ const entry = (plan: OperationPlan, seq: number, opId: string, phase: JournalEnt
 async function journal(state: string, entries: JournalEntry[], runId = RUN): Promise<void> {
   for (const e of entries) await appendJournal(journalFile(state, runId), e);
 }
-/** Every inspectRuns call is wrapped: the root, the state folder and any extra folder must be byte-for-byte unchanged. */
+/** Every inspectRuns call is wrapped (default loader: the saved wrapper): the root, the state folder and any extra folder must be byte-for-byte unchanged. */
 async function inspect(folders: string[], options?: InspectOptions, stateDir = folders[1]!): Promise<RunInspection[]> {
   const before = await Promise.all(folders.map(createManifest));
-  const runs = await inspectRuns(stateDir, options);
+  const runs = await inspectRuns(stateDir, options ?? loaderFor(stateDir));
   const after = await Promise.all(folders.map(createManifest));
   folders.forEach((folder, i) => assert.ok(sameManifest(diffManifest(before[i]!, after[i]!)),
     `report-only: ${folder} changed ${JSON.stringify(diffManifest(before[i]!, after[i]!))}`));
@@ -194,13 +204,13 @@ test('missing, mismatched or invalid plans leave open ops unknown', async (t) =>
   assert.equal(run!.rootPath, null); assert.equal(run!.status, 'unfinished');
 
   const cases: [string, InspectOptions][] = [
-    ['PLAN_MISMATCH', { loadPlan: async () => ({ ...plan, rootGrantId: '3'.repeat(64) }) }],
-    ['PLAN_MISMATCH', { loadPlan: async () => ({ ...plan, id: '4'.repeat(64) }) }],
-    ['PLAN_MISMATCH', { loadPlan: async () => ({ ...plan, operations: [{ ...plan.operations[0]!, destination: 'dest/other.txt' }, plan.operations[1]!] }) }],
-    ['STATE_CORRUPT', { loadPlan: async () => ({ ...plan, operations: [{ ...plan.operations[0]!, source: '../a.txt' }, plan.operations[1]!] }) }],
-    ['SOURCE_MISSING', { loadPlan: async () => ({ ...plan, rootPath: path.join(root, 'gone') }) }],
-    ['ROOT_FORBIDDEN', { loadPlan: async () => ({ ...plan, rootPath: [root, 'dest', '..', 'dest'].join(path.sep) }) }], // not canonical
-    ['STATE_CORRUPT', { loadPlan: async () => ({ ...plan, rootPath: 'relative/root' }) }],    // schema refuses a relative root
+    ['PLAN_MISMATCH', { loadPlan: async () => ({ plan: { ...plan, rootGrantId: '3'.repeat(64) } }) }],
+    ['PLAN_MISMATCH', { loadPlan: async () => ({ plan: { ...plan, id: '4'.repeat(64) } }) }],
+    ['PLAN_MISMATCH', { loadPlan: async () => ({ plan: { ...plan, operations: [{ ...plan.operations[0]!, destination: 'dest/other.txt' }, plan.operations[1]!] } }) }],
+    ['STATE_CORRUPT', { loadPlan: async () => ({ plan: { ...plan, operations: [{ ...plan.operations[0]!, source: '../a.txt' }, plan.operations[1]!] } }) }],
+    ['SOURCE_MISSING', { loadPlan: async () => ({ plan: { ...plan, rootPath: path.join(root, 'gone') } }) }],
+    ['ROOT_FORBIDDEN', { loadPlan: async () => ({ plan: { ...plan, rootPath: [root, 'dest', '..', 'dest'].join(path.sep) } }) }], // not canonical
+    ['STATE_CORRUPT', { loadPlan: async () => ({ plan: { ...plan, rootPath: 'relative/root' } }) }],    // schema refuses a relative root
   ];
   for (const [detail, options] of cases) {
     [run] = await inspect([root, state], options);
@@ -208,11 +218,12 @@ test('missing, mismatched or invalid plans leave open ops unknown', async (t) =>
     assert.equal(run!.unfinished[0]!.observed, null);
   }
   // On disk: plan with a different rootGrantId, then a plan whose path escapes the root (schema rejects it on read).
-  const planFile = path.join(statePaths(state).plans, `${plan.id}.json`);
-  await writeJsonAtomic(planFile, { ...plan, rootGrantId: '3'.repeat(64) }, OperationPlanSchema);
+  const file = planFile(state, plan.id);
+  const grant = await grantOf(root);
+  await writeJsonAtomic(file, { plan: { ...plan, rootGrantId: '3'.repeat(64) }, grant }, SavedSchema);
   [run] = await inspect([root, state]);
   assert.equal(run!.unfinished[0]!.detail, 'PLAN_MISMATCH');
-  await writeJsonAtomic(planFile, { ...plan, operations: [{ ...plan.operations[0]!, source: '../../outside.txt' }, plan.operations[1]!] });
+  await writeJsonAtomic(file, { plan: { ...plan, operations: [{ ...plan.operations[0]!, source: '../../outside.txt' }, plan.operations[1]!] }, grant });
   [run] = await inspect([root, state]);
   assert.deepEqual([run!.unfinished[0]!.state, run!.unfinished[0]!.detail], ['unknown', 'STATE_CORRUPT']);
 });
@@ -340,4 +351,26 @@ test('a lock from another host makes the run active; unreadable or damaged locks
   [run] = await inspect([root, state]);
   assert.equal(run!.lock, null); assert.match(run!.problem ?? '', /잠금 상태를 읽지 못했습니다/u);
   assert.equal(run!.status, 'unfinished');
+});
+
+test('without a plan loader nothing is resolved; a replaced or renamed root is ROOT_CHANGED', async (t) => {
+  const { root, state } = await lockedScenario(t);
+  let [run] = await inspect([root, state], {});
+  assert.deepEqual(run!.unfinished.map((u) => [u.state, u.detail, u.observed]), [['unknown', 'PLAN_UNAVAILABLE', null], ['unknown', 'PLAN_UNAVAILABLE', null]]);
+  assert.match(run!.unfinished[0]!.action, /계획을 불러올 수단이 없어 실제 파일 상태를 확인하지 않았습니다/u);
+  assert.equal(run!.rootPath, null);
+
+  // grant.canonicalPath differs from plan.rootPath
+  const saved = (await readJson(planFile(state, run!.planId), SavedSchema))!;
+  [run] = await inspect([root, state], { loadPlan: async () => ({ plan: saved.plan, grant: { ...saved.grant, canonicalPath: `${root}-other` } }) });
+  assert.ok(run!.unfinished.every((u) => u.state === 'unknown' && u.detail === 'ROOT_CHANGED' && u.observed === null));
+
+  // Same path, different folder: move the root aside and create a new folder with the same name and the same files.
+  const aside = `${root}-aside`;
+  t.after(() => rm(aside, { recursive: true, force: true }));
+  await rename(root, aside); await mkdir(root);
+  await mkdir(path.join(root, 'dest')); await writeFile(path.join(root, 'a.txt'), 'a'); await writeFile(path.join(root, 'b.txt'), 'b');
+  [run] = await inspect([root, state, aside]);
+  assert.ok(run!.unfinished.length === 2 && run!.unfinished.every((u) => u.state === 'unknown' && u.detail === 'ROOT_CHANGED'));
+  assert.match(run!.unfinished[0]!.action, /작업 폴더가 승인 때의 폴더와 다릅니다/u);
 });

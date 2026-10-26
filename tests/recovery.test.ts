@@ -1,7 +1,9 @@
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendFile, link, lstat, mkdir, rm, symlink, unlink, writeFile } from 'node:fs/promises';
+import { appendFile, link, lstat, mkdir, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { hostname } from 'node:os';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { AfoError, OperationPlanSchema } from '../packages/contracts/src/index.js';
@@ -9,6 +11,7 @@ import type { JournalEntry, OperationKind, OperationPlan, PlanOperation } from '
 import { appendJournal, journalFile, statePaths, writeJsonAtomic } from '../packages/filesystem/src/state.js';
 import { inspectRuns } from '../packages/filesystem/src/recovery.js';
 import type { InspectOptions, RunInspection } from '../packages/filesystem/src/recovery.js';
+import { rootLockFile, withRootLock } from '../packages/filesystem/src/lock.js';
 import { createFixture, createManifest, diffManifest, sameManifest } from './helpers.js';
 import type { FixtureSpec } from './helpers.js';
 
@@ -274,4 +277,67 @@ test('odd names in the journal folder are ignored or reported unreadable, never 
   assert.deepEqual(runs.map((r) => [r.runId, r.status]), expectedRuns);
   assert.ok(runs.filter((r) => r.status === 'unreadable').every((r) => r.problem && r.unfinished.length === 0 && r.planId === ''));
   assert.deepEqual(await inspect([root, state, elsewhere]), runs, 'same input, same report');
+});
+
+/** Two open moves (one linked-both, one untouched) with their plan saved; used by the lock cases. */
+async function lockedScenario(t: TestContext) {
+  const { root, state } = await setup(t, { 'a.txt': 'a', 'b.txt': 'b', 'dest/': '' });
+  const plan = await makePlan(root, ['a', 'b'].map((n) => ({ kind: 'move' as const, source: `${n}.txt`, destination: `dest/${n}.txt` })));
+  await savePlan(state, plan);
+  await link(path.join(root, 'a.txt'), path.join(root, 'dest', 'a.txt'));
+  await journal(state, plan.operations.map((op, i) => entry(plan, i, op.id, 'intent')));
+  return { root, state };
+}
+const writeLock = async (state: string, pid: number, host: string): Promise<string> => {
+  const file = rootLockFile(state, GRANT);
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, `${JSON.stringify({ formatVersion: 1, pid, hostname: host, startedAt: '2026-10-26T01:00:00.000Z', token: 'a'.repeat(32) })}\n`);
+  return file;
+};
+
+test('a root lock held by a running process makes the run active and every open op unknown', async (t) => {
+  const { root, state } = await lockedScenario(t);
+  const [run] = await withRootLock(state, GRANT, () => inspect([root, state])); // manifests include the lock file bytes
+  assert.equal(run!.status, 'active');
+  assert.deepEqual(run!.lock && [run!.lock.state, run!.lock.pid], ['held', process.pid]);
+  assert.match(run!.lock!.startedAt ?? '', /^\d{4}-\d\d-\d\dT/u);
+  assert.deepEqual(run!.unfinished.map((u) => [u.state, u.detail, u.observed]),
+    [['unknown', 'LOCKED_BY_OTHER', 'linked-both'], ['unknown', 'LOCKED_BY_OTHER', 'not-started']]);
+  assert.ok(run!.unfinished.every((u) => /진행 중일 수 있습니다.*끝난 뒤 다시 확인.*아무것도 바꾸지 않았습니다/u.test(u.action)));
+  assert.match(run!.problem ?? '', /진행 중일 수 있습니다/u);
+  await assert.rejects(readFile(rootLockFile(state, GRANT)), { code: 'ENOENT' }, 'withRootLock released its own lock afterwards');
+});
+
+test('a stale lock from a dead process is reported but left in place; the journal decides the status', async (t) => {
+  const { root, state } = await lockedScenario(t);
+  const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
+  const pid = child.pid!;
+  await new Promise<void>((resolve) => child.on('exit', () => resolve()));
+  const file = await writeLock(state, pid, hostname());
+  const bytes = await readFile(file);
+  const [run] = await inspect([root, state]);
+  assert.deepEqual(run!.lock, { state: 'stale', pid, startedAt: '2026-10-26T01:00:00.000Z' });
+  assert.equal(run!.status, 'unfinished');
+  assert.deepEqual(states(run!), { [hex(1)]: 'linked-both', [hex(2)]: 'not-started' });
+  assert.match(run!.problem ?? '', /비정상 종료.*잠금을 지우지 않았습니다/u);
+  assert.deepEqual(await readFile(file), bytes, 'stale lock file is still there, unchanged');
+});
+
+test('a lock from another host makes the run active; unreadable or damaged locks never throw', async (t) => {
+  const { root, state } = await lockedScenario(t);
+  const file = await writeLock(state, 1, 'afo-test-other-host');
+  let [run] = await inspect([root, state]);
+  assert.equal(run!.status, 'active'); assert.equal(run!.lock?.state, 'foreign-host');
+  assert.ok(run!.unfinished.every((u) => u.state === 'unknown' && u.detail === 'LOCKED_BY_OTHER' && u.observed !== null));
+  assert.match(run!.unfinished[0]!.action, /다른 컴퓨터\(afo-test-other-host\)/u);
+
+  await writeFile(file, 'not a lock');
+  [run] = await inspect([root, state]);
+  assert.deepEqual([run!.status, run!.lock?.state], ['unfinished', 'corrupt']);
+  assert.deepEqual(states(run!), { [hex(1)]: 'linked-both', [hex(2)]: 'not-started' });
+
+  await rm(path.dirname(file), { recursive: true }); await writeFile(path.dirname(file), 'locks is a file');  // lstat → ENOTDIR
+  [run] = await inspect([root, state]);
+  assert.equal(run!.lock, null); assert.match(run!.problem ?? '', /잠금 상태를 읽지 못했습니다/u);
+  assert.equal(run!.status, 'unfinished');
 });

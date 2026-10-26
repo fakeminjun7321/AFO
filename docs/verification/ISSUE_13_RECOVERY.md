@@ -1,7 +1,7 @@
 # #13 중단된 실행 보고(`inspectRuns`) 구현 기록
 
-역할: core-builder. 날짜: 2026-10-26. 기준 commit `6231c6a`(origin/main), 브랜치 `feat/13-recovery`.
-범위: #13 중 **보고 전용** 중단 실행 점검(DESIGN 실행 규칙 7). 잠금(`lock.ts`)·장애 주입 실행·CLI `recover`/`runs` 출력은 다른 작업자 범위이며 여기 포함하지 않습니다.
+역할: core-builder. 날짜: 2026-10-26. 브랜치 `feat/13-recovery`: 처음 `6231c6a`(origin/main) 기준, 이후 잠금 브랜치 `origin/feat/13-root-lock`(`2229898`, PR #30) 위로 rebase.
+범위: #13 중 **보고 전용** 중단 실행 점검(DESIGN 실행 규칙 7). 잠금은 `readRootLock`으로 읽기만 합니다. 잠금 구현(`lock.ts`)·장애 주입 실행·CLI `recover`/`runs` 출력은 다른 작업자 범위이며 여기 포함하지 않습니다.
 이 문서는 구현자 기록입니다. 독립 verifier 검증은 아직 하지 않았습니다.
 
 ## 무엇을 하는가
@@ -31,6 +31,15 @@
 - 상대 경로는 `RelativePathSchema`로 다시 검증한 뒤 `path.join`. 루트 밖이면 `PATH_OUTSIDE_ROOT`, 루트 아래 이미 있는 부모 구성요소 중 링크가 있으면 `LINK_REJECTED`, 폴더가 아니면 `FILE_CHANGED`(각 구성요소 `lstat`, 따라가지 않음).
 - 점검 중 오류 → `unknown`, `detail`에 오류 코드.
 
+### 루트 잠금 (읽기만)
+
+`rootGrantId`를 아는 실행마다 `readRootLock(stateDir, rootGrantId)`로 `locks/<rootGrantId>.lock`을 읽어 `lock: { state, pid, startedAt }`에 남깁니다. 잠금을 얻거나 지우거나 고치지 않습니다.
+- `held`(이 컴퓨터의 살아 있는 pid) 또는 `foreign-host`(다른 컴퓨터): 실행이 아직 진행 중일 수 있으므로 실행 상태 `active`, 열린 작업은 모두 `unknown`(`LOCKED_BY_OTHER`)입니다. `observed`는 계산할 수 있으면 채웁니다. 안내: 진행 중일 수 있으니 끝난 뒤 다시 확인, 이 점검은 아무것도 바꾸지 않음. 진행 중인 실행이 마지막 줄을 쓰는 중일 수 있으므로 `active`가 `corrupt`보다 우선합니다.
+- `stale`(pid 없음): 저널대로 판정하고 `problem`에 "이전 실행이 비정상 종료돼 잠금 파일이 남아 있음, 지우지 않았음"을 덧붙입니다. 해제는 다음 `withRootLock` 획득 때 lock.ts 규칙으로만 일어납니다.
+- `corrupt`: 저널대로 판정, `problem`에 해석 불가 안내. `free`: 저널대로 판정.
+- `readRootLock` 오류(예: `locks`가 파일): `lock: null`, `problem`에 "잠금 상태를 읽지 못했습니다(코드)". 예외를 던지지 않습니다. `rootGrantId`를 모르는 실행(빈 저널, unreadable)도 `lock: null`입니다.
+- 한계: 잠금은 루트 단위입니다. 같은 루트의 다른 실행이 진행 중이면 그 루트의 오래된 실행도 모두 `active`로 보입니다(보수적). pid 재사용 시 끝난 실행이 `held`로 보일 수 있습니다(lock.ts와 같은 한계).
+
 ### 상태와 안내(action)
 
 | 작업 | 상태 | 판정 기준 | 안내 요지 |
@@ -44,7 +53,7 @@
 | trash `intent` | not-started / missing / conflict | 원래 경로가 같은 dev/ino·일반 파일·nlink 1 / 없음 / 그 밖 | missing: 휴지통 이동 여부를 알 수 없으니 OS 휴지통에서 확인 |
 | delete `intent` | not-started / missing / conflict | 위와 같음 | missing: 끝났는지 알 수 없음, 되돌릴 수 없음, 다시 실행하지 않음 |
 
-모든 안내는 자동 수정을 약속하지 않습니다. 실행 상태: `clean`(열린 작업 없음), `unfinished`, `corrupt`, `unreadable`.
+모든 안내는 자동 수정을 약속하지 않습니다. 실행 상태: `active`(같은 루트의 잠금이 살아 있음), `clean`(열린 작업 없음), `unfinished`, `corrupt`, `unreadable`.
 
 ### 저널 폴더의 특이한 이름
 
@@ -57,13 +66,14 @@
 ```text
 npm ci --ignore-scripts --no-audit --no-fund   # 4 packages
 npm run typecheck                              # exit 0
-npm test                                       # tests 99, pass 97, fail 0, skipped 2 (기존 실제 휴지통 검사 2건: AFO_REAL_TRASH_TEST 미설정)
-node --test dist/tests/recovery.test.js        # tests 10, pass 10, fail 0, skipped 0
+npm test                                       # tests 113, pass 111, fail 0, skipped 2 (기존 실제 휴지통 검사 2건: AFO_REAL_TRASH_TEST 미설정)
+node --test dist/tests/recovery.test.js        # tests 13, pass 13, fail 0, skipped 0
 ```
 
-`tests/recovery.test.ts` 10개는 중단 상태를 실제 파일 조작으로 만듭니다(link만 → linked-both, link+unlink → moved, rm → missing, 같은 이름 새 파일·목적지 선점·하드링크 추가 → conflict).
+`tests/recovery.test.ts` 13개는 중단 상태를 실제 파일 조작으로 만듭니다(link만 → linked-both, link+unlink → moved, rm → missing, 같은 이름 새 파일·목적지 선점·하드링크 추가 → conflict).
 사례: 이동 5상태(conflict 2종), 되돌리기 3상태, 휴지통·영구 삭제 각 3상태, 완료 작업(done/failed/skipped/단독 skipped/undone) 미보고, 중간 손상 줄·루트 밖 경로를 담은 줄·잘린 마지막 줄, 계획 없음·rootGrantId/id/작업 불일치·`../` 경로·없는/비정규/상대 루트, 루트 안 부모 링크(원래 경로 쪽·목적지 쪽·밖을 가리키는 조부모), 기록 불일치 3종과 실행 ID/계획 혼합, 저널 폴더의 특이한 이름, 빈·없는 상태 폴더와 링크 저널 폴더.
 파일을 읽는 모든 `inspectRuns` 호출(경로 형식만 보고 거부하는 상대 경로 1건 제외) 전후 루트·상태 폴더(링크 사례는 밖 폴더 포함)의 manifest(경로·종류·크기·mtimeNs·sha256·링크 대상)가 같음을 확인했습니다.
+잠금 사례 3개: 같은 프로세스에서 `withRootLock`을 잡은 채 점검(→ `active`, `LOCKED_BY_OTHER`, observed `linked-both`/`not-started`, manifest에 잠금 파일 바이트 포함), 실제 자식 프로세스를 띄워 종료를 기다린 뒤 그 pid로 쓴 잠금(→ `stale`, 저널대로 `unfinished`, 잠금 파일 바이트 그대로), 다른 호스트 이름의 잠금(→ `active`)과 해석 불가 잠금(`corrupt`)·`locks`가 파일인 경우(`lock: null`, 예외 없음).
 oracle 점검: 빌드 산출물에 `unlink`를 일부러 넣었을 때 manifest 비교가 3개 테스트를 실패시키는 것을 확인한 뒤 다시 빌드했습니다.
 
 ## 검증 수준

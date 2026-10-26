@@ -6,10 +6,13 @@ import { readJournal, readJson, statePaths } from './state.js';
 import type { JournalRead } from './state.js';
 import { classifyMoveState, fileIdentity } from './platform.js';
 import type { MoveState } from './platform.js';
+import { readRootLock } from './lock.js';
+import type { RootLockState } from './lock.js';
 
 /**
  * Report-only inspection of interrupted runs (#13, DESIGN 실행 규칙 7). It reads journals, plans and lstat results only:
  * it never renames, links, unlinks, writes, re-runs, rolls back or deletes anything under the root or the state folder.
+ * The root lock is only read (readRootLock), never acquired or removed. A held lock is per root, so every run of that root is 'active'.
  * Assumption: the plan of a run is stored at statePaths(stateDir).plans/<planId>.json (written by approvals.ts, #8).
  */
 export type RecoveryState = MoveState | 'unknown';
@@ -21,8 +24,10 @@ export interface UnfinishedOp {
 }
 export interface RunInspection {
   runId: string; planId: string; rootGrantId: string | null; rootPath: string | null;
-  status: 'clean' | 'unfinished' | 'corrupt' | 'unreadable'; problem: string | null;
+  status: 'active' | 'clean' | 'unfinished' | 'corrupt' | 'unreadable'; problem: string | null;
   corrupt: { line: number; reason: string }[]; finished: number; unfinished: UnfinishedOp[];
+  /** Root lock as seen now; null when the root is unknown or the lock could not be read (see `problem`). */
+  lock: { state: RootLockState; pid: number | null; startedAt: string | null } | null;
 }
 export interface InspectOptions { loadPlan?: (planId: string) => Promise<OperationPlan | null> }
 
@@ -163,7 +168,7 @@ async function loadRunPlan(stateDir: string, report: RunInspection, options: Ins
 async function inspectFile(stateDir: string, name: string, options: InspectOptions): Promise<RunInspection> {
   const runId = name.slice(0, -'.jsonl'.length);
   const report: RunInspection = { runId, planId: '', rootGrantId: null, rootPath: null, status: 'unreadable', problem: null,
-    corrupt: [], finished: 0, unfinished: [] };
+    corrupt: [], finished: 0, unfinished: [], lock: null };
   const unreadable = (problem: string): RunInspection => ({ ...report, problem });
   if (!OpaqueIdSchema.safeParse(runId).success) return unreadable('실행 ID 형식이 아닌 저널 파일 이름이라 읽지 않았습니다.');
   const file = path.join(statePaths(stateDir).journal, name);
@@ -185,7 +190,22 @@ async function inspectFile(stateDir: string, name: string, options: InspectOptio
   if (read.entries.some((e) => e.runId !== runId)) problem = { detail: 'JOURNAL_INCONSISTENT', text: '저널 안의 실행 ID가 파일 이름과 다릅니다.' };
   else if (read.entries.some((e) => e.planId !== first!.planId || e.rootGrantId !== first!.rootGrantId))
     problem = { detail: 'JOURNAL_INCONSISTENT', text: '한 실행의 저널에 서로 다른 계획·작업 폴더 기록이 섞여 있습니다.' };
-  report.problem = problem?.text ?? null;
+  const notes = problem ? [problem.text] : [];
+  let host: string | null = null;
+  if (report.rootGrantId) {
+    try {
+      const { state, holder } = await readRootLock(stateDir, report.rootGrantId);
+      report.lock = { state, pid: holder?.pid ?? null, startedAt: holder?.startedAt ?? null };
+      host = holder?.hostname ?? null;
+      if (state === 'stale') notes.push(`이전 실행(pid ${holder?.pid ?? '?'})이 비정상 종료돼 잠금 파일이 남아 있습니다. AFO는 이 점검에서 잠금을 지우지 않았습니다.`);
+      if (state === 'corrupt') notes.push('잠금 파일을 해석할 수 없습니다. AFO는 이 점검에서 잠금을 지우지 않았습니다.');
+    } catch (error) { notes.push(`잠금 상태를 읽지 못했습니다(${errorCode(error)}). 다른 실행이 진행 중인지 확인할 수 없습니다.`); }
+  }
+  const active = report.lock?.state === 'held' || report.lock?.state === 'foreign-host';
+  const ACTIVE = `${report.lock?.state === 'foreign-host' ? `다른 컴퓨터(${host ?? '?'})의 ` : '다른 '}AFO 실행(pid ${report.lock?.pid ?? '?'}, ` +
+    `${report.lock?.startedAt ?? '?'} 시작)이 이 작업 폴더에서 아직 진행 중일 수 있습니다. 그 실행이 끝난 뒤 다시 확인하세요. 이 점검은 아무것도 바꾸지 않았습니다.`;
+  if (active) notes.unshift(ACTIVE);
+  report.problem = notes.length > 0 ? notes.join(' ') : null;
 
   const ops = track(read.entries);
   const open = [...ops.entries()].filter(([, t]) => t.bad !== null || t.open !== null);
@@ -196,29 +216,35 @@ async function inspectFile(stateDir: string, name: string, options: InspectOptio
   for (const [opId, t] of open) {
     const entry = t.open ?? t.first;
     const base = { opId, kind: entry.kind, phase: entry.phase === 'undo-intent' ? 'undo-intent' as const : 'intent' as const,
-      source: entry.source, destination: entry.destination, observed: null };
+      source: entry.source, destination: entry.destination };
     const unknown = (detail: string, text: string, observed: MoveState | null = null): UnfinishedOp =>
       ({ ...base, state: 'unknown', action: text, detail, observed });
-    if (t.bad) { report.unfinished.push(unknown('JOURNAL_INCONSISTENT', `저널 기록이 서로 맞지 않습니다(${t.bad}).` + CHECK)); continue; }
-    if (problem?.detail === 'JOURNAL_INCONSISTENT') { report.unfinished.push(unknown(problem.detail, problem.text + CHECK)); continue; }
-    if (!plan) { report.unfinished.push(unknown(planIssue!.detail, planIssue!.text)); continue; }
-    const planned = plan.operations.find((op) => op.id === opId);
-    if (!planned || planned.kind !== entry.kind || planned.source !== entry.source || planned.destination !== entry.destination) {
-      report.unfinished.push(unknown('PLAN_MISMATCH', '계획 파일에 이 작업이 없거나 저널과 경로·종류가 다릅니다.' + CHECK)); continue;
+    // First reason the journal or plan cannot be trusted for this op; null means the file state can be classified.
+    const planned = plan?.operations.find((op) => op.id === opId);
+    let blocked: Issue | null = t.bad ? { detail: 'JOURNAL_INCONSISTENT', text: `저널 기록이 서로 맞지 않습니다(${t.bad}).` + CHECK }
+      : problem?.detail === 'JOURNAL_INCONSISTENT' ? { detail: problem.detail, text: problem.text + CHECK }
+      : !plan ? planIssue
+      : !planned || planned.kind !== entry.kind || planned.source !== entry.source || planned.destination !== entry.destination
+        ? { detail: 'PLAN_MISMATCH', text: '계획 파일에 이 작업이 없거나 저널과 경로·종류가 다릅니다.' + CHECK } : null;
+    let observed: MoveState | null = null;
+    if (!blocked) {
+      try { observed = await observe(plan!.rootPath, entry); }
+      catch (error) {
+        const code = errorCode(error);
+        blocked = { detail: code, text: `실제 파일 상태를 확인하는 중 문제가 있었습니다(${code}). 링크나 폴더 밖 경로는 따라가지 않았습니다.` + CHECK };
+      }
     }
-    let observed: MoveState;
-    try { observed = await observe(plan.rootPath, entry); }
-    catch (error) {
-      const code = errorCode(error);
-      report.unfinished.push(unknown(code, `실제 파일 상태를 확인하는 중 문제가 있었습니다(${code}). 링크나 폴더 밖 경로는 따라가지 않았습니다.` + CHECK));
-      continue;
+    if (active) report.unfinished.push(unknown('LOCKED_BY_OTHER', ACTIVE, observed));
+    else if (blocked || observed === null) report.unfinished.push(unknown(blocked?.detail ?? 'UNKNOWN', blocked?.text ?? CHECK.trim()));
+    else if (problem) report.unfinished.push(unknown(problem.detail, `${problem.text} 관측한 파일 상태(${observed})만 참고하세요.` + CHECK, observed));
+    else {
+      const group = entry.kind === 'move' ? (entry.phase === 'undo-intent' ? 'undo' : 'move') : entry.kind;
+      report.unfinished.push({ ...base, state: observed, observed, detail: null,
+        action: actions[group][observed] ?? `예상하지 못한 상태(${observed})입니다.` + CHECK });
     }
-    if (problem) { report.unfinished.push(unknown(problem.detail, `${problem.text} 관측한 파일 상태(${observed})만 참고하세요.` + CHECK, observed)); continue; }
-    const group = entry.kind === 'move' ? (entry.phase === 'undo-intent' ? 'undo' : 'move') : entry.kind;
-    report.unfinished.push({ ...base, state: observed, observed, detail: null,
-      action: actions[group][observed] ?? `예상하지 못한 상태(${observed})입니다.` + CHECK });
   }
-  report.status = problem ? 'corrupt' : report.unfinished.length > 0 ? 'unfinished' : 'clean';
+  // A held lock wins over a damaged last line: the running process may still be writing it.
+  report.status = active ? 'active' : problem ? 'corrupt' : report.unfinished.length > 0 ? 'unfinished' : 'clean';
   return report;
 }
 

@@ -16,14 +16,16 @@
 
 메뉴는 페이지를 이동하며 브라우저 뒤로 가기와 새로고침을 지원합니다. Hosting rewrite는 각 경로에서 index.html을 제공합니다. 로그인 없이도 샘플 체험을 사용할 수 있습니다.
 
-**실제 파일을 읽거나 이동·삭제하지 않습니다.** 샘플은 설명용으로 미리 정한 결과입니다. 로그인해도 로컬 CLI와 개인 규칙의 Firestore 저장은 연결되지 않습니다. 공용 엔진·Firebase 연동 패키지·루트 lockfile은 수정하지 않습니다.
+**실제 파일을 읽거나 이동·삭제하지 않습니다.** 샘플은 설명용으로 미리 정한 결과입니다. 개인 규칙은 `/rules`에서 편집·브라우저 보관·JSON 교환할 수 있습니다. 공개 Firestore 연결과 로컬 CLI 자동 적용은 아직 제공하지 않습니다. 공용 엔진·Firebase 연동 패키지·루트 lockfile은 수정하지 않습니다. 웹사이트는 기존 Firebase 패키지를 file dependency로 사용합니다.
 
 ## 실행과 빌드
 
 Node.js 24 환경에서 이 디렉터리 기준:
 
 ```sh
-npm ci
+npm --prefix ../../firebase ci --ignore-scripts --no-audit --no-fund
+npm ci --ignore-scripts --no-audit --no-fund
+npm run build:shared
 npm run dev
 npm run build
 ```
@@ -34,10 +36,10 @@ npm run build
 
 ```sh
 npm run build:emulator
-firebase emulators:start --only auth,hosting --project demo-afo-website --config firebase.emulator.json --non-interactive
+node scripts/start-emulators.mjs
 ```
 
-http://127.0.0.1:15175 에서 확인합니다. 이 빌드는 `demo-afo-website`와 Auth Emulator 19101만 사용합니다. `emulator` 모드를 로컬 외부 주소에서 실행하면 시작을 거부합니다. Emulator 결과 디렉터리는 `dist-emulator`, 공개 배포용 디렉터리는 `dist`로 분리했습니다. Emulator에서 실제 계정·외부 메일을 사용하지 않습니다.
+http://127.0.0.1:15183 에서 확인합니다. 이 빌드는 `demo-afo-website`와 Auth Emulator 19103·Firestore Emulator 18103만 사용합니다. `emulator` 모드를 로컬 외부 주소에서 실행하면 시작을 거부합니다. Emulator 결과 디렉터리는 `dist-emulator`, 공개 배포용 디렉터리는 `dist`로 분리했습니다. Emulator에서 실제 계정·외부 메일을 사용하지 않습니다.
 
 2026-10-26 로컬 검증:
 
@@ -89,3 +91,25 @@ Firebase가 발급하는 ID token의 `admin === true`와 `email_verified === tru
 CSP는 Firebase Auth iframe origin과 `apis.google.com` helper script만 추가 허용하고, `Cross-Origin-Opener-Policy: same-origin-allow-popups`를 적용했습니다. 광범위한 wildcard·unsafe-inline·unsafe-eval은 추가하지 않았습니다. 공개 제공업체 활성화와 실제 Google 로그인 결과는 별도로 확인합니다.
 
 최신 Google 옵션 배포: 앱 소스 `f3bca4c`, Hosting version `e2cd1509bfb765a5`, 만료 2026-11-02 21:24:39 Asia/Seoul. 공개 `/login`의 Google 버튼·모바일 렌더를 별도로 확인했습니다. 이 변경의 공개 확인은 문서 탐색 1회이며, Google 제공업체 설정의 최종 저장은 사용자 확인을 기다립니다. 관리자 계정은 서버 생성·claim 재조회까지 확인했지만, 실제 Google 본인 인증과 관리자 화면 진입은 아직 미검증입니다.
+
+
+## 개인 규칙과 후속 검사 (#37)
+
+`/rules`에서 최대 20개 규칙을 추가·수정·켜기/끄기·제거할 수 있습니다. 브라우저 저장은 로그인 UID별 보관함과 비로그인 보관함을 구분하며 자동 클라우드 업로드는 하지 않습니다. 브라우저 자료를 지우거나 다른 브라우저로 바꾸면 이 보관함은 유지되지 않습니다. JSON 내보내기/가져오기로 규칙을 옮길 수 있으며 가져오기는 64 KiB 이하만 허용합니다. 잘못된 자료·절대 경로·상위 경로·예약명은 공용 계약으로 거부하고 실패한 가져오기로 편집 내용을 덮어쓰지 않습니다.
+
+JSON은 `RuleSetDraft` 계약이며 CLI의 `.afo-profile.json`과 다릅니다. 파일 내용·절대 경로·참고 근거·실행 승인 자료를 담지 않고 CLI 자동 적용을 제공하지 않습니다. 샘플 체험은 기존 고정 예시를 유지합니다.
+
+클라우드 UI는 `createRuleRepository` v2를 재사용합니다. 저장 전 최신 버전을 불러오며 다른 창의 변경은 충돌로 남깁니다. 오프라인·불확실한 저장·cleanup 미완료 뒤에는 이전 요청을 재실행하지 않고 먼저 서버에서 다시 조회합니다. 편집 상태와 늦게 도착한 응답은 계정 전환 시 초기화합니다.
+
+공개 빌드는 `VITE_AFO_CLOUD_RULES`를 설정하지 않아 클라우드를 비활성화합니다. 기존 실제 Firestore 규칙이 v1이기 때문입니다. 기존 데이터 확인/필요한 이관, 정확한 프로젝트의 v2 보안 규칙 배포 승인·readback·실제 계정의 저장/조회 검증 이후에만 `VITE_AFO_CLOUD_RULES=enabled npm run build`를 사용합니다. CSP에는 Firebase Auth·Firestore의 정확한 API 호스트만 허용합니다. 자세한 순서는 [로드맵](../../docs/WEBSITE_ROADMAP.md)에 있습니다.
+
+```sh
+npm run build
+npm test
+npm run build:emulator
+npm run test:e2e
+```
+
+브라우저 검사는 Playwright의 별도 headless Chromium과 실제 Auth/Firestore/Hosting Emulator를 사용합니다. Browser plugin/skill이 제공되지 않아 Playwright를 사용하며 기존 사용자 탭/입력은 조작하지 않습니다. 최초 환경에는 JDK 21 이상과 `npx playwright install chromium`이 필요합니다. macOS의 Java가 PATH에 없으면 해당 명령에만 `PATH=/opt/homebrew/opt/openjdk/bin:$PATH`를 지정할 수 있습니다. 전역 설정은 바꾸지 않습니다.
+
+Emulator 규칙은 실행 때 `firebase/firestore.rules`에서 `.emulator/firestore.rules`로 정확히 복사하며 생성본을 커밋하지 않습니다. 공개 빌드 `dist`와 Emulator 빌드 `dist-emulator`는 분리합니다. GitHub의 `Website verification`은 빌드·단위·실제 Emulator 사용자 경로를 검사합니다. Emulator 통과는 실제 클라우드나 실물 휴대폰의 검증을 대신하지 않습니다.

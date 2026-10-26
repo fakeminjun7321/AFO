@@ -1,5 +1,14 @@
-name: 읽기 전용 엔진 검증
+name: 엔진 검증
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/**'
+      - 'apps/cli/**'
+      - 'tests/**'
+      - 'package*.json'
+      - 'tsconfig.json'
+      - '.github/workflows/engine.yml'
   pull_request:
     paths:
       - 'packages/**'
@@ -9,6 +18,9 @@ on:
       - 'tsconfig.json'
       - '.github/workflows/engine.yml'
   workflow_dispatch:
+concurrency:
+  group: engine-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -26,5 +38,48 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: npm run typecheck
-      - run: npm test
+      # `npm run build` runs the same strict tsc as `npm run typecheck`, so a type error fails here.
+      - run: npm run build
+      # Same files as `npm test`; a second TAP reporter keeps per-test results for the annotation step.
+      - name: npm test (node --test)
+        shell: bash
+        run: node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination=test-results.tap dist/tests/*.test.js
+        env:
+          # Disposable hosted runner: exercise the real OS trash with synthetic files only.
+          AFO_REAL_TRASH_TEST: '1'
+      # Test counts and skipped test names as a notice annotation, so evidence is readable without the job log.
+      - name: 테스트 수 요약을 annotation으로 기록
+        if: always()
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("fs");
+            if (!fs.existsSync("test-results.tap")) process.exit(0);
+            const t = fs.readFileSync("test-results.tap", "utf8");
+            const n = (k) => (t.match(new RegExp("^# " + k + " (\\d+)$", "m")) || [, "?"])[1];
+            const skips = [...t.matchAll(/^\s*ok \d+ - (.*) # SKIP(.*)$/gm)].map((m) => m[1].slice(0, 60) + " —" + m[2].slice(0, 60));
+            console.log("::notice title=" + process.env.RUNNER_OS + " tests::tests " + n("tests") + ", pass " + n("pass") + ", fail " + n("fail") + ", skipped " + n("skipped") + (skips.length ? "%0Askipped: " + skips.join("%0A").replace(/%/g, "%25") : ""));
+          '
+      # Job logs are not always readable from the API; failed test names and messages become check annotations.
+      - name: 실패한 테스트를 annotation으로 보고
+        if: failure()
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("fs");
+            if (!fs.existsSync("test-results.tap")) { console.log("::error::test-results.tap 없음(테스트 실행 전 실패)"); process.exit(0); }
+            const lines = fs.readFileSync("test-results.tap", "utf8").split(/\r?\n/);
+            const esc = (s) => s.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A").replace(/:/g, "%3A").replace(/,/g, "%2C");
+            let n = 0;
+            for (let i = 0; i < lines.length && n < 40; i++) {
+              const m = lines[i].match(/^(\s*)not ok \d+ - (.*)$/);
+              if (!m) continue;
+              const body = [];
+              for (let j = i + 1; j < lines.length && !/^\s*\.\.\.$/.test(lines[j]); j++) body.push(lines[j].trim());
+              if (body.some((l) => l.startsWith("failureType: \x27subtestsFailed\x27"))) continue;
+              const msg = body.filter((l) => l && !/^(---|duration_ms:|type:|failureType:|stack:|name:)/.test(l) && !/^(Test\.|TestContext\.|async |process\.|node:)/.test(l)).slice(0, 14).join("\n");
+              console.log("::error title=" + esc(process.env.RUNNER_OS + " " + m[2].slice(0, 120)) + "::" + msg.replace(/%/g, "%25").replace(/\r/g, "").replace(/\n/g, "%0A"));
+              n++;
+            }
+            if (n === 0) console.log("::error::실패 테스트를 TAP에서 찾지 못했습니다.");
+          '

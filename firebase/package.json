@@ -1,0 +1,15 @@
+{
+  "name": "@afo/firebase-foundation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24 <25" },
+  "exports": { ".": { "types": "./dist/src/index.d.ts", "import": "./dist/src/index.js" } },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/tests/schema.test.js",
+    "test:emulator": "npm run build && node scripts/run-emulators.mjs"
+  },
+  "dependencies": { "firebase": "13.1.0", "zod": "4.6.7" },
+  "devDependencies": { "@types/node": "24.19.2", "typescript": "5.9.3", "firebase-tools": "15.34.0" }
+}

@@ -11,9 +11,16 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 15174 --strictPort",
     "typecheck": "tsc --noEmit",
-    "build:emulator": "tsc --noEmit && vite build --mode emulator --outDir dist-emulator"
+    "build:emulator": "tsc --noEmit && vite build --mode emulator --outDir dist-emulator",
+    "build:shared": "npm --prefix ../../firebase run build",
+    "prebuild": "npm run build:shared",
+    "pretypecheck": "npm run build:shared",
+    "prebuild:emulator": "npm run build:shared",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@afo/firebase-foundation": "file:../../firebase",
     "firebase": "13.1.0",
     "pretendard": "1.3.9",
     "react": "19.3.1",
@@ -21,10 +28,14 @@
     "react-router-dom": "7.18.4"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.2",
     "typescript": "5.9.3",
     "vite": "8.3.5"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "1.13.7"
   }
 }

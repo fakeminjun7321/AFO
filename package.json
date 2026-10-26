@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
     "test": "npm run build && node --test dist/tests/*.test.js",
+    "afo": "node dist/apps/cli/src/index.js",
     "preview": "node dist/apps/cli/src/index.js preview",
     "rules:suggest": "node dist/apps/cli/src/index.js suggest-rules",
     "rules:confirm": "node dist/apps/cli/src/index.js confirm-rules"

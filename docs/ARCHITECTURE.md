@@ -5,10 +5,10 @@
 
 ## 기술 선택
 
-우선안은 Electron + TypeScript + React/Vite이며 데스크톱 UI 자동 검증은 Playwright 계열 지원 가능성을 기술검증한 뒤 결정합니다.
+CLI가 1차 인터페이스입니다. Node.js + TypeScript 공용 계약·엔진·파일 서비스에 CLI와 후속 GUI 어댑터를 연결합니다. Electron·Tauri·웹 화면은 GUI 후보이며 아직 선택하지 않았습니다.
 #19의 독립 엔진 단계는 Node.js 24 기본 test runner를 사용해 추가 테스트 프레임워크 없이 검증합니다. TypeScript 5.9.3과 Zod 4.6.7을 고정했습니다. UI 도입 시 Vitest 사용 여부를 다시 정합니다.
 패키지 관리자는 npm으로 통일하고 lockfile 하나를 관리하는 구성을 제안합니다. 정확한 버전은 기반 작업에서 공식 호환성을 확인한 뒤 고정합니다.
-Electron은 UI와 파일 엔진에 TypeScript를 공유하고 OS 휴지통 API를 활용하기 위해 우선 제안합니다. Tauri는 비교 대안이며 팀의 Rust 숙련도·별도 도구체인·빌드 부담과 함께 기술검증에서 비교합니다. Electron의 메모리·배포 크기 비용도 평가합니다.
+GUI 기술은 공용 엔진 재사용, OS 파일 기능, 배포·자원 비용으로 비교합니다. UI 프레임워크가 핵심 승인·실행 정책의 소유자가 되지 않도록 [인터페이스 설계](INTERFACES.md)를 따릅니다.
 
 파일은 로컬에서 처리합니다. 앱 런타임의 LLM, 로그인, Firestore, 서버 파일 업로드는 핵심 기능의 전제 조건이 아닙니다.
 학교의 Firebase 연습 과제와 최종 제품 구조를 구분합니다. Hosting은 연습 또는 승인된 제출 진입 페이지 용도이며 배포에는 별도 허가와 검증이 필요합니다.
@@ -19,15 +19,13 @@ Electron은 UI와 파일 엔진에 TypeScript를 공유하고 OS 휴지통 API�
 | --- | --- | --- |
 | packages/contracts/ | 타입·런타임 스키마·오류 코드·테스트 입력 계약 | 파일 I/O |
 | packages/engine/ | 분류·중복 후보·계획·결과 집계 | Electron·UI·직접 파일 쓰기 |
-| packages/filesystem/ | 루트 제한, 스캔, 해시, journal, 이동·삭제·복구, OS 어댑터 | renderer에서 임의 경로 받기 |
-| apps/desktop/main/ | 폴더 선택, 승인 권위, IPC 검증, OS 기능 연결 | 외부 웹 콘텐츠 실행 |
-| apps/desktop/preload/ | 최소한의 타입 있는 기능 브리지 | fs·shell·임의 IPC 노출 |
-| apps/desktop/renderer/ | 분석·미리보기·승인·결과 UI | Node 통합·파일 직접 삭제 |
+| packages/filesystem/ | 루트 제한, 스캔, 해시, journal, 이동·삭제·복구, OS 어댑터 | CLI/GUI에서 검증 없는 임의 경로 받기 |
+| apps/cli/ | 인수·TTY 입력, 구조화된 요청, 한국어/JSON 출력 | 핵심 분류·승인 정책 중복 구현 |
+| apps/desktop/ 또는 apps/web/ | 후속 GUI 어댑터와 화면, 채널별 요청 검증 | shell 명령 조립, CLI 출력 파싱, 실행 검사 우회 |
 | tests/fixtures/, tests/integration/ | 합성 데이터 생성·독립 검증 | 실제 사용자 자료 저장 |
 
-UI → 제한된 preload → 검증된 main 요청 → 엔진/파일 어댑터 → 결과·저널 순서입니다.
-main의 `contextIsolation`, renderer sandbox, Node 통합 비활성화, CSP, IPC 발신자·입력 검증은 실제 설정과 부정 테스트로 확인합니다.
-앱은 로컬 번들 UI만 로드하며 원격 페이지에 파일 쓰기 기능을 연결하지 않습니다. 배포 페이지와 앱 권한은 분리합니다.
+CLI/GUI 입력 → 어댑터 → 공용 서비스·승인 검증 → 엔진/파일 어댑터 → 구조화된 결과·저널 순서입니다.
+GUI를 도입할 때 IPC/로컬 연결의 요청자·권한·입력을 검증하고 선택한 프레임워크의 격리 설정을 확인합니다. 웹 화면에 무제한 파일 접근을 노출하지 않습니다.
 
 ## 데이터 계약
 
@@ -37,17 +35,17 @@ main의 `contextIsolation`, renderer sandbox, Node 통합 비활성화, CSP, IPC
 
 | 객체 | 필수 의미 |
 | --- | --- |
-| RootGrant | main이 발급한 루트 ID, 정규화 경로, 실제 루트 식별, 허용 범위, 세션 |
+| RootGrant | 공용 실행 서비스가 발급한 루트 ID, 정규화 경로, 실제 루트 식별, 허용 범위, 세션 |
 | ReferenceGrant | 참고 폴더에 대한 읽기 전용 범위·식별·세션. 작업 루트 쓰기 권한과 분리 |
 | RuleProfile | ID·버전·draft/confirmed/disabled 상태·명시적 사용자 수정·근거·적용 범위·상대 목적지. 로컬 저장 |
 | FileSnapshot | 파일 ID, 루트 기준 상대 경로, 종류, 크기, 수정 시각, dev/inode 등 가능한 OS 식별, 링크 여부, 필요한 콘텐츠 해시 |
 | ScanResult | 포함·제외·오류·취소 항목, 총 개수, 논리 용량, 읽은 시각 |
 | OperationPlan | plan ID·버전·루트·snapshot·규칙 버전·작업 목록·예상 영향·plan 해시 |
-| Approval | main이 보유하는 일회성 승인 기록; 세션·plan 해시·선택 작업 ID·삭제 모드·유효 기간에 결합 |
+| Approval | 공용 실행 서비스가 보유하는 일회성 승인 기록; 세션·plan 해시·선택 작업 ID·삭제 모드·유효 기간에 결합 |
 | JournalEntry | op ID, 승인 참조, 이전·이후 경로/식별/해시, 단계, 실제 결과, 실패 코드, 재검증 결과 |
 | ExecutionReport | moved/trashed/deleted/skipped/failed/unknown 개별 결과와 근거; 추정/관측 용량의 분리 |
 
-파일 경로는 식별용입니다. renderer가 보내는 경로·불리언 `approved: true`만으로 실행 권한이 생기지 않습니다.
+파일 경로는 식별용입니다. CLI 인수나 GUI가 보내는 경로·불리언 `approved: true`만으로 실행 권한이 생기지 않습니다.
 기준 스캔이나 계획이 바뀌면 승인을 재발급하고, 다중 창에서도 동일 루트의 실행은 하나만 허용합니다.
 
 ## 기존 정리 방식의 개인화 분류
@@ -79,7 +77,7 @@ main의 `contextIsolation`, renderer sandbox, Node 통합 비활성화, CSP, IPC
 | --- | --- | --- |
 | 이동 | 목적지의 내용 일치, 원래 경로 부재, 정확한 journal | 목적지가 그대로이고 원래 경로가 비어 있을 때만 역이동 |
 | OS 휴지통 | OS API 성공, 원래 경로 부재, journal | OS 휴지통에서 사용자 복원; 앱 내 자동 복구는 약속하지 않음 |
-| 선택 파일 영구 삭제 | 결합된 별도 모드 승인, 실행 전 식별 재검증, 파일 부재, journal | 되돌릴 수 없음. 승인 화면과 결과에 명시 |
+| 선택 파일 영구 삭제 | 결합된 별도 모드 승인, 실행 전 식별 재검증, 파일 부재, journal | 되돌릴 수 없음. CLI 확인·결과와 후속 GUI에 명시 |
 
 영구 삭제는 첫 버전의 공간 확보 경로이므로 구현·양 OS 검증 전에는 저장공간 해결 기능이 완성됐다고 보고하지 않습니다.
 영구 삭제에 실패했다고 휴지통 전체 비우기, `rm -rf`, 임의 재귀 삭제로 우회하지 않습니다. 첫 버전의 삭제 단위는 일반 파일이며 폴더 트리 삭제는 없습니다.
@@ -89,7 +87,7 @@ OS가 제공하면 할당 크기와 파일시스템 여유 공간의 전후 관�
 
 ## 성능과 지속성
 
-스캔·해시는 UI 이벤트 처리를 막지 않는 작업 큐에서 실행합니다. 기술검증 때 worker/utility process 방식을 정합니다.
+스캔·해시는 CLI 취소와 후속 GUI 이벤트 처리를 막지 않는 작업 큐에서 실행합니다. 기술검증 때 worker/utility process 방식을 정합니다.
 목표 fixture: 작은 파일 1,000개와 팀이 생성한 큰 파일 표본. 메모리에 전체 파일을 적재하지 않고 스트리밍 해시, 진행률, 취소, 제한된 I/O 동시성을 적용합니다.
 이 수치는 목표 테스트 입력이며 실측 성능 주장이 아닙니다. 시간·메모리 기준은 기술검증의 두 OS 기준값으로 확정합니다.
 journal은 루트 정리 대상 밖의 앱 로컬 데이터에 저장하고, 원본 파일 내용을 기록하지 않습니다. 로그의 사용자 경로·파일명은 공유 시 가립니다.

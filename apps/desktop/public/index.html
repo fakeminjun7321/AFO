@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AFO 미리보기</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header>
+    <h1>AFO 파일 정리 미리보기</h1>
+    <p class="banner" role="note"><strong>읽기 전용:</strong> 파일을 이동·삭제하지 않습니다. 이 화면은 분석 결과와 제안만 보여 줍니다.</p>
+  </header>
+  <main>
+    <p id="fatal" class="error" role="alert" hidden></p>
+
+    <section id="step-work" aria-labelledby="h-work">
+      <h2 id="h-work">1. 작업 폴더 선택</h2>
+      <p class="hint">정리를 제안받을 폴더입니다. 홈 전체·디스크 루트·시스템 폴더·개발 프로젝트는 선택할 수 없습니다.</p>
+      <div class="row">
+        <button type="button" id="work-pick">폴더 선택 대화상자 열기</button>
+      </div>
+      <div class="row">
+        <label for="work-path">또는 전체 경로 입력</label>
+        <input id="work-path" type="text" autocomplete="off" spellcheck="false" placeholder="/Users/이름/정리할 폴더">
+        <button type="button" id="work-use">이 경로 사용</button>
+      </div>
+      <p class="status" id="work-status" role="status" aria-live="polite">선택한 작업 폴더가 없습니다.</p>
+    </section>
+
+    <section id="step-ref" aria-labelledby="h-ref">
+      <h2 id="h-ref">2. 참고 폴더 선택 (건너뛸 수 있음)</h2>
+      <p class="hint">이미 정리해 둔 폴더의 구조·이름·확장자만 읽어 규칙 후보를 만듭니다. 참고 폴더의 파일은 열거나 바꾸지 않습니다.</p>
+      <div class="row">
+        <button type="button" id="ref-pick">폴더 선택 대화상자 열기</button>
+        <button type="button" id="ref-skip">참고 폴더 건너뛰기</button>
+      </div>
+      <div class="row">
+        <label for="ref-path">또는 전체 경로 입력</label>
+        <input id="ref-path" type="text" autocomplete="off" spellcheck="false" placeholder="/Users/이름/정리된 폴더">
+        <button type="button" id="ref-use">이 경로 사용</button>
+      </div>
+      <p class="status" id="ref-status" role="status" aria-live="polite">참고 폴더 없음(건너뜀).</p>
+    </section>
+
+    <section id="step-analyze" aria-labelledby="h-analyze">
+      <h2 id="h-analyze">3. 분석</h2>
+      <div class="row">
+        <button type="button" id="analyze" disabled>분석 시작</button>
+        <button type="button" id="cancel" disabled>분석 취소</button>
+      </div>
+      <progress id="progress" max="1" value="0" aria-label="분석 진행률"></progress>
+      <p class="status" id="analyze-status" role="status" aria-live="polite">작업 폴더를 선택하면 분석할 수 있습니다.</p>
+    </section>
+
+    <section id="step-preview" aria-labelledby="h-preview" hidden>
+      <h2 id="h-preview">4. 미리보기</h2>
+      <p class="status" id="preview-summary"></p>
+      <details open><summary id="s-move">이동 제안</summary><ul id="list-move" class="items"></ul></details>
+      <details><summary id="s-keep">유지</summary><ul id="list-keep" class="items"></ul></details>
+      <details open><summary id="s-review">검토 필요</summary><ul id="list-review" class="items"></ul></details>
+      <details open><summary id="s-dup">중복 후보</summary>
+        <p class="hint">내용(SHA-256)이 같은 파일 묶음입니다. 크기는 논리 크기 — 확보량 아님(클론·스냅샷·휴지통에 따라 실제 확보량은 다릅니다). 삭제는 하지 않습니다.</p>
+        <ul id="list-dup" class="items"></ul></details>
+      <details><summary id="s-large">큰 파일</summary>
+        <p class="hint">크기만으로 지울 파일이라고 판단하지 않습니다. 참고용 목록입니다.</p>
+        <ul id="list-large" class="items"></ul></details>
+      <details><summary id="s-skip">제외·오류</summary><ul id="list-skip" class="items"></ul></details>
+    </section>
+
+    <section id="step-rules" aria-labelledby="h-rules" hidden>
+      <h2 id="h-rules">5. 참고 규칙 후보</h2>
+      <p class="hint">참고 폴더에서 찾은 후보입니다. 체크한 규칙만 확인하며, 확인 전에는 적용하지 않습니다. 규칙 저장은 후속 작업입니다(이번 실행에서만 사용).</p>
+      <fieldset>
+        <legend>적용할 규칙 선택</legend>
+        <ul id="rule-list" class="rules"></ul>
+      </fieldset>
+      <div class="row">
+        <button type="button" id="rules-confirm" disabled>선택한 규칙 확인</button>
+        <button type="button" id="rules-reanalyze" disabled>확인된 규칙으로 다시 미리보기</button>
+      </div>
+      <p class="status" id="rules-status" role="status" aria-live="polite"></p>
+    </section>
+  </main>
+  <footer><p>실행 기능은 아직 연결하지 않았습니다. 파일 이동·삭제는 이 화면에서 할 수 없습니다.</p></footer>
+</body>
+</html>

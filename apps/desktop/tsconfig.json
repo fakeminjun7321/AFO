@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "outDir": "./dist",
+    "paths": { "zod": ["./node_modules/zod"] }
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

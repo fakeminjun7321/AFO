@@ -15,6 +15,7 @@ import { GuidePage } from "./pages/GuidePage";
 import { AuthPage } from "./pages/AuthPage";
 import { AccountPage } from "./pages/AccountPage";
 const RulesPage = lazy(() => import("./pages/RulesPage").then((module) => ({ default: module.RulesPage })));
+import { AdminPage } from "./pages/AdminPage";
 import { AuthProvider } from "./auth/AuthProvider";
 
 const titles: Record<string, string> = {
@@ -27,6 +28,7 @@ const titles: Record<string, string> = {
   "/reset-password": "비밀번호 재설정",
   "/account": "내 계정",
   "/rules": "나의 정리 기준",
+  "/admin": "관리자",
 };
 function Shell() {
   const { pathname } = useLocation();
@@ -65,6 +67,7 @@ function Shell() {
           />
           <Route path="/account" element={<AccountPage />} />
           <Route path="/rules" element={<Suspense fallback={<p className="route-status" role="status">규칙 화면을 열고 있어요.</p>}><RulesPage /></Suspense>} />
+          <Route path="/admin" element={<AdminPage />} />
           <Route
             path="*"
             element={

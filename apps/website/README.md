@@ -73,3 +73,19 @@ Implemented와 Simulator-verified(Auth/Hosting Emulator)를 구분합니다. 별
 이 결과는 실제 Firebase Auth 인증 경로의 검증입니다. Physical-device-verified인 실물 휴대폰 조작은 아니며, 비밀번호 재설정 메일의 실제 수신·Firestore 개인 규칙 동기화·로컬 파일 작업은 미검증입니다. 단순 화면 캡처나 Emulator 성공으로 실제 인증 성공을 대신하지 않았습니다.
 
 폰트는 Pretendard 1.3.9(OFL-1.1), 라이선스 동봉. 기존 히어로 이미지를 그대로 사용했습니다. 새 로그인 화면은 같은 서체·색·버튼·여백 체계로 구현했습니다.
+
+## Google 로그인과 관리자 계정 (후속 변경)
+
+로그인·가입 화면의 `Google로 계속하기`는 `GoogleAuthProvider`와 `signInWithPopup`을 사용합니다. 기본 프로필·이메일 외 Google API 접근 범위를 추가하지 않습니다. 취소·팝업 차단·기존 로그인 방식 충돌을 한국어로 알리고, 로그인 창을 닫으면 다시 시도할 수 있습니다. Google 로고는 공식 브랜딩 자료의 원본 이미지입니다: https://developers.google.com/static/identity/images/g-logo.png
+
+Firebase가 발급하는 ID token의 `admin === true`와 `email_verified === true`가 모두 있어야 `/admin` 화면에 접근합니다. 프런트엔드에 관리자 이메일 목록이나 비밀번호를 넣지 않습니다. 토큰 변경·로그아웃 시 기존 권한을 먼저 지우고 다시 확인합니다.
+
+사용자 요청의 AFO 운영자 계정을 서버에 비밀번호 없이 생성하고 `admin: true` custom claim을 지정·재조회했습니다. 이메일 소유 확인은 대신 표시하지 않았으므로 최초 Google 로그인 전에는 관리자 접근이 거부됩니다. Google로 동일 이메일을 인증하면 기존 UID에 연결되고 관리자 계정으로 사용할 수 있는 구조입니다.
+
+**관리자 기능의 범위:** 현재 `/admin`은 로그인한 운영 계정·인증된 관리자 권한과 서비스 화면 링크를 표시합니다. 회원 목록 조회·차단·삭제, 타인의 규칙 수정, 실제 파일 변경은 제공하지 않습니다. 클라이언트 route guard는 백엔드 권한 강제 장치가 아닙니다. 향후 관리 데이터나 실행 API를 만들면 서버·Security Rules에서 서명된 토큰의 관리자 claim과 이메일 본인 확인을 별도로 강제해야 합니다. 기존 Firestore 규칙·Firebase IAM 권한은 이번 변경에서 수정하지 않았습니다.
+
+검증: 일반/Emulator 빌드 통과. 실제 Auth Emulator popup에서 취소 복귀, 일반 Google 사용자의 관리자 접근 거부, 미확인 이메일의 관리자 접근 거부, 비밀번호 없는 사전 생성 계정의 Google 연결 후 UID·claim 보존, 관리자 접근과 새로고침 유지, 모바일 넘침 없음을 확인했습니다. 이는 합성 Google identity를 쓰는 Emulator 검증이며 실제 Google OAuth 성공을 뜻하지 않습니다.
+
+CSP는 Firebase Auth iframe origin과 `apis.google.com` helper script만 추가 허용하고, `Cross-Origin-Opener-Policy: same-origin-allow-popups`를 적용했습니다. 광범위한 wildcard·unsafe-inline·unsafe-eval은 추가하지 않았습니다. 공개 제공업체 활성화와 실제 Google 로그인 결과는 별도로 확인합니다.
+
+최신 Google 옵션 배포: 앱 소스 `f3bca4c`, Hosting version `e2cd1509bfb765a5`, 만료 2026-11-02 21:24:39 Asia/Seoul. 공개 `/login`의 Google 버튼·모바일 렌더를 별도로 확인했습니다. 이 변경의 공개 확인은 문서 탐색 1회이며, Google 제공업체 설정의 최종 저장은 사용자 확인을 기다립니다. 관리자 계정은 서버 생성·claim 재조회까지 확인했지만, 실제 Google 본인 인증과 관리자 화면 진입은 아직 미검증입니다.

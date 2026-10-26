@@ -12,7 +12,6 @@ import { chmod, link, lstat, open, readdir, readFile, readlink, rename, symlink,
 import { createHash, randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { fileURLToPath } from 'node:url';
 import { isAfoError, PreviewSchema, ScanProgressSchema } from '../packages/contracts/src/index.js';
 import type { Preview, RuleProfile, ScanProgress, ScanResult, SkippedEntry } from '../packages/contracts/src/index.js';
 import { analyzeRoot, currentSessionId, hashCandidates, issueReferenceGrant, issueRootGrant, readReference, scanRoot,
@@ -216,7 +215,8 @@ test('V67-R5 scope, session, cross-process and forged grants (including a recomp
     await assert.rejects(scanRoot(forged as never), code('ROOT_FORBIDDEN'), JSON.stringify(Object.keys(forged)));
   }
   // A grant issued by another process (another session) is not valid here.
-  const entry = fileURLToPath(new URL('../packages/filesystem/src/index.js', import.meta.url));
+  // A file:// URL, not a path: Windows ESM import() refuses drive-letter paths.
+  const entry = new URL('../packages/filesystem/src/index.js', import.meta.url).href;
   const { stdout } = await run(process.execPath, ['--input-type=module', '-e',
     'const m = await import(process.argv[1]); console.log(JSON.stringify(await m.issueRootGrant(process.argv[2])));', entry, root]);
   const foreign = JSON.parse(stdout) as typeof work;

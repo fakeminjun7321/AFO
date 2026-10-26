@@ -37,3 +37,6 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run typecheck
       - run: npm test
+        env:
+          # Disposable hosted runner: exercise the real OS trash with synthetic files only.
+          AFO_REAL_TRASH_TEST: '1'

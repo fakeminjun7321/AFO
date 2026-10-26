@@ -1,0 +1,14 @@
+# 이전 검증에서 넘어온 과제 (coordinator 기록)
+- [#6] AbsolutePathSchema가 `\\?\C:\x`, `\\.\PhysicalDrive0`, `/`, 비정규 `/a/../b`를 허용함 → RootGrant 발급에서 거부.
+- [#8] OperationPlan이 move 목적지 = 같은 plan의 keep/review 파일을 허용 → plan 생성기에서 거부(충돌은 review).
+- [#8] Approval `usedAt > expiresAt` 스키마 허용 → 서비스가 소비 전 만료 확인.
+- [#8] delete op `keeper: null` 허용 → 중복이 아닌 "사용자가 명시적으로 고른 파일" 삭제에만 허용, 중복 후보 삭제엔 keeper 필수.
+- [#10] 목적지 조부모 경로의 링크를 platform 어댑터가 막지 않음(O-1) → 서비스가 루트부터 모든 부모 구성요소 lstat(링크 거부)+realpath 검사, 루트 밖 링크 부정 테스트 필수.
+- [#10] platform EPERM→NOT_SUPPORTED 매핑(O-2) → 잠금(uchg)/권한 실패는 PERMISSION_DENIED로 구분 필요.
+- [#10] 같은 크기·mtime 되돌린 내용 변경은 어댑터가 감지 못함 → expected.sha256 있으면 서비스가 재해시.
+- [#11] Windows `OnlyErrorDialogs`는 오류 시 GUI 대화상자 가능 → Windows 실물에서 확인 필요, 문서화.
+- [#13] link 후 unlink 전 중단(nlink 2, linked-both) 정리 흐름.
+- [문서] README에 종료 코드·DEVELOPMENT.md 링크 (마지막에 coordinator가 README 최소 수정).
+- [#18] profiles.ts `expectedRevision`가 number만 받아 빈/손상 저장소 상태를 고정 못 함(첫 저장·빈 저장소 addCorrection·손상 위 reset 경쟁) → `number | null` 허용 필요. CLI 동시 변경(PROFILE_CHANGED) 프로세스 테스트 없음.
+- [#18/#15] v1 draft JSON(suggest-rules stdout)과 `preview.root`에 실제 절대 경로가 남음(계약 요구). 공유 시 개인 경로 노출 → 계약 변경 검토.
+- [CLI] 취소(SIGINT) 종료 코드 130 자동 테스트 없음.

@@ -47,6 +47,19 @@ jobs:
         env:
           # Disposable hosted runner: exercise the real OS trash with synthetic files only.
           AFO_REAL_TRASH_TEST: '1'
+      # Test counts and skipped test names as a notice annotation, so evidence is readable without the job log.
+      - name: 테스트 수 요약을 annotation으로 기록
+        if: always()
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("fs");
+            if (!fs.existsSync("test-results.tap")) process.exit(0);
+            const t = fs.readFileSync("test-results.tap", "utf8");
+            const n = (k) => (t.match(new RegExp("^# " + k + " (\\d+)$", "m")) || [, "?"])[1];
+            const skips = [...t.matchAll(/^\s*ok \d+ - (.*) # SKIP(.*)$/gm)].map((m) => m[1].slice(0, 60) + " —" + m[2].slice(0, 60));
+            console.log("::notice title=" + process.env.RUNNER_OS + " tests::tests " + n("tests") + ", pass " + n("pass") + ", fail " + n("fail") + ", skipped " + n("skipped") + (skips.length ? "%0Askipped: " + skips.join("%0A").replace(/%/g, "%25") : ""));
+          '
       # Job logs are not always readable from the API; failed test names and messages become check annotations.
       - name: 실패한 테스트를 annotation으로 보고
         if: failure()

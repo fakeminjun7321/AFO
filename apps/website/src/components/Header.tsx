@@ -25,11 +25,11 @@ export function Header() {
         <NavLink to="/demo" onClick={close}>
           직접 체험
         </NavLink>
-        <NavLink to="/help" onClick={close}>
-          도움말
-        </NavLink>
         <NavLink to="/rules" onClick={close}>
           나의 규칙
+        </NavLink>
+        <NavLink to="/help" onClick={close}>
+          도움말
         </NavLink>
       </nav>
       <Link

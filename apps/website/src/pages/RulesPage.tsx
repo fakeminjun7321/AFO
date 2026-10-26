@@ -197,9 +197,9 @@ function RulesEditor({ uid }: { uid?: string }) {
   return (
     <section className="rules-page section-wrap" aria-labelledby="rules-title">
       <div className="page-heading">
-        <h1 id="rules-title">나의 정리 기준.</h1>
+        <h1 id="rules-title">나의 규칙</h1>
         <p>
-          확장자와 이름으로, 파일이 갈 곳을 정하세요.
+          확장자와 이름을 기준으로 분류 규칙을 만드세요.
           <br />
           규칙만 저장하며 실제 파일은 이동하거나 삭제하지 않습니다.
         </p>
@@ -347,27 +347,32 @@ function RulesEditor({ uid }: { uid?: string }) {
             >
               브라우저에 저장
             </button>
-            <button
-              type="button"
-              className="button button--outline button--small"
-              onClick={exportJSON}
-            >
-              JSON 내보내기
-            </button>
-            <label className="button button--outline button--small rules-import">
-              JSON 가져오기
-              <input
-                type="file"
-                aria-label="규칙 JSON 가져오기"
-                accept=".json,application/json"
-                onChange={importJSON}
-              />
-            </label>
           </div>
+          <details className="rules-transfer">
+            <summary>JSON으로 가져오기·내보내기</summary>
+            <div className="rules-actions">
+              <button
+                type="button"
+                className="button button--outline button--small"
+                onClick={exportJSON}
+              >
+                JSON 내보내기
+              </button>
+              <label className="button button--outline button--small rules-import">
+                JSON 가져오기
+                <input
+                  type="file"
+                  aria-label="규칙 JSON 가져오기"
+                  accept=".json,application/json"
+                  onChange={importJSON}
+                />
+              </label>
+            </div>
+          </details>
         </fieldset>
       </form>
       <div className="rules-cloud">
-        <h2>다른 기기에서도, 같은 기준.</h2>
+        <h2>클라우드 보관</h2>
         {!cloudRulesEnabled ? (
           <p>
             클라우드 규칙 저장은 연결 준비 중입니다. 현재는 이 브라우저 저장과

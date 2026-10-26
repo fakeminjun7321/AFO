@@ -69,9 +69,11 @@ export function AccountPage() {
         </div>
       )}
       <div className="account-actions">
-        <Link to="/demo" className="button button--orange">정리 흐름 체험하기 <Arrow /></Link>
-        <Link to="/rules" className="button button--outline">나의 규칙
-
+        <Link to="/demo" className="button button--orange">
+          정리 흐름 체험하기 <Arrow />
+        </Link>
+        <Link to="/rules" className="button button--outline">
+          나의 규칙
         </Link>
       </div>
     </section>

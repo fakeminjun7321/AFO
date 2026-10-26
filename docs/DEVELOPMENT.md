@@ -15,16 +15,10 @@ npm run typecheck
 npm test
 ```
 
-실제 실행 기록 (2026-10-26, macOS 27.0.1 arm64 실물 Mac, Node v24.18.0, npm 11.16.0, 기준 커밋 `1a82982` 위 #4 변경 작업 트리):
-`node_modules`와 `dist`를 지운 뒤 위 세 명령을 순서대로 실행했습니다.
+실제 실행 기록은 PR과 [검증 기록](verification/)에 남깁니다. 이 문서에 테스트 개수를 고정해 적지 않습니다.
 
-| 명령 | 종료 코드 | 결과 |
-| --- | --- | --- |
-| `npm ci --ignore-scripts --no-audit --no-fund` | 0 | 4개 패키지 설치 |
-| `npm run typecheck` | 0 | 오류 없음 |
-| `npm test` | 0 | tests 45, pass 45, fail 0, skipped 0 |
-
-Windows: 이 Mac에서 실행하지 않았습니다. `.github/workflows/engine.yml`의 Windows·macOS CI는 이 변경에서 아직 실행되지 않았습니다(미실행). CI 결과는 VM 검증이며 실물 검증이 아닙니다.
+- 2026-10-26, macOS 27.0.1 arm64 실물 Mac, Node v24.18.0: 위 세 명령 종료 0 (당시 45개 통과).
+- CI(`.github/workflows/engine.yml`): Windows·macOS hosted runner에서 `npm ci` → `npm run build`(엄격 tsc, 타입 오류면 실패) → `node --test`. 실제 OS 휴지통 검사를 켭니다. 실패한 테스트는 이름·메시지가 check annotation으로 남습니다(`gh api repos/<owner>/<repo>/check-runs/<id>/annotations`). CI는 VM 검증이며 실물 검증이 아닙니다.
 
 ## npm 스크립트
 
@@ -33,7 +27,7 @@ Windows: 이 Mac에서 실행하지 않았습니다. `.github/workflows/engine.y
 | `build` | `tsc -p tsconfig.json` | `dist/`에 JS 출력 | `npm test` 안에서 실행됨 |
 | `typecheck` | `tsc --noEmit` | 출력 없이 타입 검사 | 실행, 종료 0 |
 | `test` | `npm run build && node --test dist/tests/*.test.js` | 빌드 뒤 `tests/*.test.ts`의 컴파일 결과 실행 | 실행, 종료 0 |
-| `afo`, `preview`, `rules:suggest`, `rules:confirm` | `node dist/apps/cli/src/index.js ...` | 읽기 전용 CLI. 먼저 `npm run build` 필요 | 이 기록에서 직접 실행하지 않음 |
+| `afo`, `preview`, `rules:suggest`, `rules:confirm` | `node dist/apps/cli/src/index.js ...` | 읽기 전용 CLI. 먼저 `npm run build` 필요. 종료 코드는 [CLI.md](CLI.md) | `tests/cli.test.ts`가 실제 프로세스로 실행 |
 
 `node --test`는 실패한 테스트가 있으면 0이 아닌 코드로 끝납니다. 테스트 파일은 `tests/` 바로 아래의 `*.test.ts`만 실행됩니다. `tests/fixtures/` 안의 파일은 도구이며 테스트 진입점이 아닙니다.
 

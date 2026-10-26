@@ -49,15 +49,16 @@ Electron 초기 메모리·배포 크기는 **측정하지 않았습니다**(의
 - Windows junction은 Node/libuv `lstat`에서 symlink로 보고되는 것으로 알려져 있어 같은 거부 경로를 탑니다. OneDrive placeholder 등 다른 reparse point 식별은 **미검증**(CI 대기).
 - macOS의 이 Mac에서 symlink·하드링크·폴더 링크 거부를 실제로 확인했습니다. Windows는 symlink 권한이 없으면 해당 테스트를 명시적으로 건너뜁니다.
 - 승인 직후 변경 감지: 어댑터는 dev/ino/size/mtimeNs를 `expected`와 비교합니다. sha256 재해시는 서비스가 실행 직전에 수행합니다(기존 스캐너 해시 재사용).
-- TOCTOU 한계: Node 경로 API는 `lstat`과 `link/unlink/execFile` 사이에 다른 프로세스가 파일·부모 폴더를 바꾸는 경쟁을 원자적으로 막지 못합니다. `link`의 no-clobber와 사후 dev/ino 확인으로 덮어쓰기와 다른 파일 삭제 위험을 줄였을 뿐, 완전히 없앴다고 주장하지 않습니다. 부모 경로 중간의 링크 교체는 서비스의 realpath·부모 검사(DESIGN 규칙 3)가 함께 막아야 합니다.
+- TOCTOU 한계: Node 경로 API는 `lstat`과 `link/unlink/execFile` 사이에 다른 프로세스가 파일·부모 폴더를 바꾸는 경쟁을 원자적으로 막지 못합니다. `link`의 no-clobber와 사후 dev/ino 확인으로 덮어쓰기와 다른 파일 삭제 위험을 줄였을 뿐, 완전히 없앴다고 주장하지 않습니다. (2026-10-26 검토 반영) `unlink(src)` 직전에 원래 경로의 dev/ino를 다시 확인해, 그 사이 다른 프로그램이 원래 경로에 새 파일을 만든 경우 새 파일을 지우지 않고 두 파일을 모두 남긴 채 `FILE_CHANGED`/`UNKNOWN`으로 보고합니다. 재확인과 `unlink` 사이의 창은 여전히 남습니다. `classifyMoveState`는 두 경로가 모두 같은 inode여도 `nlink`가 2일 때만 `linked-both`로 판정합니다(대소문자·정규화·링크 부모로 같은 항목을 두 번 가리키는 경우 `conflict`). 부모 경로 중간의 링크 교체는 서비스의 realpath·부모 검사(DESIGN 규칙 3)가 함께 막아야 합니다.
 
 ## 결정 4: OS 휴지통
 
 - macOS: `execFile('/usr/bin/trash', [abs])`, shell 없음, 절대 경로만(선행 `-`로 옵션 해석되는 일 없음). 성공 후 원래 경로 부재를 확인하고, 실패하면 `TRASH_FAILED`. 영구 삭제로 우회하지 않습니다.
 - 실측: `afo-test-trash-*.txt` 합성 파일이 원래 경로에서 사라지고 같은 폴더의 다른 파일·폴더·링크 manifest는 그대로였습니다. 파일은 `~/.Trash/`에 같은 이름·크기로 존재함을 `ls`로 확인했습니다. 없는 파일에 대해 도구는 종료 코드 5와 `NSCocoaErrorDomain Code=4`를 냈습니다(어댑터는 그 전에 `SOURCE_MISSING`으로 거부). TCC 권한 창은 뜨지 않았습니다.
-- 실행 조건: 실제 휴지통 테스트는 `AFO_REAL_TRASH_TEST=1`일 때만 실행하고 기본 `npm test`에서는 명시적으로 건너뜁니다(사용자 휴지통에 합성 파일이 쌓이지 않게). CI에서는 `AFO_REAL_TRASH_TEST=1`로 실행합니다.
+- 실행 조건: 실제 휴지통 테스트는 `AFO_REAL_TRASH_TEST=1`일 때만 실행하고 기본 `npm test`에서는 명시적으로 건너뜁니다(사용자 휴지통에 합성 파일이 쌓이지 않게). CI(`.github/workflows/engine.yml`)는 일회용 runner에서 `AFO_REAL_TRASH_TEST=1`로 실행합니다(2026-10-26 workflow에 반영).
 - 복원: 앱 내 복원은 제공하지 않고 사용자가 Finder 휴지통에서 "되돌려 놓기"를 합니다. **Finder 복원의 실물 확인은 하지 않았습니다(미검증)**. GUI 제어를 하지 않기 위해서입니다.
-- Windows: `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -Command ...DeleteFile($env:AFO_TRASH_PATH,'OnlyErrorDialogs','SendToRecycleBin')`. 경로는 환경변수로만 전달하고 명령 문자열에 넣지 않습니다. `OnlyErrorDialogs`는 오류 시 대화상자를 띄울 수 있습니다. **구현만, 미검증(CI 대기)**.
+- Windows: `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -Command ...DeleteFile($env:AFO_TRASH_PATH,'OnlyErrorDialogs','SendToRecycleBin')`. 경로는 환경변수로만 전달하고 명령 문자열에 넣지 않습니다. `OnlyErrorDialogs`는 오류 시 대화상자를 띄울 수 있습니다(비대화형에서는 60초 시간 초과 후 `TRASH_FAILED`).
+- Windows 휴지통 우회 방지(2026-10-26 검토 반영): Windows는 휴지통이 없는 위치(이동식·네트워크 드라이브), 휴지통이 꺼진 볼륨, 휴지통 크기 한도를 넘는 파일을 **확인 없이 영구 삭제**합니다. 스크립트는 삭제 전에 고정 드라이브인지, 볼륨별 `NukeOnDelete`가 아닌지, 파일 크기가 `MaxCapacity`(설정이 없으면 볼륨의 5%로 보수 추정) 미만인지 확인하고, 아니면 종료 코드 3으로 거부합니다(`NOT_SUPPORTED`). 이 거부 경로는 hosted runner에서 재현할 수 없어 **미검증**이며, 한도 계산이 Windows 실제 규칙과 다를 수 있습니다. 실제 휴지통 이동 성공 경로는 Windows CI(VM)에서 실행합니다.
 - `/usr/bin/trash`가 처음 제공된 macOS 버전은 확인하지 않았습니다. 도구가 없으면 `isTrashSupported()`가 false, `moveToTrash`는 `NOT_SUPPORTED`입니다.
 - 휴지통 이동은 공간 확보량으로 세지 않습니다(같은 볼륨에 남음).
 
@@ -72,7 +73,8 @@ Electron 초기 메모리·배포 크기는 **측정하지 않았습니다**(의
 - 상태 폴더: `AFO_STATE_DIR` → macOS `~/Library/Application Support/AFO`, Windows `%LOCALAPPDATA%\AFO`. 작업 루트와 겹치면 `STATE_DIR_CONFLICT`.
 - 지속성: JSON은 temp→fsync→rename→부모 fsync(가능한 OS), 저널 JSONL은 항목마다 append+fsync. 쓰기 전에 `intent`가 기록되지 않으면 파일 작업을 시작하지 않습니다.
 - 단일 루트 잠금: `locks/<rootId>.lock`을 `open(..., 'wx')`로 생성(pid·시작 시각). 살아 있지 않은 pid의 잠금만 stale로 해제.
-- 이 ADR 범위에서는 위 항목을 구현·측정하지 않았습니다. 이 Mac에서 fsync가 실제 매체 기록까지 보장되는지는 검증하지 않았습니다.
+- 구현 상태(2026-10-26, #4): 상태 폴더 결정·겹침 거부, 원자적 JSON, 저널 append+fsync는 `packages/filesystem/src/state.ts`에 구현·단위 검증했습니다. rename 이후 폴더 동기화가 실패하면 "새 내용으로 교체됐지만 내구성 미확인"으로 따로 보고합니다. 저널 항목에는 복구 시 루트를 찾도록 `planId`·`rootGrantId`를 넣습니다. 단일 루트 잠금은 아직 구현하지 않았습니다(#13).
+- fsync가 실제 매체 기록까지 보장되는지는 검증하지 않았습니다.
 
 ## 미결정: #15에서 결정
 

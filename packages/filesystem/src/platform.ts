@@ -86,6 +86,17 @@ export async function linkMoveNoClobber(src: string, dst: string, expected?: Exp
     if (linked && current && linked.dev === current.dev && linked.ino === current.ino) await unlink(to).catch(() => undefined);
     throw new PlatformError('FILE_CHANGED', '이동 중 원본이 바뀌어 중단했습니다.');
   }
+  // Re-check right before unlink: if another program replaced src after link(), do not unlink the new file.
+  // This narrows but cannot close the check-then-unlink window (ADR 0001 decision 3).
+  const current = await lstatOrMissing(from);
+  if (!current || current.dev !== before.dev || current.ino !== before.ino) {
+    const dstNow = await lstatOrMissing(to);
+    if (current && dstNow && dstNow.dev === before.dev && dstNow.ino === before.ino && dstNow.nlink === 1n) {
+      // dst is now the only name of the original data and src holds a new file: keep both, report the conflict.
+      throw new PlatformError('FILE_CHANGED', '이동 중 원래 경로에 다른 파일이 생겨 두 파일을 모두 남겼습니다.');
+    }
+    throw new PlatformError('UNKNOWN', '이동 중 원래 경로가 바뀌어 중간 상태로 남겼습니다.');
+  }
   try { await unlink(from); } catch (error) {
     const failure = fromErrno(error);
     const kept = await lstatOrMissing(from).catch(() => null);
@@ -107,7 +118,9 @@ export async function classifyMoveState(src: string, dst: string, expected: Expe
   const [s, d] = await Promise.all([lstatOrMissing(absolute(src)), lstatOrMissing(absolute(dst))]);
   const match = (x: BigIntStats | null): boolean => !!x && x.isFile() && !x.isSymbolicLink() &&
     String(x.dev) === expected.device && String(x.ino) === expected.inode;
-  if (match(s) && match(d)) return 'linked-both';
+  // Two names really exist only when the inode has 2 links; otherwise src and dst resolve to the same entry
+  // (case/Unicode folding or a linked parent) and "linked-both" would invite deleting the only copy.
+  if (match(s) && match(d)) return s!.nlink === 2n && d!.nlink === 2n ? 'linked-both' : 'conflict';
   if (match(s) && !d) return 'not-started';
   if (!s && match(d)) return 'moved';
   if (!s && !d) return 'missing';
@@ -125,11 +138,42 @@ export async function isTrashSupported(): Promise<boolean> {
   return access(tool, process.platform === 'win32' ? constants.F_OK : constants.X_OK).then(() => true, () => false);
 }
 
-const run = (file: string, args: string[], env?: NodeJS.ProcessEnv): Promise<{ ok: boolean; stderr: string }> =>
+const run = (file: string, args: string[], env?: NodeJS.ProcessEnv): Promise<{ ok: boolean; code: number | null; stderr: string }> =>
   new Promise((resolve) => {
     execFile(file, args, { shell: false, windowsHide: true, timeout: 60_000, maxBuffer: 1 << 20, ...(env ? { env } : {}) },
-      (error, _stdout, stderr) => resolve({ ok: !error, stderr: String(stderr).trim().slice(0, 500) }));
+      (error, _stdout, stderr) => resolve({ ok: !error,
+        code: error ? (typeof error.code === 'number' ? error.code : null) : 0, stderr: String(stderr).trim().slice(0, 500) }));
   });
+
+/**
+ * Windows sends a file to the Recycle Bin only on a local fixed drive whose bin is enabled and large enough;
+ * otherwise SHFileOperation silently deletes permanently. The script refuses those cases (exit 3) before deleting.
+ * Bin size: per-volume MaxCapacity (MB) under HKCU BitBucket\Volume\{GUID}; when absent, assume 5% of the volume.
+ */
+export const WINDOWS_NO_RECYCLE_EXIT = 3;
+const WINDOWS_TRASH_SCRIPT = [
+  "$ErrorActionPreference = 'Stop'",
+  '$p = $env:AFO_TRASH_PATH',
+  '$item = Get-Item -LiteralPath $p -Force',
+  '$root = [System.IO.Path]::GetPathRoot($item.FullName)',
+  "if (-not $root -or $root.StartsWith('\\\\')) { [Console]::Error.WriteLine('AFO_NO_RECYCLE: network or device path'); exit 3 }",
+  '$drive = New-Object System.IO.DriveInfo($root)',
+  "if ($drive.DriveType -ne 'Fixed') { [Console]::Error.WriteLine('AFO_NO_RECYCLE: drive type ' + $drive.DriveType); exit 3 }",
+  '$limit = [int64]($drive.TotalSize * 0.05)',
+  "$vol = Get-CimInstance Win32_Volume -Filter (\"DriveLetter='\" + $root.Substring(0, 2) + \"'\")",
+  'if ($vol) {',
+  "  $guid = [regex]::Match([string]$vol.DeviceID, '\\{[^}]+\\}').Value",
+  "  $key = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\BitBucket\\Volume\\' + $guid",
+  '  if ($guid -and (Test-Path -LiteralPath $key)) {',
+  '    $cfg = Get-ItemProperty -LiteralPath $key',
+  "    if ($cfg.NukeOnDelete -eq 1) { [Console]::Error.WriteLine('AFO_NO_RECYCLE: recycle bin disabled'); exit 3 }",
+  '    if ($null -ne $cfg.MaxCapacity) { $limit = [int64]$cfg.MaxCapacity * 1MB }',
+  '  }',
+  '}',
+  "if ($item.Length -ge $limit) { [Console]::Error.WriteLine('AFO_NO_RECYCLE: larger than recycle bin limit'); exit 3 }",
+  'Add-Type -AssemblyName Microsoft.VisualBasic',
+  "[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($item.FullName, 'OnlyErrorDialogs', 'SendToRecycleBin')",
+].join('\n');
 
 /** Sends one regular file to the OS trash. Never falls back to permanent deletion. Restore is done by the user in Finder/Explorer. */
 export async function moveToTrash(abs: string, expected?: ExpectedIdentity): Promise<void> {
@@ -139,10 +183,10 @@ export async function moveToTrash(abs: string, expected?: ExpectedIdentity): Pro
   const result = process.platform === 'darwin'
     ? await run('/usr/bin/trash', [target])
     : await run(windowsPowerShell(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command',
-      'Add-Type -AssemblyName Microsoft.VisualBasic; ' +
-      "[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($env:AFO_TRASH_PATH, 'OnlyErrorDialogs', 'SendToRecycleBin')"],
-      { ...process.env, AFO_TRASH_PATH: target });
+      WINDOWS_TRASH_SCRIPT], { ...process.env, AFO_TRASH_PATH: target });
   const still = await lstatOrMissing(target);
+  if (result.code === WINDOWS_NO_RECYCLE_EXIT && still)
+    throw new PlatformError('NOT_SUPPORTED', '이 위치에서는 휴지통을 쓸 수 없어 영구 삭제될 수 있으므로 거부했습니다.', result.stderr || null);
   if (!result.ok || still) throw new PlatformError('TRASH_FAILED', '휴지통으로 보내지 못했습니다.', result.stderr || null);
 }
 

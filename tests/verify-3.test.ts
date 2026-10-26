@@ -85,18 +85,40 @@ test('V3-02 existing destination file, folder, same path and dangling link are n
   assert.equal(await lstat(path.join(root, 'nowhere.txt')).then(() => true, () => false), false, 'link target not created');
 });
 
-test('V3-03 case-only and Unicode-normalization-only collisions are refused on this filesystem', async (t) => {
-  const root = await synth(t, { 'Report.txt': 'src', 'dest/report.txt': 'existing', 'dest/.keep': '' });
-  const nfc = '보고서 😀.txt'.normalize('NFC'); const nfd = nfc.normalize('NFD');
-  await writeFile(path.join(root, nfc), 'src-nfc');
-  await writeFile(path.join(root, 'dest', nfd), 'existing-nfd');
+async function normalizationInsensitive(root: string): Promise<boolean> {
+  const nfc = '정규화-probe.txt'.normalize('NFC');
+  await writeFile(path.join(root, nfc), '');
+  const yes = await lstat(path.join(root, nfc.normalize('NFD'))).then(() => true, () => false);
+  await rm(path.join(root, nfc));
+  return yes;
+}
+
+test('V3-03a case-only collisions are refused on a case-insensitive filesystem', async (t) => {
+  const root = await synth(t, { 'Report.txt': 'src', 'dest/report.txt': 'existing' });
   if (!await caseInsensitive(root)) { t.skip('tmpdir filesystem is case-sensitive; collision not applicable'); return; }
   const before = await snap(root);
   await rejectsWith(linkMoveNoClobber(path.join(root, 'Report.txt'), path.join(root, 'dest', 'REPORT.TXT')), 'DEST_EXISTS');
   await rejectsWith(linkMoveNoClobber(path.join(root, 'Report.txt'), path.join(root, 'report.txt')), 'DEST_EXISTS');
-  await rejectsWith(linkMoveNoClobber(path.join(root, nfc), path.join(root, 'dest', nfc)), 'DEST_EXISTS');
   assert.deepEqual(await snap(root), before);
-  t.diagnostic('case-insensitive + normalization-insensitive lookup observed; existing hashes preserved');
+});
+
+// APFS treats NFC/NFD spellings as one name; NTFS and most Linux filesystems keep them distinct.
+test('V3-03b Unicode-normalization-only collisions are refused where the filesystem treats them as one name', async (t) => {
+  const nfc = '보고서 😀.txt'.normalize('NFC'); const nfd = nfc.normalize('NFD');
+  const root = await synth(t, { 'dest/.keep': '' });
+  await writeFile(path.join(root, nfc), 'src-nfc');
+  await writeFile(path.join(root, 'dest', nfd), 'existing-nfd');
+  const before = await snap(root);
+  if (await normalizationInsensitive(root)) {
+    await rejectsWith(linkMoveNoClobber(path.join(root, nfc), path.join(root, 'dest', nfc)), 'DEST_EXISTS');
+    assert.deepEqual(await snap(root), before);
+  } else {
+    // Distinct names: the move may succeed, but the existing NFD file must keep its content.
+    await linkMoveNoClobber(path.join(root, nfc), path.join(root, 'dest', nfc));
+    assert.equal(await readFile(path.join(root, 'dest', nfd), 'utf8'), 'existing-nfd');
+    assert.equal(await readFile(path.join(root, 'dest', nfc), 'utf8'), 'src-nfc');
+    t.diagnostic('normalization-sensitive filesystem: NFC and NFD names coexist; no overwrite');
+  }
 });
 
 test('V3-04 destination parent that is a symlink (inside or outside) or a file is refused', async (t) => {
@@ -117,7 +139,8 @@ test('V3-05 source symlink, dir symlink, hard link, folder and FIFO are refused;
   await symlink(path.join(root, 'f.txt'), path.join(root, 'ln.txt'));
   await symlink(path.join(root, 'folder'), path.join(root, 'ln-dir'));
   await link(path.join(root, 'h.txt'), path.join(root, 'h-twin.txt'));
-  execFileSync('/usr/bin/mkfifo', [path.join(root, 'pipe')]);
+  const fifo = process.platform !== 'win32'; // Windows has no FIFO special file in the filesystem
+  if (fifo) execFileSync('/usr/bin/mkfifo', [path.join(root, 'pipe')]);
   const before = await snap(root);
   const to = (n: string): string => path.join(root, 'dest', n);
   await rejectsWith(linkMoveNoClobber(path.join(root, 'ln.txt'), to('ln.txt')), 'LINK_REJECTED');
@@ -125,7 +148,7 @@ test('V3-05 source symlink, dir symlink, hard link, folder and FIFO are refused;
   await rejectsWith(linkMoveNoClobber(path.join(root, 'h.txt'), to('h.txt')), 'LINK_REJECTED');
   await rejectsWith(linkMoveNoClobber(path.join(root, 'h-twin.txt'), to('h-twin.txt')), 'LINK_REJECTED');
   await rejectsWith(linkMoveNoClobber(path.join(root, 'folder'), to('folder')), 'NOT_SUPPORTED');
-  await rejectsWith(linkMoveNoClobber(path.join(root, 'pipe'), to('pipe')), 'NOT_SUPPORTED');
+  if (fifo) await rejectsWith(linkMoveNoClobber(path.join(root, 'pipe'), to('pipe')), 'NOT_SUPPORTED');
   assert.deepEqual(await snap(root), before);
   assert.deepEqual(before['h.txt'] && before['h.txt'].type === 'file' ? before['h.txt'].nlink : null, '2');
 });

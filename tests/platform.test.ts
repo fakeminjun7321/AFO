@@ -90,6 +90,15 @@ test('interrupted move (link done, unlink not done) is classified, not repaired'
   assert.equal(await classifyMoveState(path.join(root, 'x'), path.join(root, 'y'), id), 'missing');
 });
 
+test('the same directory entry under two spellings is never reported as two names (review finding B)', async (t) => {
+  const root = await fixture(t, { 'a.pdf': 'a' });
+  const src = path.join(root, 'a.pdf');
+  const id = (await fileIdentity(src))!;
+  // src and dst are one entry with nlink 1: recovery must not think a second copy exists.
+  assert.equal(await classifyMoveState(src, src, id), 'conflict');
+  assert.equal(await readFile(src, 'utf8'), 'a');
+});
+
 test('permanent delete removes only one regular file and records observed free space', async (t) => {
   const root = await fixture(t, { 'big.bin': 'x'.repeat(1 << 20), 'keep.pdf': 'keep', 'folder/inner.pdf': 'i', 'h.pdf': 'h' });
   await link(path.join(root, 'h.pdf'), path.join(root, 'h2.pdf'));

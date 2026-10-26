@@ -91,15 +91,20 @@ export async function writeJsonAtomic(file: string, value: unknown, schema?: z.Z
   if (bytes.length > MAX_STATE_JSON_BYTES) throw new AfoError('STATE_CORRUPT', '상태 파일이 크기 한도를 넘습니다.');
   const directory = path.dirname(path.resolve(file));
   const temp = path.join(directory, `.${path.basename(file)}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`);
+  let renamed = false;
   try {
     await mkdir(directory, { recursive: true, mode: 0o700 });
     const handle = await open(temp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NOFOLLOW, 0o600);
     try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
     await rename(temp, file);
+    renamed = true;
     await syncDirectory(directory);
   } catch (error) {
+    // After rename the new content is already in place; only its durability across a power loss is unconfirmed.
+    // Callers must not treat this as "old content still there" (do not roll back or retry blindly).
+    if (renamed) throw failure('UNKNOWN', '상태 파일은 교체됐지만 폴더 동기화를 확인하지 못했습니다.', error);
     await rm(temp, { force: true });
-    throw failure('UNKNOWN', '상태 파일을 저장하지 못했습니다.', error);
+    throw failure('UNKNOWN', '상태 파일을 저장하지 못했습니다(이전 내용 유지).', error);
   }
 }
 
@@ -158,7 +163,7 @@ export async function appendJournal(file: string, entry: JournalEntry): Promise<
         await handle.read(last, 0, 1, stat.size - 1);
         if (last[0] !== 0x0a) prefix = Buffer.from('\n');
       }
-      await handle.write(Buffer.concat([prefix, line]));
+      await handle.writeFile(Buffer.concat([prefix, line])); // writeFile loops until every byte is written
       await handle.sync();
     } finally { await handle.close(); }
     if (created) await syncDirectory(directory);

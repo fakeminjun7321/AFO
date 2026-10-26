@@ -12,7 +12,7 @@ import { createFixture } from './helpers.js';
 const code = (expected: ErrorCode) => (error: unknown): boolean => error instanceof AfoError && error.code === expected;
 const Doc = z.strictObject({ name: z.string(), count: z.number().int() });
 const entry = (seq: number, extra: Partial<JournalEntry> = {}): JournalEntry => ({
-  formatVersion: 1, runId: 'run-00000001', seq, opId: '0000000a', approvalId: 'approval-0001', phase: 'intent',
+  formatVersion: 1, runId: 'run-00000001', seq, opId: '0000000a', planId: '1'.repeat(64), rootGrantId: '2'.repeat(64), approvalId: 'approval-0001', phase: 'intent',
   kind: 'trash', source: '사진/여행 😀.jpg', destination: null, before: { device: '1', inode: '2', size: 5, sha256: null },
   after: null, errorCode: null, at: '2026-10-26T01:00:00.000Z', ...extra });
 

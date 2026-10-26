@@ -91,9 +91,9 @@ export const OperationIdSchema = z.string().regex(/^[a-f0-9]{8,64}$/u);
 const InstantSchema = z.iso.datetime();
 const DigitsSchema = z.string().regex(/^\d+$/u);
 const ByteCountSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
-/** POSIX, Windows drive or UNC absolute path; which one is valid on this OS is the adapter's check. */
+/** POSIX, Windows drive or UNC absolute path; Win32 device/namespace paths (\\?\, \\.\) are rejected. Which form is valid on this OS is the adapter's check. */
 const AbsolutePathSchema = z.string().min(1).max(4096).refine((value) => !value.includes('\u0000') &&
-  (/^\//u.test(value) || /^[A-Za-z]:[\\/]/u.test(value) || /^\\\\[^\\]/u.test(value)), '절대 경로가 필요합니다.');
+  (/^\//u.test(value) || /^[A-Za-z]:[\\/]/u.test(value) || /^\\\\(?![?.]\\)[^\\]/u.test(value)), '절대 경로가 필요합니다.');
 const key = (value: string): string => value.normalize('NFC').toLowerCase();
 const later = (a: string, b: string): boolean => Date.parse(a) > Date.parse(b);
 const duplicated = (values: string[]): boolean => new Set(values).size !== values.length;
@@ -172,7 +172,8 @@ const IdentitySchema = z.strictObject({ device: DigitsSchema, inode: DigitsSchem
 export const JournalPhaseSchema = z.enum(['intent', 'done', 'failed', 'skipped', 'undo-intent', 'undone']);
 export const JournalEntrySchema = z.strictObject({
   formatVersion: z.literal(1), runId: OpaqueIdSchema, seq: z.number().int().nonnegative(), opId: OperationIdSchema,
-  approvalId: OpaqueIdSchema, phase: JournalPhaseSchema, kind: OperationKindSchema, source: RelativePathSchema,
+  /** planId and rootGrantId let recovery after a restart resolve the relative paths against the right root. */
+  planId: Sha256Schema, rootGrantId: Sha256Schema, approvalId: OpaqueIdSchema, phase: JournalPhaseSchema, kind: OperationKindSchema, source: RelativePathSchema,
   destination: RelativePathSchema.nullable(), before: IdentitySchema, after: IdentitySchema.nullable(),
   errorCode: ErrorCodeSchema.nullable(), at: InstantSchema,
 }).superRefine((e, ctx) => {

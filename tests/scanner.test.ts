@@ -60,6 +60,7 @@ test('cancellation stops analysis and makes no changes', async (t) => {
 });
 test('a nested unreadable folder reports an error instead of false completeness', async (t) => {
   if (process.platform === 'win32') { t.skip('POSIX chmod is not a Windows ACL test.'); return; }
+  if (process.getuid?.() === 0) { t.skip('root ignores POSIX permissions; run as a normal user.'); return; }
   const root = await fixture(t, { 'locked/private.pdf': 'private', 'ok.pdf': 'ok' });
   const locked = path.join(root, 'locked');
   await chmod(locked, 0);

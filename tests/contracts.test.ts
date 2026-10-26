@@ -43,7 +43,7 @@ const approval = (extra: Record<string, unknown> = {}) => ({
   operationIds: ['0000000a', '0000000b'], mode: 'organize', profileId: 'p1', profileRevision: 2,
   issuedAt: now, expiresAt: minutes(10), usedAt: null, ...extra });
 const entry = (extra: Record<string, unknown> = {}) => ({
-  formatVersion: 1, runId: 'run-00000001', seq: 0, opId: '0000000a', approvalId: 'approval-0001', phase: 'intent',
+  formatVersion: 1, runId: 'run-00000001', seq: 0, opId: '0000000a', planId: h('1'), rootGrantId: h('2'), approvalId: 'approval-0001', phase: 'intent',
   kind: 'move', source: 'a.pdf', destination: '문서/a.pdf', before: { device: '1', inode: '2', size: 10, sha256: null },
   after: null, errorCode: null, at: now, ...extra });
 const fails = (schema: { safeParse: (v: unknown) => { success: boolean } }, value: unknown, label: string): void =>
@@ -65,6 +65,9 @@ test('root and reference grants require full identity and the right scope', () =
   fails(RootGrantSchema, missing, 'missing inode');
   fails(RootGrantSchema, { ...grant, device: 1 }, 'numeric device');
   fails(RootGrantSchema, { ...grant, canonicalPath: 'relative/path' }, 'relative path');
+  assert.equal(RootGrantSchema.safeParse({ ...grant, canonicalPath: '\\\\server\\share\\afo' }).success, true, 'UNC share');
+  fails(RootGrantSchema, { ...grant, canonicalPath: '\\\\?\\C:\\afo' }, 'Win32 namespace path');
+  fails(RootGrantSchema, { ...grant, canonicalPath: '\\\\.\\PhysicalDrive0' }, 'device path');
   fails(RootGrantSchema, { ...grant, issuedAt: 'yesterday' }, 'bad date');
   fails(RootGrantSchema, { ...grant, scope: 'reference' }, 'reference scope as root');
   fails(RootGrantSchema, { ...grant, formatVersion: 2 }, 'version');
@@ -134,6 +137,8 @@ test('approvals are sorted, bounded in time and bound to one profile revision', 
 });
 test('journal entries and reports tie error codes and identities to phases', () => {
   assert.equal(JournalEntrySchema.parse(entry()).phase, 'intent');
+  const { planId: _p, ...noPlan } = entry(); fails(JournalEntrySchema, noPlan, 'journal without planId');
+  const { rootGrantId: _r, ...noRoot } = entry(); fails(JournalEntrySchema, noRoot, 'journal without rootGrantId');
   const after = { device: '1', inode: '2', size: 10, sha256: null };
   assert.equal(JournalEntrySchema.safeParse(entry({ phase: 'done', after })).success, true);
   assert.equal(JournalEntrySchema.safeParse(entry({ phase: 'skipped', errorCode: 'FILE_CHANGED' })).success, true);

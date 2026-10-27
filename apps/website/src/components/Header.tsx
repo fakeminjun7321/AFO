@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { Arrow } from "./Icons";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 
 export function Header() {
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
   const { user, ready } = useAuth();
+  const { pathname } = useLocation();
   return (
     <header className="header">
       <Link
@@ -31,8 +32,16 @@ export function Header() {
         <NavLink to="/rules" onClick={close}>
           나의 규칙
         </NavLink>
-        <NavLink to="/help" onClick={close}>
-          도움말
+        <NavLink
+          to="/resources"
+          className={() =>
+            ["/resources", "/help", "/downloads", "/notes"].includes(pathname)
+              ? "nav-active"
+              : ""
+          }
+          onClick={close}
+        >
+          안내와 자료
         </NavLink>
       </nav>
       <Link

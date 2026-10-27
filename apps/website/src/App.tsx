@@ -25,6 +25,10 @@ const LocalPreview = lazy(() =>
 import { AdminPage } from "./pages/AdminPage";
 import { AuthProvider } from "./auth/AuthProvider";
 import { PreviewSessionProvider } from "./features/local-preview/session";
+import { HomeOverview } from "./components/HomeOverview";
+import { ResourcesPage } from "./pages/ResourcesPage";
+import { DownloadsPage } from "./pages/DownloadsPage";
+import { NotesPage } from "./pages/NotesPage";
 
 const titles: Record<string, string> = {
   "/": "파일은 제자리에. 당신은 다음 일에.",
@@ -40,6 +44,9 @@ const titles: Record<string, string> = {
   "/account": "내 계정",
   "/rules": "나의 정리 기준",
   "/admin": "관리자",
+  "/resources": "안내와 자료",
+  "/downloads": "테스트 파일",
+  "/notes": "개발 노트",
 };
 function Shell() {
   const { pathname } = useLocation();
@@ -60,7 +67,19 @@ function Shell() {
       <Header />
       <main id="main" tabIndex={-1}>
         <Routes>
-          <Route path="/" element={<><Hero /><HomeContent /></>} />
+          <Route
+            path="/"
+            element={
+              <>
+                <Hero />
+                <HomeContent />
+                <HomeOverview />
+              </>
+            }
+          />
+          <Route path="/resources" element={<ResourcesPage />} />
+          <Route path="/downloads" element={<DownloadsPage />} />
+          <Route path="/notes" element={<NotesPage />} />
           <Route path="/help" element={<HelpPage />} />
           <Route path="/status" element={<StatusPage />} />
           <Route path="/guide" element={<Navigate to="/help" replace />} />

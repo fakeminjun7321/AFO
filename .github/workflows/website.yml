@@ -24,6 +24,7 @@ jobs:
           cache-dependency-path: |
             firebase/package-lock.json
             apps/website/package-lock.json
+            apps/website/server/package-lock.json
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
         with:
           distribution: temurin
@@ -32,6 +33,10 @@ jobs:
         working-directory: firebase
       - run: npm ci --ignore-scripts --no-audit --no-fund
         working-directory: apps/website
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: apps/website/server
+      - run: npm test
+        working-directory: apps/website/server
       - run: npm run build && npm test && npm run build:emulator
         working-directory: apps/website
       - run: npx playwright install --with-deps chromium

@@ -13,7 +13,7 @@ test("home explains the available features and links to their actual screens", a
   await page.goto("/");
   await page.getByRole("link", { name: "나의 규칙 살펴보기" }).click();
   await expect(page).toHaveURL(/\/rules$/);
-  await expect(page.getByRole("heading", { name: "나의 정리 기준." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "나의 규칙", exact: true })).toBeVisible();
   await page.goto("/");
   await page.getByRole("link", { name: "샘플로 체험하기" }).click();
   await expect(page).toHaveURL(/\/demo$/);

@@ -1,0 +1,9 @@
+.rule-trial { margin: 45px 0; border-top: 1px solid #555; padding-top: 35px; }
+.rule-trial h2 { font-size: 26px; letter-spacing: -.03em; }
+.rule-trial p { margin-top: 12px; color: #c1c1bb; line-height: 1.7; }
+.rule-trial a { color: #ff9a7d; text-decoration: underline; text-underline-offset: 3px; }
+.rule-trial ul { list-style: none; padding: 0; margin: 24px 0; border-top: 1px solid #444; }
+.rule-trial li { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px; border-bottom: 1px solid #444; padding: 15px 0; overflow-wrap: anywhere; }
+.rule-trial li small { grid-column: 2; color: #bcbcb7; }
+.rule-trial button { padding: 10px 15px; background: transparent; color: #fff; border: 1px solid #aaa; border-radius: 5px; }
+@media(max-width: 700px) { .rule-trial li { grid-template-columns: 1fr; } .rule-trial li small { grid-column: 1; } }

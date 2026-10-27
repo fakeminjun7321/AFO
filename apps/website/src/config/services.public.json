@@ -1,4 +1,5 @@
 {
   "cloudRules": true,
-  "storageFormatVersion": 2
+  "storageFormatVersion": 2,
+  "adminApi": false
 }

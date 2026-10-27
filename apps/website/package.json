@@ -13,11 +13,12 @@
     "typecheck": "tsc --noEmit",
     "build:emulator": "tsc --noEmit && vite build --mode emulator --outDir dist-emulator",
     "build:shared": "npm --prefix ../../firebase run build",
-    "prebuild": "npm run build:shared",
-    "pretypecheck": "npm run build:shared",
-    "prebuild:emulator": "npm run build:shared",
+    "prebuild": "npm run build:shared && npm run build:admin",
+    "pretypecheck": "npm run build:shared && npm run build:admin",
+    "prebuild:emulator": "npm run build:shared && npm run build:admin",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "build:admin": "npm --prefix server run build"
   },
   "dependencies": {
     "@afo/firebase-foundation": "file:../../firebase",

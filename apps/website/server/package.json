@@ -1,0 +1,21 @@
+{
+  "name": "@afo/admin-api",
+  "private": true,
+  "type": "module",
+  "main": "lib/src/index.js",
+  "engines": {
+    "node": "24"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node --test lib/tests/*.test.js"
+  },
+  "dependencies": {
+    "firebase-admin": "14.5.0",
+    "firebase-functions": "7.4.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "24.19.2"
+  }
+}

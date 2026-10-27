@@ -1,0 +1,45 @@
+{
+  "fileName": "AFO-test-files.zip",
+  "sampleFileCount": 7,
+  "archiveFileCount": 10,
+  "bytes": 4532,
+  "sha256": "c575c8a0c18b10c0cc0e395c8cc7e4eb01b783fb391293343fb4689d2250948c",
+  "files": [
+    {
+      "name": "녹음_샘플.wav",
+      "bytes": 4844,
+      "sha256": "3cfea058c7c22beab24dc1e9a4837876df4ee02403c055339dccd366ecaa8dad"
+    },
+    {
+      "name": "물리_실험.txt",
+      "bytes": 104,
+      "sha256": "b2ad27424b304de24d9fd46a4e7b5a047adb1b88d1fc384d1199cce896f4a0a8"
+    },
+    {
+      "name": "물리_실험_복사본.txt",
+      "bytes": 104,
+      "sha256": "b2ad27424b304de24d9fd46a4e7b5a047adb1b88d1fc384d1199cce896f4a0a8"
+    },
+    {
+      "name": "여행_기록.md",
+      "bytes": 73,
+      "sha256": "d73da6b05c606db1a7d7c91a4001fc9032ad9bcd68875f1402477b351d298149"
+    },
+    {
+      "name": "여행_사진.png",
+      "bytes": 279,
+      "sha256": "3303cdb2cfffb9e7e7dfaf77ac18842331601cc39a69768e8eec94c060615975"
+    },
+    {
+      "name": "참고_자료.zip",
+      "bytes": 171,
+      "sha256": "a4e0f75e4f08a0364a5a6229def0b0b2d7052adb4f1a29abf5216a4fea4b2bb6"
+    },
+    {
+      "name": "측정_데이터.csv",
+      "bytes": 34,
+      "sha256": "685c150943b81a3828f81cfece405af89e79c24df2b3ca7586dcb41c1d46d2f1"
+    }
+  ],
+  "date": "2026-10-26"
+}

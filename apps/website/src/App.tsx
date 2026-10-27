@@ -5,13 +5,13 @@ import {
   Route,
   Link,
   useLocation,
+  Navigate,
 } from "react-router-dom";
 import { Header } from "./components/Header";
 import { Hero } from "./components/Hero";
 import { FolderDemo } from "./features/demo/FolderDemo";
-import { FAQ } from "./components/FAQ";
 import { Footer } from "./components/Footer";
-import { GuidePage } from "./pages/GuidePage";
+import { HelpPage } from "./pages/HelpPage";
 import { AuthPage } from "./pages/AuthPage";
 import { AccountPage } from "./pages/AccountPage";
 const RulesPage = lazy(() =>
@@ -23,6 +23,7 @@ import { AuthProvider } from "./auth/AuthProvider";
 const titles: Record<string, string> = {
   "/": "파일은 제자리에. 당신은 다음 일에.",
   "/guide": "사용 방법",
+  "/help": "도움말",
   "/demo": "직접 체험",
   "/faq": "자주 묻는 질문",
   "/login": "로그인",
@@ -52,9 +53,10 @@ function Shell() {
       <main id="main" tabIndex={-1}>
         <Routes>
           <Route path="/" element={<Hero />} />
-          <Route path="/guide" element={<GuidePage />} />
+          <Route path="/help" element={<HelpPage />} />
+          <Route path="/guide" element={<Navigate to="/help" replace />} />
           <Route path="/demo" element={<FolderDemo />} />
-          <Route path="/faq" element={<FAQ />} />
+          <Route path="/faq" element={<Navigate to="/help" replace />} />
           <Route
             path="/login"
             element={<AuthPage key="login" mode="login" />}

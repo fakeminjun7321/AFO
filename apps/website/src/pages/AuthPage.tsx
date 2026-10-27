@@ -25,10 +25,10 @@ export function AuthPage({ mode }: { mode: Mode }) {
   const [message, setMessage] = useState("");
   const title =
     mode === "signup"
-      ? "가볍게 시작해요."
+      ? "회원가입"
       : mode === "reset"
-        ? "다시, 로그인할 수 있게."
-        : "다시 만나 반가워요.";
+        ? "비밀번호 재설정"
+        : "로그인";
   async function googleLogin() {
     if (busy) return;
     setError("");
@@ -87,13 +87,10 @@ export function AuthPage({ mode }: { mode: Mode }) {
       <div className="auth-intro">
         <h1 id="auth-title">{title}</h1>
         <p>
-          파일은 제자리에.
-          <br />
-          당신은 다음 일에.
+          {mode === "reset"
+            ? "재설정 안내를 받을 이메일을 입력하세요."
+            : "Google 계정 또는 이메일을 사용하세요."}
         </p>
-        <Link className="quiet-link" to="/demo">
-          로그인 없이 먼저 체험하기 <Arrow />
-        </Link>
       </div>
       <div className="auth-form-wrap">
         <div className="auth-tabs">
@@ -128,13 +125,6 @@ export function AuthPage({ mode }: { mode: Mode }) {
             </div>
           </>
         )}
-        <h2>
-          {mode === "signup"
-            ? "AFO 계정 만들기"
-            : mode === "reset"
-              ? "비밀번호 재설정"
-              : "이메일로 로그인"}
-        </h2>
         <form onSubmit={submit}>
           <fieldset disabled={busy}>
             <label htmlFor="email">이메일</label>
@@ -217,11 +207,9 @@ export function AuthPage({ mode }: { mode: Mode }) {
             로그인으로 돌아가기
           </Link>
         )}
-        <p className="auth-note">
-          로그인 정보는 계정 인증에만 사용합니다.
-          <br />
-          파일 내용은 업로드하지 않습니다.
-        </p>
+        <Link className="auth-back-demo" to="/demo">
+          로그인 없이 체험하기
+        </Link>
       </div>
     </section>
   );

@@ -16,15 +16,11 @@ export function FolderDemo() {
       aria-labelledby="demo-title"
     >
       <div className="section-heading">
-        <h1 id="demo-title">
-          쌓아둔 파일,
-          <br />
-          정리의 시작.
-        </h1>
+        <h1 id="demo-title">직접 체험</h1>
         <p>
-          어떻게 정리되는지 먼저 살펴보세요.
+          샘플 파일 6개로 분류 흐름을 살펴보세요.
           <br />
-          샘플 파일로 체험하며, 실제 파일은 변경하지 않습니다.
+          실제 파일은 변경하지 않습니다.
         </p>
       </div>
       <div className={`folder-panel${preview ? " is-preview" : ""}`}>

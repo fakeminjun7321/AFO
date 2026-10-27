@@ -1,5 +1,26 @@
 .rules-page {
-  padding-bottom: 100px;
+  padding-bottom: 60px;
+}
+.rules-transfer {
+  margin-top: 20px;
+  max-width: 760px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 16px 0;
+}
+.rules-transfer summary {
+  font-size: 15px;
+  color: var(--muted);
+}
+.rules-transfer .rules-actions {
+  margin-bottom: 8px;
+}
+.rules-page h2 {
+  font-size: 25px;
+}
+.rules-storage > div > p {
+  font-size: 15px;
+  color: var(--muted);
 }
 .rules-storage {
   display: flex;
@@ -10,7 +31,7 @@
   border-top: 2px solid var(--text);
 }
 .rules-page h2 {
-  font-size: clamp(24px, 3vw, 36px);
+  font-size: 25px;
   letter-spacing: -0.04em;
   margin: 0 0 12px;
 }

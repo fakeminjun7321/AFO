@@ -22,20 +22,14 @@ export function Header() {
         id="navigation"
         aria-label="주 메뉴"
       >
-        <NavLink to="/" end onClick={close}>
-          소개
-        </NavLink>
-        <NavLink to="/guide" onClick={close}>
-          사용 방법
-        </NavLink>
         <NavLink to="/demo" onClick={close}>
           직접 체험
         </NavLink>
-        <NavLink to="/faq" onClick={close}>
-          자주 묻는 질문
-        </NavLink>
         <NavLink to="/rules" onClick={close}>
           나의 규칙
+        </NavLink>
+        <NavLink to="/help" onClick={close}>
+          도움말
         </NavLink>
       </nav>
       <Link

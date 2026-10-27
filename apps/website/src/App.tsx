@@ -8,6 +8,8 @@ import {
 } from "react-router-dom";
 import { Header } from "./components/Header";
 import { Hero } from "./components/Hero";
+import { HomeContent } from "./components/HomeContent";
+import { LocalPreview } from "./features/local-preview/LocalPreview";
 import { FolderDemo } from "./features/demo/FolderDemo";
 import { FAQ } from "./components/FAQ";
 import { Footer } from "./components/Footer";
@@ -24,6 +26,7 @@ const titles: Record<string, string> = {
   "/": "파일은 제자리에. 당신은 다음 일에.",
   "/guide": "사용 방법",
   "/demo": "직접 체험",
+  "/preview": "내 폴더 미리보기",
   "/faq": "자주 묻는 질문",
   "/login": "로그인",
   "/signup": "회원가입",
@@ -51,9 +54,10 @@ function Shell() {
       <Header />
       <main id="main" tabIndex={-1}>
         <Routes>
-          <Route path="/" element={<Hero />} />
+          <Route path="/" element={<><Hero /><HomeContent /></>} />
           <Route path="/guide" element={<GuidePage />} />
           <Route path="/demo" element={<FolderDemo />} />
+          <Route path="/preview" element={<LocalPreview />} />
           <Route path="/faq" element={<FAQ />} />
           <Route
             path="/login"

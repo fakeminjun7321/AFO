@@ -4,15 +4,8 @@ import type { ClassificationReason, RuleProfile } from '../../contracts/src/inde
 import { pathKey } from './util.js';
 
 export { CLASSIFICATION_VERSION };
-/** Default rules for CLASSIFICATION_VERSION. Edit together with the version. */
-export const categoryExtensions: Readonly<Record<string, readonly string[]>> = {
-  '문서': ['pdf', 'hwp', 'hwpx', 'doc', 'docx', 'txt', 'md', 'odt', 'ppt', 'pptx', 'xls', 'xlsx', 'csv'],
-  '이미지': ['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'svg', 'tif', 'tiff'],
-  '영상': ['mp4', 'mov', 'mkv', 'avi', 'webm'], '음악': ['mp3', 'wav', 'flac', 'm4a', 'ogg'],
-  '압축': ['zip', '7z', 'rar', 'tar', 'gz'], '설치': ['dmg', 'pkg', 'exe', 'msi'],
-};
-const known = new Map(Object.entries(categoryExtensions).flatMap(([category, exts]) => exts.map((ext) => [ext, category] as const)));
-/** Lowercased last extension including the dot, or '' when there is none. */
+import { defaultCategory } from './defaults.js';
+export { categoryExtensions } from './defaults.js';
 export const extensionOf = (name: string): string => path.posix.extname(name).toLowerCase();
 
 export interface Classification {
@@ -43,13 +36,10 @@ export function classifyFile(relativePath: string, options: { profile?: RuleProf
     if (rule) return { targetDirectory: rule.targetDirectory, category: null, ruleId: rule.id, source: 'personal',
       reasonCode: 'PERSONAL_RULE', reason: '확인한 개인 규칙을 적용합니다.' };
   }
-  if (ext === '') return review('NO_EXTENSION', '확장자가 없어 종류를 판단하지 않았습니다. 기타/검토 대상입니다.');
-  const inner = extensionOf(name.slice(0, -ext.length)).slice(1);
-  // "a.tar.gz", "report.pdf.exe": two known type extensions make the real type ambiguous.
-  if (inner !== '' && known.has(inner))
-    return review('COMPOUND_EXTENSION', '확장자가 여러 개라 종류가 애매합니다. 직접 확인해 주세요.');
-  const category = known.get(ext.slice(1));
-  if (!category) return review('UNKNOWN_EXTENSION', '분류 기준이 불분명합니다.');
-  return { targetDirectory: category, category, ruleId: null, source: 'default', reasonCode: 'DEFAULT_EXTENSION',
+  const result = defaultCategory(name);
+  if (result.reason === 'NO_EXTENSION') return review(result.reason, '확장자가 없어 종류를 판단하지 않았습니다. 기타/검토 대상입니다.');
+  if (result.reason === 'COMPOUND_EXTENSION') return review(result.reason, '확장자가 여러 개라 종류가 애매합니다. 직접 확인해 주세요.');
+  if (result.reason === 'UNKNOWN_EXTENSION' || !result.category) return review('UNKNOWN_EXTENSION', '분류 기준이 불분명합니다.');
+  return { targetDirectory: result.category, category: result.category, ruleId: null, source: 'default', reasonCode: 'DEFAULT_EXTENSION',
     reason: `확장자(${ext})에 따른 기본 분류(${CLASSIFICATION_VERSION})입니다.` };
 }

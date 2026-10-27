@@ -28,6 +28,9 @@ export function Header() {
         <NavLink to="/guide" onClick={close}>
           사용 방법
         </NavLink>
+        <NavLink to="/preview" onClick={close}>
+          내 폴더 분석
+        </NavLink>
         <NavLink to="/demo" onClick={close}>
           직접 체험
         </NavLink>

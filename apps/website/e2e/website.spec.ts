@@ -35,7 +35,7 @@ test("public routes, responsive navigation, sample demo and real local rule pers
   }
   await page.getByRole("button", { name: "메뉴 열기" }).click();
   await page
-    .getByRole("navigation")
+    .getByRole("navigation", { name: "주 메뉴" })
     .getByRole("link", { name: "직접 체험" })
     .click();
   await expect(page).toHaveURL(/\/demo$/);

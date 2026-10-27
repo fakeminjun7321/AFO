@@ -26,14 +26,25 @@ export function GuidePage() {
             파일은 내 컴퓨터에서.
           </h2>
           <p>
-            웹 체험에서는 샘플 파일의 분류 전후를 살펴봅니다. 실제 파일을 읽는
-            작업은 로컬 CLI가 맡아요. 로그인과 실제 파일 변경 승인은 서로 다른
-            단계입니다.
+            웹에서 직접 선택한 폴더의 이름과 크기를 바탕으로 기본 분류를 확인할
+            수 있습니다. 샘플 체험도 제공하며, 현재 웹에서는 파일을 이동하거나
+            삭제하지 않습니다. 개인 규칙은 별도로 보관합니다.
           </p>
         </div>
-        <Link to="/demo" className="quiet-link">
-          샘플로 먼저 살펴보기 <Arrow />
+        <Link to="/preview" className="quiet-link">
+          내 폴더 미리보기 <Arrow />
         </Link>
+      </section>
+      <section className="guide-note section-wrap" aria-labelledby="guide-cli-title">
+        <div>
+          <h2 id="guide-cli-title">명령어로 더 자세하게.</h2>
+          <p>
+            로컬 CLI는 Node.js가 필요한 별도 프로그램입니다. 선택한 폴더의
+            중복 후보를 내용 해시로 확인하고, 참고 폴더에서 제안받은 규칙을
+            확인한 뒤 분류 미리보기에 사용할 수 있습니다. 웹에 보관한 규칙과
+            CLI는 자동으로 연결되지 않습니다.
+          </p>
+        </div>
       </section>
       <Closing />
     </>

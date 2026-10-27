@@ -31,8 +31,8 @@ export function AccountPage() {
   return (
     <section className="account-page section-wrap">
       <div className="page-heading">
-        <h1>나의 AFO.</h1>
-        <p>로그인한 계정을 확인하고, 정리 흐름을 이어가세요.</p>
+        <h1>내 계정</h1>
+        <p>계정 정보와 로그인 상태를 확인하세요.</p>
       </div>
       <div className="account-row">
         <div>
@@ -68,22 +68,12 @@ export function AccountPage() {
           </Link>
         </div>
       )}
-      <div className="account-next">
-        <h2>
-          정리하기 전에,
-          <br />
-          먼저 살펴보세요.
-        </h2>
-        <p>
-          샘플 파일로 분류 흐름을 체험할 수 있어요.
-          <br />
-          나의 규칙에서 분류 기준을 편집하고 보관할 수 있습니다.
-        </p>
+      <div className="account-actions">
         <Link to="/demo" className="button button--orange">
           정리 흐름 체험하기 <Arrow />
         </Link>
-        <Link to="/rules" className="quiet-link">
-          나의 정리 기준 관리하기 <Arrow />
+        <Link to="/rules" className="button button--outline">
+          나의 규칙
         </Link>
       </div>
     </section>

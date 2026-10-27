@@ -14,6 +14,7 @@ test("public routes, responsive navigation, sample demo and real local rule pers
     for (const path of [
       "/",
       "/guide",
+      "/help",
       "/demo",
       "/faq",
       "/login",
@@ -67,6 +68,7 @@ test("public routes, responsive navigation, sample demo and real local rule pers
     }
   }
   const downloadEvent = page.waitForEvent("download");
+  await page.getByText("JSON으로 가져오기·내보내기", { exact: true }).click();
   await page.getByRole("button", { name: "JSON 내보내기" }).click();
   const download = await downloadEvent;
   const json = JSON.parse(await readFile((await download.path())!, "utf8"));
@@ -75,21 +77,17 @@ test("public routes, responsive navigation, sample demo and real local rule pers
   await page.getByLabel("규칙 1 폴더").fill("../outside");
   await page.getByRole("button", { name: "브라우저에 저장" }).click();
   await expect(page.getByRole("alert")).toContainText("상위 폴더");
-  await page
-    .getByLabel("규칙 JSON 가져오기")
-    .setInputFiles({
-      name: "rules.json",
-      mimeType: "application/json",
-      buffer: Buffer.from(JSON.stringify(json)),
-    });
+  await page.getByLabel("규칙 JSON 가져오기").setInputFiles({
+    name: "rules.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(json)),
+  });
   await expect(page.getByLabel("규칙 1 폴더")).toHaveValue("학교/물리");
-  await page
-    .getByLabel("규칙 JSON 가져오기")
-    .setInputFiles({
-      name: "bad.json",
-      mimeType: "application/json",
-      buffer: Buffer.from("{"),
-    });
+  await page.getByLabel("규칙 JSON 가져오기").setInputFiles({
+    name: "bad.json",
+    mimeType: "application/json",
+    buffer: Buffer.from("{"),
+  });
   await expect(page.getByRole("alert")).toContainText("JSON을 읽지 못했습니다");
   await expect(page.getByLabel("규칙 1 폴더")).toHaveValue("학교/물리");
   expect(errors).toEqual([]);

@@ -33,11 +33,7 @@ const questions = [
 export function FAQ() {
   return (
     <section className="faq section-wrap" id="faq" aria-labelledby="faq-title">
-      <h1 id="faq-title">
-        궁금한 점이
-        <br />
-        있나요?
-      </h1>
+      <h2 id="faq-title">자주 묻는 질문</h2>
       <div className="questions">
         {questions.map((item, i) => (
           <details key={item.question} open={i === 0} name="faq">

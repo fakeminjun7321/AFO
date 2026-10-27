@@ -24,10 +24,9 @@ export function Footer() {
       </Link>
       <span className="brand-description">Automated File Organizer</span>
       <nav className="footer-nav" aria-label="하단 메뉴">
-        <Link to="/guide">사용 방법</Link>
         <Link to="/preview">내 폴더 분석</Link>
         <Link to="/rules">나의 규칙</Link>
-        <Link to="/faq">도움말</Link>
+        <Link to="/help">도움말</Link>
         <Link to="/status">개발 현황</Link>
       </nav>
       <span className="footer-note">파일 정리의 시작, AFO.</span>

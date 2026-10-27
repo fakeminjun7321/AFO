@@ -9,22 +9,30 @@ import {
 } from "react-router-dom";
 import { Header } from "./components/Header";
 import { Hero } from "./components/Hero";
+import { HomeContent } from "./components/HomeContent";
 import { FolderDemo } from "./features/demo/FolderDemo";
 import { Footer } from "./components/Footer";
 import { HelpPage } from "./pages/HelpPage";
+import { StatusPage } from "./pages/StatusPage";
 import { AuthPage } from "./pages/AuthPage";
 import { AccountPage } from "./pages/AccountPage";
 const RulesPage = lazy(() =>
   import("./pages/RulesPage").then((module) => ({ default: module.RulesPage })),
 );
+const LocalPreview = lazy(() =>
+  import("./features/local-preview/LocalPreview").then((module) => ({ default: module.LocalPreview })),
+);
 import { AdminPage } from "./pages/AdminPage";
 import { AuthProvider } from "./auth/AuthProvider";
+import { PreviewSessionProvider } from "./features/local-preview/session";
 
 const titles: Record<string, string> = {
   "/": "파일은 제자리에. 당신은 다음 일에.",
   "/guide": "사용 방법",
   "/help": "도움말",
+  "/status": "개발 현황",
   "/demo": "직접 체험",
+  "/preview": "내 폴더 미리보기",
   "/faq": "자주 묻는 질문",
   "/login": "로그인",
   "/signup": "회원가입",
@@ -52,10 +60,12 @@ function Shell() {
       <Header />
       <main id="main" tabIndex={-1}>
         <Routes>
-          <Route path="/" element={<Hero />} />
+          <Route path="/" element={<><Hero /><HomeContent /></>} />
           <Route path="/help" element={<HelpPage />} />
+          <Route path="/status" element={<StatusPage />} />
           <Route path="/guide" element={<Navigate to="/help" replace />} />
           <Route path="/demo" element={<FolderDemo />} />
+          <Route path="/preview" element={<Suspense fallback={<p className="route-status" role="status">폴더 분석 화면을 열고 있어요.</p>}><LocalPreview /></Suspense>} />
           <Route path="/faq" element={<Navigate to="/help" replace />} />
           <Route
             path="/login"
@@ -110,7 +120,7 @@ export function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Shell />
+        <PreviewSessionProvider><Shell /></PreviewSessionProvider>
       </AuthProvider>
     </BrowserRouter>
   );

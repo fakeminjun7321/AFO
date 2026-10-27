@@ -1,0 +1,15 @@
+.status-page { padding-top: 100px; padding-bottom: 110px; }
+.status-heading > p:first-child { color: #ff8a69; font-size: 13px; font-weight: 700; letter-spacing: .06em; }
+.status-heading h1 { font-size: clamp(42px, 5vw, 76px); line-height: 1.16; letter-spacing: -.055em; margin: 20px 0 25px; }
+.status-heading > p:last-child { color: #bdbdb8; font-size: 18px; line-height: 1.7; max-width: 650px; word-break: keep-all; }
+.status-sections { display: grid; gap: 70px; margin-top: 90px; }
+.status-section-header { display: flex; justify-content: space-between; gap: 20px; align-items: center; border-bottom: 1px solid #73736c; padding-bottom: 18px; }
+.status-section-header h2 { font-size: clamp(26px, 3vw, 38px); letter-spacing: -.04em; }
+.status-section-header span { color: #ff9a7d; font-size: 14px; white-space: nowrap; }
+.status-rows article { display: grid; grid-template-columns: 1fr 2fr auto; gap: 30px; align-items: start; padding: 25px 0; border-bottom: 1px solid #353530; }
+.status-rows h3 { font-size: 20px; }
+.status-rows p { color: #c2c2bc; line-height: 1.7; word-break: keep-all; }
+.status-rows a { color: #f7f7f5; font-weight: 700; font-size: 14px; border-bottom: 1px solid #888; padding-bottom: 5px; white-space: nowrap; }
+.status-rows a:hover { color: #ff8a69; }
+.status-end { color: #bdbdb8; line-height: 1.7; margin-top: 42px; }
+@media(max-width: 760px) { .status-page { padding-top: 60px; padding-bottom: 75px; } .status-heading h1 { font-size: 40px; } .status-heading > p:last-child { font-size: 16px; } .status-sections { margin-top: 60px; gap: 50px; } .status-rows article { grid-template-columns: 1fr; gap: 10px; } .status-rows a { justify-self: start; } }

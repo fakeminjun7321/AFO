@@ -1,0 +1,57 @@
+.home-content { overflow: hidden; }
+.home-intro { background: #f2f1ed; color: #111; padding: 150px 0 145px; }
+.home-overline { font-size: 13px; letter-spacing: .06em; font-weight: 750; }
+.home-intro .home-overline, .home-index { color: #be3d1e; }
+.home-intro-heading { display: grid; grid-template-columns: 1.55fr 1fr; gap: 30px 100px; align-items: end; }
+.home-intro-heading .home-overline { grid-column: 1 / -1; }
+.home-intro h2, .home-process h2, .home-trust h2, .home-start h2 { font-size: clamp(40px, 4.5vw, 72px); line-height: 1.16; letter-spacing: -.055em; font-weight: 800; word-break: keep-all; }
+.home-intro h2 span { color: #85857f; }
+.home-intro-description { max-width: 430px; font-size: 18px; line-height: 1.75; color: #51514e; padding-bottom: 5px; word-break: keep-all; }
+.home-preview-feature { margin-top: 95px; display: grid; grid-template-columns: 1fr 1.2fr; background: #fff; min-height: 490px; }
+.home-feature-copy { padding: clamp(35px, 5vw, 80px); display: flex; flex-direction: column; align-items: flex-start; }
+.home-index { font-size: 13px; font-weight: 700; }
+.home-feature-copy h3, .home-other-features h3 { margin-top: 30px; font-size: clamp(31px, 3vw, 43px); line-height: 1.2; letter-spacing: -.05em; }
+.home-feature-copy > p, .home-other-features article > p { margin-top: 22px; max-width: 440px; color: #555550; line-height: 1.75; font-size: 16px; word-break: keep-all; }
+.home-text-link, .home-light-link, .home-sample-link { display: inline-flex; align-items: center; gap: 14px; font-size: 16px; font-weight: 700; border-bottom: 1px solid currentColor; padding-bottom: 9px; }
+.home-text-link { margin-top: 30px; color: #131313; }
+.home-text-link:hover, .home-light-link:hover, .home-sample-link:hover { color: #d74924; }
+.home-feature-copy small, .home-other-features small { display: block; margin-top: 18px; color: #65655f; line-height: 1.55; font-size: 13px; }
+.home-example { align-self: center; margin: 60px; background: #fafaf8; border: 1px solid #e4e3df; box-shadow: 0 20px 50px #0000000c; color: #161616; }
+.home-example-top { display: flex; align-items: flex-start; justify-content: space-between; padding: 28px; }
+.home-example-top div { display: grid; gap: 7px; }
+.home-example-top div span { color: #72726e; font-size: 13px; }
+.home-example-top strong { font-size: 22px; }
+.home-example-label { color: #7a4a35; background: #f7e8df; padding: 5px 10px; font-size: 12px; font-weight: 700; }
+.home-example-head, .home-example-row { display: grid; grid-template-columns: minmax(0, 1fr) 75px; gap: 12px; align-items: center; padding: 12px 28px; }
+.home-example-head { background: #efefeb; color: #73736e; font-size: 12px; }
+.home-example-row { border-bottom: 1px solid #ededea; font-size: 14px; }
+.home-example-row > span { display: flex; align-items: center; gap: 14px; min-width: 0; overflow-wrap: anywhere; }
+.home-example-row .file-icon { width: 24px; height: 27px; }
+.home-example-row b { font-size: 13px; }
+.home-example > p { padding: 14px 28px 22px; font-size: 12px; color: #6b6b65; }
+.home-other-features { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: #d7d6d0; border: 1px solid #d7d6d0; margin-top: 25px; }
+.home-other-features article { background: #f2f1ed; padding: clamp(35px, 5vw, 75px); }
+.home-process { padding-block: 150px; }
+.home-process-header { display: grid; grid-template-columns: 1.5fr 1fr; gap: 100px; align-items: end; }
+.home-process .home-overline, .home-trust .home-overline { color: #ff8a69; margin-bottom: 26px; }
+.home-process-header > p { color: #bdbdb8; max-width: 420px; font-size: 18px; line-height: 1.75; word-break: keep-all; }
+.home-process ol { list-style: none; padding: 0; margin: 90px 0 45px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; }
+.home-process li { border-top: 1px solid #64645d; padding-top: 24px; }
+.home-process li > span { color: #ff8a69; font-size: 14px; }
+.home-process li h3 { margin-top: 40px; font-size: 24px; letter-spacing: -.03em; }
+.home-process li p { max-width: 300px; margin-top: 15px; color: #bdbdb8; line-height: 1.7; font-size: 16px; word-break: keep-all; }
+.home-light-link { color: #f7f7f5; }
+.home-trust { background: #171715; padding-block: 140px; }
+.home-trust-layout { display: grid; grid-template-columns: 1fr .75fr; gap: 120px; }
+.home-trust-intro { max-width: 580px; margin: 30px 0; color: #c1c1bb; font-size: 18px; line-height: 1.8; word-break: keep-all; }
+.home-trust-details article { border-top: 1px solid #55554e; padding: 24px 0 28px; }
+.home-trust-details strong { font-size: 19px; }
+.home-trust-details p { color: #c1c1bb; line-height: 1.7; margin-top: 10px; word-break: keep-all; }
+.home-start { background: #ee5a34; color: #111; padding-block: 120px; }
+.home-start-layout { display: flex; justify-content: space-between; align-items: end; gap: 35px; }
+.home-start .home-overline { margin-bottom: 25px; }
+.home-start-layout p:not(.home-overline) { font-size: 17px; line-height: 1.7; margin-top: 25px; }
+.home-start-links { display: flex; align-items: center; flex-wrap: wrap; gap: 30px; }
+.home-sample-link { color: #111; }
+@media (max-width: 900px) { .home-preview-feature { grid-template-columns: 1fr; } .home-example { margin: 0 35px 40px; } .home-intro-heading, .home-process-header { grid-template-columns: 1fr; gap: 25px; } .home-trust-layout { grid-template-columns: 1fr; gap: 60px; } .home-start-layout { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 700px) { .home-intro, .home-process, .home-trust { padding-block: 90px; } .home-intro h2, .home-process h2, .home-trust h2, .home-start h2 { font-size: clamp(37px, 9.5vw, 52px); } .home-intro-description, .home-process-header > p, .home-trust-intro { font-size: 16px; } .home-preview-feature { margin-top: 50px; } .home-feature-copy, .home-other-features article { padding: 35px 26px; } .home-feature-copy h3, .home-other-features h3 { font-size: 30px; } .home-example { margin: 0 18px 22px; } .home-example-top, .home-example-head, .home-example-row { padding-left: 16px; padding-right: 16px; } .home-example-row { font-size: 12px; } .home-example-row > span { gap: 8px; } .home-other-features { grid-template-columns: 1fr; } .home-process ol { grid-template-columns: 1fr; gap: 28px; margin-top: 55px; } .home-process li h3 { margin-top: 18px; } .home-start { padding-block: 80px; } .home-start-links { align-items: flex-start; flex-direction: column; gap: 25px; } }

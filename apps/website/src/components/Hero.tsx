@@ -23,15 +23,15 @@ export function Hero() {
           <span>파일은 제자리에.</span>
           <span>당신은 다음 일에.</span>
         </h1>
-        <p>어지러운 폴더를, 나다운 정리로.</p>
-        <Link className="button button--orange hero-cta" to="/demo">
-          정리 흐름 체험하기 <Arrow />
+        <p>선택한 폴더부터, 나다운 정리의 시작.</p>
+        <Link className="button button--orange hero-cta" to="/preview">
+          내 폴더 미리보기 <Arrow />
         </Link>
       </div>
       <ul className="principles" id="features" aria-label="AFO의 정리 원칙">
         <li>분류는 자동으로</li>
         <li>규칙은 나답게</li>
-        <li>실행은 확인 후에</li>
+        <li>변경 전 미리보기</li>
       </ul>
     </section>
   );

@@ -22,6 +22,9 @@ export function Header() {
         id="navigation"
         aria-label="주 메뉴"
       >
+        <NavLink to="/preview" onClick={close}>
+          내 폴더 분석
+        </NavLink>
         <NavLink to="/demo" onClick={close}>
           직접 체험
         </NavLink>

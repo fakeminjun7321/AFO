@@ -28,6 +28,7 @@ export function Footer() {
         <Link to="/preview">내 폴더 분석</Link>
         <Link to="/rules">나의 규칙</Link>
         <Link to="/faq">도움말</Link>
+        <Link to="/status">개발 현황</Link>
       </nav>
       <span className="footer-note">파일 정리의 시작, AFO.</span>
     </footer>

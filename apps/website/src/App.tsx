@@ -9,15 +9,18 @@ import {
 import { Header } from "./components/Header";
 import { Hero } from "./components/Hero";
 import { HomeContent } from "./components/HomeContent";
-import { LocalPreview } from "./features/local-preview/LocalPreview";
 import { FolderDemo } from "./features/demo/FolderDemo";
 import { FAQ } from "./components/FAQ";
 import { Footer } from "./components/Footer";
 import { GuidePage } from "./pages/GuidePage";
+import { StatusPage } from "./pages/StatusPage";
 import { AuthPage } from "./pages/AuthPage";
 import { AccountPage } from "./pages/AccountPage";
 const RulesPage = lazy(() =>
   import("./pages/RulesPage").then((module) => ({ default: module.RulesPage })),
+);
+const LocalPreview = lazy(() =>
+  import("./features/local-preview/LocalPreview").then((module) => ({ default: module.LocalPreview })),
 );
 import { AdminPage } from "./pages/AdminPage";
 import { AuthProvider } from "./auth/AuthProvider";
@@ -25,6 +28,7 @@ import { AuthProvider } from "./auth/AuthProvider";
 const titles: Record<string, string> = {
   "/": "파일은 제자리에. 당신은 다음 일에.",
   "/guide": "사용 방법",
+  "/status": "개발 현황",
   "/demo": "직접 체험",
   "/preview": "내 폴더 미리보기",
   "/faq": "자주 묻는 질문",
@@ -56,8 +60,9 @@ function Shell() {
         <Routes>
           <Route path="/" element={<><Hero /><HomeContent /></>} />
           <Route path="/guide" element={<GuidePage />} />
+          <Route path="/status" element={<StatusPage />} />
           <Route path="/demo" element={<FolderDemo />} />
-          <Route path="/preview" element={<LocalPreview />} />
+          <Route path="/preview" element={<Suspense fallback={<p className="route-status" role="status">폴더 분석 화면을 열고 있어요.</p>}><LocalPreview /></Suspense>} />
           <Route path="/faq" element={<FAQ />} />
           <Route
             path="/login"

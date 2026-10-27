@@ -312,7 +312,25 @@ test("Admin callable enforces server authorization and returns real emulator use
     expect((await denied.json()).error.status).toBe("PERMISSION_DENIED");
   }
   const email = `admin-${Date.now()}@example.invalid`;
-  await create(email, true, true);
+  const adminToken = await create(email, true, true);
+  const adminResponse = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer " + adminToken,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ data: {} }),
+  });
+  expect(adminResponse.status).toBe(200);
+  const overview = (await adminResponse.json()).result;
+  expect(
+    overview.users.some((u: { email: string }) => u.email === email),
+  ).toBeTruthy();
+  expect(overview.server.projectId).toBe("demo-afo-website");
+  expect(overview.server.database.reachable).toBe(true);
+  expect(JSON.stringify(overview)).not.toMatch(
+    /passwordHash|passwordSalt|refreshToken/,
+  );
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto("/login");
@@ -323,21 +341,25 @@ test("Admin callable enforces server authorization and returns real emulator use
   await page.getByRole("button", { name: "로그인", exact: true }).click();
   await expect(page).toHaveURL(/\/account$/);
   await page.getByRole("link", { name: "관리자 화면", exact: true }).click();
-  await page.getByRole("button", { name: "관리 정보 불러오기" }).click();
-  await expect(page.locator(".admin-users")).toContainText(email, {
-    timeout: 20000,
-  });
-  await expect(page.locator(".admin-runtime")).toContainText(
-    "demo-afo-website",
+  await expect(page.getByRole("status")).toContainText("무료 Spark");
+  await expect(
+    page.getByRole("button", { name: "관리 정보 불러오기" }),
+  ).toHaveCount(0);
+  await expect(page.locator(".admin-console-links a")).toHaveCount(4);
+  await expect(
+    page.getByRole("link", { name: "Firebase 사용자 목록", exact: true }),
+  ).toHaveAttribute(
+    "href",
+    "https://console.firebase.google.com/project/afo-hackathon-2026-7321/authentication/users",
   );
-  await expect(page.locator(".admin-runtime")).toContainText("연결됨");
+  await expect(page.locator(".admin-users")).toHaveCount(0);
   expect(await page.locator("main").innerText()).not.toMatch(
     /passwordHash|passwordSalt|refreshToken/,
   );
   if (process.env.AFO_EVIDENCE_DIR) {
     await mkdir(process.env.AFO_EVIDENCE_DIR, { recursive: true });
     await page.screenshot({
-      path: `${process.env.AFO_EVIDENCE_DIR}/admin-data.png`,
+      path: `${process.env.AFO_EVIDENCE_DIR}/admin-free-console.png`,
       fullPage: true,
     });
   }

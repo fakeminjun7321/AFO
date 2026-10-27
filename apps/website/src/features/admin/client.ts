@@ -5,8 +5,7 @@ import {
 } from "firebase/functions";
 import { app } from "../../auth/firebase";
 import services from "../../config/services.public.json";
-export const adminApiEnabled =
-  import.meta.env.MODE === "emulator" || services.adminApi === true;
+export const adminApiEnabled = services.adminApi === true;
 const functions = getFunctions(app, "asia-northeast3");
 if (import.meta.env.MODE === "emulator")
   connectFunctionsEmulator(functions, "127.0.0.1", 15193);

@@ -66,7 +66,11 @@ export function AdminPage() {
     <section className="admin-page section-wrap">
       <div className="page-heading">
         <h1>관리자</h1>
-        <p>서버 상태와 사용자 정보를 읽기 전용으로 확인합니다.</p>
+        <p>
+          {adminApiEnabled
+            ? "서버 상태와 사용자 정보를 읽기 전용으로 확인합니다."
+            : "Firebase 콘솔에서 서비스 상태와 사용자 정보를 확인합니다."}
+        </p>
       </div>
       <dl className="admin-details">
         <div>
@@ -81,40 +85,56 @@ export function AdminPage() {
       <section className="admin-server" aria-labelledby="admin-server-title">
         <div className="admin-section-title">
           <h2 id="admin-server-title">서버·사용자 조회</h2>
-          <button
-            type="button"
-            className="button button--outline button--small"
-            disabled={!adminApiEnabled || busy}
-            onClick={() => load()}
-          >
-            {busy ? "조회 중…" : data ? "새로고침" : "관리 정보 불러오기"}
-          </button>
+          {adminApiEnabled && (
+            <button
+              type="button"
+              className="button button--outline button--small"
+              disabled={busy}
+              onClick={() => load()}
+            >
+              {busy ? "조회 중…" : data ? "새로고침" : "관리 정보 불러오기"}
+            </button>
+          )}
         </div>
         {!adminApiEnabled && (
           <div>
             <p className="service-pending" role="status">
-              관리자 조회 서버는 아직 공개 배포되지 않았습니다. 연결 전에는
-              사용자 목록이나 서버 수치를 표시하지 않습니다.
+              무료 Spark 요금제를 유지하며, 사용자와 서버 정보는 아래 Firebase
+              콘솔에서 확인합니다.
             </p>
             <p className="admin-console-links">
               <a
                 href="https://console.firebase.google.com/project/afo-hackathon-2026-7321/authentication/users"
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
               >
                 Firebase 사용자 목록
               </a>
               <a
                 href="https://console.firebase.google.com/project/afo-hackathon-2026-7321/overview"
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
               >
                 Firebase 프로젝트 상태
               </a>
+              <a
+                href="https://console.firebase.google.com/project/afo-hackathon-2026-7321/firestore"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Firestore 데이터베이스
+              </a>
+              <a
+                href="https://console.firebase.google.com/project/afo-hackathon-2026-7321/hosting"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Hosting 상태
+              </a>
             </p>
             <p className="field-help">
-              콘솔은 Firebase 프로젝트 권한이 있는 Google 계정으로 열 수
-              있습니다.
+              웹사이트 관리자 역할과 별도로, Firebase 프로젝트 권한이 있는
+              Google 계정으로 열 수 있습니다.
             </p>
           </div>
         )}
@@ -238,9 +258,10 @@ export function AdminPage() {
         </Link>
       </div>
       <p className="admin-scope-note">
-        비밀번호·인증 토큰은 표시하지 않습니다. 서버 수치는 이 관리 API
-        인스턴스의 관측값이며 프로젝트 전체 트래픽·요금 지표가 아닙니다. 사용자
-        차단·삭제·파일 변경은 제공하지 않습니다.
+        {adminApiEnabled
+          ? "비밀번호·인증 토큰은 표시하지 않습니다. 서버 수치는 이 관리 API 인스턴스의 관측값이며 프로젝트 전체 트래픽·요금 지표가 아닙니다."
+          : "이 웹사이트에서 사용자 정보를 별도로 조회하거나 보관하지 않습니다. 상세 정보는 Firebase 콘솔에서 확인합니다."}{" "}
+        사용자 차단·삭제·파일 변경은 이 화면에서 수행하지 않습니다.
       </p>
     </section>
   );

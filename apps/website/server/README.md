@@ -1,6 +1,6 @@
 # AFO 읽기 전용 관리자 API
 
-현재 상태: 구현·단위 검사·Functions/Auth/Firestore Emulator 통과. **공개 배포 차단됨: 프로젝트 billingEnabled=false이며 Cloud Functions 사용에 필요한 Blaze 전환·결제 연결 승인이 없음.** 기존 IAM·결제·Functions 공개 환경은 변경하지 않았습니다.
+현재 상태: 구현·단위 검사·Functions/Auth/Firestore Emulator 통과. **사용자 결정: 무료 Spark 유지, 관리자 정보는 Firebase 콘솔로 조회. 공개 API 배포는 의도적으로 보류하며 더 이상 승인 대기 작업이 아닙니다.** 기존 IAM·결제·Functions 공개 환경은 변경하지 않았습니다.
 
 `adminOverview` callable은 Firebase가 검증한 request.auth의 admin=true 및 email_verified=true를 서버에서 모두 요구합니다. 미로그인401, 일반/미확인 관리자403을 실제 Emulator HTTP 호출로 확인했습니다.
 
@@ -34,3 +34,5 @@ npm test
 - https://firebase.google.com/docs/functions/faq-and-troubleshooting
 - https://docs.cloud.google.com/iam/docs/roles-permissions/firebaseauth
 - https://docs.cloud.google.com/iam/docs/roles-permissions/firestore
+
+2026-10-27 무료 유지 선택 반영: production firebase.json에서 functions 코드베이스를 분리하고 브라우저의 Functions origin 허용도 제거했습니다. source/Emulator 검증은 남기지만 결제·IAM·유료 API는 활성화하지 않습니다. 변경하려면 새로운 명시 지시가 필요합니다.

@@ -88,3 +88,5 @@ npm run test:e2e
 ### 무료 운영 확정 (2026-10-27)
 
 사용자가 무료 Spark 유지와 Firebase 콘솔 조회를 선택했습니다. adminApi=false 유지, 공개 Functions 설정/허용 origin 제거, 사용 불가능한 API 버튼 대신 사용자·프로젝트·Firestore·Hosting의 콘솔 링크 네 개를 표시합니다. 결제/요금제/IAM은 변경하지 않습니다. 과거의 공개 관리자 API 차단/승인 대기 기록은 이 선택으로 의도적 보류 상태가 됐으며, 새 지시 없이는 활성화하지 않습니다.
+
+무료 운영 반영 배포: 앱 소스 801469a, Hosting version 6aa367823c520966, preview 만료 2026-11-03 09:57:11 Asia/Seoul. billingEnabled=false 재조회, Emulator 시나리오4개 통과(선택형 API는 직접 HTTP 검증, UI는 무료 콘솔4링크/유료 버튼 없음). 공개 개발 노트에서 무료 결정이 반영되고 Functions CSP origin이 제거된 것을 접속1회로 확인했습니다. 개인 계정으로 관리자 화면에 들어가 콘솔을 여는 실제 사용자 조작은 별도 미검증이며 자동 실행하지 않았습니다.

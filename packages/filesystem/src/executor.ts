@@ -303,11 +303,19 @@ const identityOf = (expected: PlanOperation['expected']): Identity =>
  * Runs an approved batch in order (never in parallel). Batch-level checks throw AfoError before any file or journal change.
  * Per operation the result is moved/trashed/deleted only after an independent check; anything not run is skipped, unclear is unknown.
  * Saves runs/<runId>.json (meta + report). Journal: journal/<runId>.jsonl; a `failed` entry with UNKNOWN may be an unclear outcome.
+ * The whole run holds the root lock (lock.ts, #13) once: LOCKED_BY_OTHER leaves no approval marker, journal, run record or file change.
+ * A lock release error after a finished run is thrown as is; runs/<runId>.json and the journal are already saved and are the truth.
  */
 export async function executeBatch(batch: ApprovedBatch, options: ExecuteOptions = {}): Promise<ExecutionReport> {
   const adapter: ExecutorAdapter = { ...realAdapter, ...options.adapter };
-  const { plan, approval, operations, grant, stateDir } = await checkBatch(batch);
-  // TODO(#13): wrap in withRootLock(stateDir, grant.id, ...) once lock.ts lands
+  const checked = await checkBatch(batch); // pure checks only: a refused batch writes nothing, not even the lock folder
+  return withRootLock(checked.stateDir, checked.grant, () => runBatch(checked, adapter, options));
+}
+
+async function runBatch({ plan, approval, operations, grant, stateDir }: ApprovedBatch, adapter: ExecutorAdapter,
+  options: ExecuteOptions): Promise<ExecutionReport> {
+  // Re-checked under the lock, right before the approval is marked used.
+  if (!(Date.parse(approval.expiresAt) > Date.now())) throw new AfoError('APPROVAL_EXPIRED', '승인 유효 시간이 지났습니다. 다시 승인하세요.');
   const runId = randomUUID();
   const record: RunRecord = { formatVersion: 1, runId, planId: plan.id, approvalId: approval.id, rootGrantId: plan.rootGrantId,
     mode: approval.mode, root: { canonicalPath: grant.canonicalPath, device: grant.device, inode: grant.inode },
@@ -471,13 +479,18 @@ function undoStates(entries: JournalEntry[]): Map<string, UndoState> {
  * Already undone operations and definite forward failures (file not changed) are left out of the report; interrupted or unclear
  * ones (no closing entry, or a forward `failed` with UNKNOWN) are reported unknown and never moved by guesswork.
  * Empty folders created by the move are not removed. Saves runs/<runId>.undo-<n>.json and keeps the original report.
+ * Holds the root lock once for the whole undo, like executeBatch (LOCKED_BY_OTHER: no journal entry, undo record or file change).
  */
 export async function undoRun(stateDir: string, runId: string, grantInput: RootGrant, options: UndoOptions = {}): Promise<ExecutionReport> {
   const adapter: ExecutorAdapter = { ...realAdapter, ...options.adapter };
   const grant = await verifyGrant(grantInput, 'work');
   if (typeof stateDir !== 'string' || !path.isAbsolute(stateDir)) throw new AfoError('STATE_DIR_INVALID', '상태 폴더는 절대 경로여야 합니다.');
   await assertStateDirOutside(stateDir, grant.canonicalPath);
-  // TODO(#13): wrap in withRootLock(stateDir, grant.id, ...) once lock.ts lands
+  return withRootLock(stateDir, grant, () => undoLocked(stateDir, runId, grant, adapter, options));
+}
+
+async function undoLocked(stateDir: string, runId: string, grant: RootGrant, adapter: ExecutorAdapter, options: UndoOptions):
+  Promise<ExecutionReport> {
   const found = await readRun(stateDir, runId);
   if (!found) throw new AfoError('APPROVAL_MISSING', '해당 실행 기록이 없습니다.');
   const { run } = found;

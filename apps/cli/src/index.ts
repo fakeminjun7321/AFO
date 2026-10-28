@@ -11,16 +11,24 @@ import { addCorrection } from '../../../packages/filesystem/src/profiles.js';
 import { resolveStateDir } from '../../../packages/filesystem/src/state.js';
 import { analyzeTarget, profileLine, readJsonFile } from './analyze.js';
 import type { AnalyzeValues } from './analyze.js';
+import { CliResult, applyCommand, recoverCommand, runsCommand, undoCommand } from './apply.js';
+import type { ExecContext } from './apply.js';
 import { planCommand } from './plan.js';
 import { CliError, draftLines, expected, isCorrupt, rulesCommand, usage } from './rules.js';
 
-const help = `AFO 미리보기·개인 규칙·정리 계획 (사용자 파일은 읽기 전용)
+const help = `AFO 미리보기·개인 규칙·정리 계획·실행
 
 preview <폴더> [--reference <참고 폴더>] [--profile <JSON>] [--no-saved-rules]
         [--move <상대 경로>=<목적지 폴더>]... [--remember] [--json]
 plan <폴더> [preview와 같은 분석 옵션, --remember 제외] [--delete-mode trash|permanent]
      [--delete-duplicates all|<그룹 해시,...>] [--delete-file <상대 경로>]... [--delete-last-copy] [--json]
-     정리 계획을 상태 폴더에 저장하고 작업 ID·이유·방식별 승인 코드를 출력
+     정리 계획을 상태 폴더에 저장하고 작업 ID·이유·방식별 승인 코드를 출력(파일은 바꾸지 않음)
+apply <계획 ID> --mode organize|trash|permanent-delete [--only <작업ID,...>]
+      [--confirm <승인 코드>] [--phrase <확인 문구>] [--json]
+     저장된 계획의 한 방식 작업을 보여 주고 승인 코드(영구 삭제는 문구 "영구 삭제"도)를 확인한 뒤 실제로 실행
+undo <실행 ID> [--confirm <실행 ID 앞 8자>] [--json]   이동(organize) 실행만 원래 위치로 되돌림
+runs [<실행 ID>] [--json]                실행 기록 요약 또는 한 실행의 항목별 결과
+recover [--json]                         끝나지 않은 실행·결과 불명 항목 보고(자동 재실행·원복·삭제 없음)
 suggest-rules <참고 폴더> [--json]       규칙 후보(초안) JSON을 stdout에, 요약을 stderr에 출력
 rules save <초안 JSON> --select <규칙ID,...>
 rules list [--json]
@@ -34,8 +42,12 @@ preview는 저장된 개인 규칙을 자동 적용합니다. --move는 이번 �
 --remember를 붙이면 그 수정을 이후에도 적용하도록 저장합니다.
 plan의 --delete-mode 기본값은 trash(휴지통)입니다. permanent(영구 삭제)는 되돌릴 수 없습니다.
 --delete-file로 같은 내용의 사본을 모두 고르면 거부합니다. 마지막 사본까지 지우려면 --delete-last-copy를 붙입니다.
-이 버전은 파일을 읽고 결과를 출력합니다. 사용자 파일의 이동·삭제는 수행하지 않습니다. 실행 명령은 다음 버전에서 제공합니다.
-규칙 저장과 plan은 앱 로컬 상태 폴더(AFO_STATE_DIR)에만 씁니다.
+preview·plan·suggest-rules·rules·runs·recover는 사용자 파일을 바꾸지 않습니다. 사용자 파일을 옮기거나 지우는 명령은
+apply와 undo뿐이며, 둘 다 확인 코드를 직접 입력해야 합니다(TTY가 아니면 --confirm 필수, 없으면 종료 코드 4).
+apply는 승인 한 번에 한 번만 실행하고 실행 직전 파일을 다시 확인해 바뀐 파일은 건너뜁니다. 덮어쓰지 않습니다.
+휴지통으로 보낸 파일은 OS 휴지통에서 직접 복원하고, 영구 삭제는 되돌릴 수 없습니다.
+상태(규칙·계획·승인·실행 기록)는 앱 로컬 상태 폴더(AFO_STATE_DIR)에 씁니다.
+종료 코드: 0 성공, 1 오류, 2 사용법 오류, 3 일부 실패·결과 불명, 4 승인 거부·무효, 130 취소.
 `;
 
 const readDraft = async (file: string): Promise<RuleProfile> => ProfileSchema.parse(await readJsonFile(file));
@@ -54,9 +66,20 @@ const allowed: Record<string, readonly string[]> = {
   preview: ['profile', 'reference', 'json', 'no-saved-rules', 'move', 'remember'],
   plan: ['profile', 'reference', 'json', 'no-saved-rules', 'move', 'delete-mode', 'delete-duplicates', 'delete-file', 'delete-last-copy'],
   'suggest-rules': ['json'], 'confirm-rules': ['select'], rules: ['json', 'select', 'confirm'],
+  apply: ['mode', 'only', 'confirm', 'phrase', 'json'], undo: ['confirm', 'json'], runs: ['json'], recover: ['json'],
 };
 
+/** Output only; exit codes of apply/undo/recover are lost here. The process entry point uses runCli. */
 export async function run(args: string[], signal?: AbortSignal, io: CliIo = {}): Promise<string> {
+  return (await runCli(args, signal, io)).output;
+}
+
+export async function runCli(args: string[], signal?: AbortSignal, io: CliIo = {}): Promise<CliResult> {
+  const result = await dispatch(args, signal, io);
+  return typeof result === 'string' ? new CliResult(result, 0) : result;
+}
+
+async function dispatch(args: string[], signal: AbortSignal | undefined, io: CliIo): Promise<string | CliResult> {
   if (args.length === 0 || args[0] === '--help') return help;
   let parsed;
   try {
@@ -65,6 +88,7 @@ export async function run(args: string[], signal?: AbortSignal, io: CliIo = {}):
       'no-saved-rules': { type: 'boolean' }, move: { type: 'string', multiple: true }, remember: { type: 'boolean' },
       confirm: { type: 'string' }, 'delete-mode': { type: 'string' }, 'delete-duplicates': { type: 'string' },
       'delete-file': { type: 'string', multiple: true }, 'delete-last-copy': { type: 'boolean' },
+      mode: { type: 'string' }, only: { type: 'string' }, phrase: { type: 'string' },
     } });
   } catch (error) {
     throw usage(`옵션을 해석할 수 없습니다(${error instanceof Error ? error.message : String(error)}). --help 참고`);
@@ -84,7 +108,15 @@ export async function run(args: string[], signal?: AbortSignal, io: CliIo = {}):
     return rulesCommand(target, extra, { json, stateDir, draft: readDraft, select: values.select, confirm: values.confirm,
       isTTY: io.isTTY ?? false, ask: io.ask ?? (() => Promise.reject(new Error('대화형 입력을 사용할 수 없습니다.'))), warn });
   }
-  if (positionals.length !== 2 || !target) throw usage('명령과 대상 폴더 또는 규칙 파일을 하나 명시하세요. --help 참고');
+  const exec: ExecContext = { json, warn, stateDir, signal, isTTY: io.isTTY ?? false,
+    ask: io.ask ?? (() => Promise.reject(new Error('대화형 입력을 사용할 수 없습니다.'))) };
+  if (command === 'runs' || command === 'recover') {
+    if (positionals.length > (command === 'runs' ? 2 : 1)) throw usage(`${command} 명령의 인수가 너무 많습니다.`);
+    return command === 'runs' ? runsCommand(target, exec) : recoverCommand(exec);
+  }
+  if (positionals.length !== 2 || !target) throw usage('명령과 대상(폴더, 규칙 파일, 계획 ID 또는 실행 ID)을 하나 명시하세요. --help 참고');
+  if (command === 'apply') return applyCommand(target, values, exec);
+  if (command === 'undo') return undoCommand(target, values, exec);
   if (command === 'suggest-rules') {
     const reference = await readReference(await issueReferenceGrant(target), options);
     if (reference.cancelled) throw new AfoError('CANCELLED', '참고 폴더 읽기를 취소했습니다.');
@@ -139,10 +171,10 @@ async function preview(target: string, values: AnalyzeValues, ctx: { json: boole
     ...(analysis.suggestedProfile ? draftLines(analysis.suggestedProfile).map((l) => l.replace('저장: rules save <초안 JSON>',
       '저장: suggest-rules <참고 폴더> > 초안.json 뒤 rules save 초안.json')) : []),
     ...remembered.map((r) => `이후에도 적용하도록 저장: 파일 이름 '${r.name}' → ${r.targetDirectory} (수정 ID ${r.correctionId}, revision ${r.revision}). 다음 preview부터 적용됩니다.`),
-    '실행 기능: 미구현. 파일 이동·삭제는 수행하지 않습니다.'].join('\n');
+    '미리보기는 파일을 바꾸지 않습니다. 실행하려면 plan으로 계획을 저장한 뒤 apply로 승인·실행합니다.'].join('\n');
 }
 
-/** docs/CLI.md: 0 success, 1 error, 2 usage, 4 approval refused/invalid, 130 cancelled. */
+/** docs/CLI.md: 0 success, 1 error, 2 usage, 3 partial failure/unknown (CliResult), 4 approval refused/invalid, 130 cancelled. */
 export function exitCodeOf(error: unknown): number {
   if (error instanceof CliError) return error.exitCode;
   if (error instanceof Error && (error.name === 'AbortError' || (error instanceof AfoError && error.code === 'CANCELLED'))) return 130;
@@ -166,7 +198,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const rl = createInterface({ input: process.stdin, output: process.stderr });
     try { return await rl.question(question, { signal: controller.signal }); } finally { rl.close(); }
   };
-  try { console.log(await run(process.argv.slice(2), controller.signal, { isTTY: process.stdin.isTTY === true, ask })); }
+  try {
+    const result = await runCli(process.argv.slice(2), controller.signal, { isTTY: process.stdin.isTTY === true, ask });
+    console.log(result.output);
+    process.exitCode = result.exitCode;
+  }
   catch (error) {
     console.error(errorLine(error));
     process.exitCode = exitCodeOf(error);

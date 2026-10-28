@@ -85,9 +85,9 @@ test('plan: saved plan equals the output; keepers stay; reference files are neve
   assert.match(text, /남길 파일: /u);
   assert.match(text, /organize \(이동 \d+개\): [a-f0-9]{8}/u);
   assert.match(text, /trash \(휴지통 2개\): [a-f0-9]{8}/u);
-  assert.match(text, /실행 명령은 다음 버전에서 제공합니다/u);
+  assert.match(text, /실행: apply [a-f0-9]{64} --mode <방식>/u);
+  assert.match(text, /이 plan 명령은 파일을 옮기거나 지우지 않았습니다/u);
   assert.match(text, /\[유지\] 2개: 참고한 기존 파일을 보존합니다/u);
-  assert.doesNotMatch(text, /apply/u);
   assert.deepEqual(await manifest(dirs.work), before, 'plan never writes the work root');
 });
 

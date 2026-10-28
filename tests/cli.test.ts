@@ -55,7 +55,7 @@ test('CLI default output clearly identifies recommendations rather than executed
   assert.equal(output.status, 0);
   assert.match(String(output.stdout), /이동 제안/u);
   assert.match(String(output.stdout), /실제 파일은 변경하지 않았습니다/u);
-  assert.match(String(output.stdout), /실행 기능: 미구현/u);
+  assert.match(String(output.stdout), /미리보기는 파일을 바꾸지 않습니다/u);
   assert.deepEqual(await manifest(root), before);
 });
 test('unknown commands and flags fail instead of enabling execution', async (t) => {
@@ -74,8 +74,8 @@ test('corrupt profiles and directory inputs are rejected', async (t) => {
   assert.deepEqual(await manifest(root), before);
 });
 test('help needs no implicit filesystem target', async () => {
-  assert.match(await run([]), /읽기 전용/u);
-  assert.match(await run(['--help']), /사용자 파일의 이동·삭제는 수행하지 않습니다/u);
+  assert.match(await run([]), /사용자 파일을 바꾸지 않습니다/u);
+  assert.match(await run(['--help']), /사용자 파일을 옮기거나 지우는 명령은\napply와 undo뿐/u);
 });
 test('documented exit codes: 0 for help and success, 2 for usage errors, 1 for refused input (docs/CLI.md)', async (t) => {
   const root = await fixture(t, { 'a.pdf': 'x' }); const before = await manifest(root);

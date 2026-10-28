@@ -461,7 +461,8 @@ test('V8-M2 permanent deletion needs the exact phrase; wrong codes (1 hex off, o
   for (const phrase of [undefined, '', '영구삭제', '영구 삭제 ', ' 영구 삭제', '영구  삭제', '영구 삭제함', 'permanent-delete', '삭제'])
     await assert.rejects(req(phrase === undefined ? {} : { confirmPhrase: phrase }), code('APPROVAL_INVALID'), JSON.stringify(phrase));
   const flipped = good.slice(0, 7) + (good[7] === '0' ? '1' : '0');
-  for (const confirmation of [flipped, good.toUpperCase(), myCode(pd.plan.id, del, 'trash'), myCode('f'.repeat(64), del, 'permanent-delete'),
+  // An all-digit code has no letters to upper-case; only test the case variant when it differs.
+  for (const confirmation of [flipped, ...(good.toUpperCase() !== good ? [good.toUpperCase()] : []), myCode(pd.plan.id, del, 'trash'), myCode('f'.repeat(64), del, 'permanent-delete'),
     myCode(pd.plan.id, del.slice(1), 'permanent-delete'), good.slice(0, 7), `${good}0`])
     await assert.rejects(req({ confirmPhrase: '영구 삭제', confirmation }), code('APPROVAL_INVALID'), confirmation);
   // The code is order-insensitive (computed over sorted IDs) and the stored IDs are sorted.

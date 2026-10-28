@@ -8,7 +8,7 @@ import type { CorruptProfile } from '../../../packages/filesystem/src/profiles.j
 
 /** CLI adapter for the saved personal rule profile (#18). Policy stays in engine/filesystem; this file only maps commands. */
 export class CliError extends Error {
-  constructor(message: string, readonly exitCode: 2 | 4) { super(message); this.name = 'CliError'; }
+  constructor(message: string, readonly exitCode: 1 | 2 | 4) { super(message); this.name = 'CliError'; }
 }
 export const usage = (message: string): CliError => new CliError(message, 2);
 

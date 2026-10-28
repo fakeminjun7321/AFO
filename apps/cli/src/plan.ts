@@ -13,7 +13,7 @@ import { usage } from './rules.js';
 
 /**
  * `plan` (#8): the preview's analysis → buildPlan → savePlan in the state folder. Shows operations, reasons and per-mode approval codes.
- * Nothing here writes the work root, and no approval is issued: codes are only displayed for the later `apply`.
+ * Nothing here writes the work root, and no approval is issued: codes are only displayed for the later `apply` (apply.ts).
  */
 export interface PlanValues extends AnalyzeValues {
   'delete-mode'?: string | undefined; 'delete-duplicates'?: string | undefined; 'delete-file'?: string[] | undefined;
@@ -164,6 +164,8 @@ function humanPlan(plan: OperationPlan, previous: SavedPlan | null, choices: Ret
     for (const c of choices) lines.push(`  ${c.mode} (${kindLabel[approvalModeKind[c.mode]]} ${c.operationIds.length}개): ${c.code}` +
       (c.mode === 'permanent-delete' ? ` — 되돌릴 수 없습니다. 실행할 때 확인 문구 "${PERMANENT_DELETE_PHRASE}"도 입력해야 합니다.` : ''));
   }
-  lines.push('실행 명령은 다음 버전에서 제공합니다. 이 버전은 파일을 옮기거나 지우지 않습니다.');
+  lines.push(choices.length ? `실행: apply ${plan.id} --mode <방식> (TTY면 승인 코드를 입력, 아니면 --confirm <승인 코드>` +
+    `${choices.some((c) => c.mode === 'permanent-delete') ? `, 영구 삭제는 --phrase "${PERMANENT_DELETE_PHRASE}"도` : ''}). 이 plan 명령은 파일을 옮기거나 지우지 않았습니다.`
+    : '이 plan 명령은 파일을 옮기거나 지우지 않았습니다.');
   return lines.join('\n');
 }

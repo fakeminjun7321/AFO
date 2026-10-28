@@ -369,7 +369,7 @@ test('R18-19 sequential pins: null on empty, revision on active, fingerprint on 
 });
 
 /** Finding F-2: no cross-process lock; both racers pass the expectedRevision check and both report success. */
-test('R18-20 two processes save the first profile at once (expectedRevision: null): exactly one may succeed', { todo: 'F-2' }, async (t) => {
+test('R18-20 two processes save the first profile at once (expectedRevision: null): exactly one may succeed', async (t) => {
   const tally: string[] = [];
   for (let round = 0; round < 8; round++) {
     const e = await env(t, {});
@@ -406,7 +406,7 @@ test('R18-21 two processes reset the same damaged file at once: its bytes are ke
 });
 
 /** Finding F-2 (same cause): a save and a reset racing over one damaged file both report success; one of them is silently lost. */
-test('R18-22 save and reset race over one damaged file: exactly one may succeed', { todo: 'F-2' }, async (t) => {
+test('R18-22 save and reset race over one damaged file: exactly one may succeed', async (t) => {
   const tally: string[] = [];
   for (let round = 0; round < 8; round++) {
     const e = await env(t, { 'ref/수학/수학_1.pdf': '1', 'ref/수학/수학_2.pdf': '2' });
@@ -472,7 +472,7 @@ test('R18-23 CLI preview after renaming the saved reference: one warning line, o
 });
 
 /** Finding F-3 (minor): the profile line still says the saved profile was applied although the stale profile was not applied. */
-test('R18-24 CLI preview profile line must not claim the stale profile was applied', { todo: 'F-3' }, async (t) => {
+test('R18-24 CLI preview profile line must not claim the stale profile was applied', async (t) => {
   const e = await env(t, { ...prefixed('work/정리', REF), ...prefixed('work', NEW) });
   const saved = await saveConfirmedProfile(await confirmedFrom(e.dir('work/정리')), e.o);
   await rename(e.dir('work/정리'), e.dir('work/정리2'));

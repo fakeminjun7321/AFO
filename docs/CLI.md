@@ -33,7 +33,8 @@
 
 - 저장 프로필이 손상됐으면 `preview`는 stderr에 경고를 내고 기본 분류로 계속합니다(종료 코드 0, JSON `profile.source: "corrupt"`). 규칙 편집과 `--remember`는 거부합니다. `rules reset`·`rules save`는 손상 파일을 지우지 않고 `corrupt-*.json`으로 옮긴 뒤 진행합니다.
 - 상태 폴더는 `AFO_STATE_DIR`(절대 경로)를 따르고, 없으면 OS 앱 데이터 폴더입니다. `--remember`는 상태 폴더가 작업·참고 폴더와 겹치면 거부합니다(`STATE_DIR_CONFLICT`).
-- 변경 명령은 읽은 프로필의 revision을 `expectedRevision`으로 넘겨, 그 사이 다른 프로세스가 바꾼 프로필은 `PROFILE_CHANGED`로 거부합니다. 프로필이 비었거나 손상된 상태에서는 현재 저장 API로 revision을 고정할 수 없어 이 검사가 없습니다.
+- 저장한 참고 폴더의 이름·위치가 바뀌었거나 근거 파일이 다른 폴더에서 발견되면(`preview.profileNotice.code: "PROFILE_STALE"`) 저장 프로필을 이번 분석에 적용하지 않습니다. 사람용 출력은 `개인 규칙: 저장된 프로필(revision N) — 이번 분석에는 적용하지 않음(참고 폴더 변경 감지, …)`과 `경고:` 한 줄, JSON은 `profile.source: "stale"`(`id`·`revision`은 저장된 프로필의 값, `preview.profileId`는 `null`)입니다. 저장소에는 쓰지 않습니다.
+- 변경 명령은 읽은 상태를 고정해 넘깁니다: 활성 프로필은 `expectedRevision: <revision>`, 빈 저장소는 `expectedRevision: null`, 손상 파일은 `expectedCorrupt: <fingerprint>`. 그 사이 다른 프로세스가 바꿨으면 `PROFILE_CHANGED`로 거부합니다. 검사와 쓰기는 상태 폴더 `locks/`의 프로필 잠금 안에서 함께 실행되며, 다른 실행이 잠금을 가진 동안 약 3초 기다린 뒤에도 풀리지 않으면 `LOCKED_BY_OTHER`(종료 코드 1)입니다.
 - 사람용 출력은 참고 폴더를 마지막 이름(라벨)으로만 표시합니다. 단, `suggest-rules`의 초안 JSON과 `preview --json`의 `suggestedProfile`·`preview.root`는 계약(v1 `ProfileSchema`, `PreviewSchema`)상 실제 절대 경로를 담습니다. `rules save`로 저장한 프로필에는 절대 경로가 남지 않습니다.
 
 `npm run preview -- <폴더>`, `npm run rules:suggest -- <폴더>`, `npm run rules:confirm -- <JSON> --select <ID>`, `npm run afo -- rules list`도 같은 명령입니다.
@@ -44,7 +45,7 @@ JSON을 파일로 받을 때는 npm 배너가 섞이지 않도록 `node dist/app
 | 코드 | 의미 | 예 |
 | --- | --- | --- |
 | 0 | 성공. 결과를 stdout에 출력 | `--help`, 정상 `preview`. **스캔이 일부 미완료여도 0**이며 출력의 "스캔 일부 미완료"와 JSON `scanComplete: false`로 구분합니다 |
-| 1 | 입력 거부 또는 오류 | 없는 폴더, 홈·디스크 루트 같은 거부 대상, 손상된 규칙 JSON, 모르는 규칙/수정 ID, 손상 프로필 편집, `PROFILE_CHANGED` |
+| 1 | 입력 거부 또는 오류 | 없는 폴더, 홈·디스크 루트 같은 거부 대상, 손상된 규칙 JSON, 모르는 규칙/수정 ID, 손상 프로필 편집, `PROFILE_CHANGED`, 프로필 잠금 대기 초과 `LOCKED_BY_OTHER` |
 | 2 | 사용법 오류. 아무것도 바꾸지 않음 | 모르는 명령·옵션(`--execute` 등), 명령에 맞지 않는 옵션, 인수 개수, `--select` 없음·빈 선택, `--move` 형식, 비TTY `rules reset`에 `--confirm` 없음 |
 | 4 | 확인(승인) 거부·무효 | TTY `rules reset` 질문에 y가 아닌 답, `--confirm` 값 불일치. 후속 승인 오류(`APPROVAL_*`·`PLAN_CHANGED`·`MODE_MISMATCH`)도 4 |
 | 130 | Ctrl+C(SIGINT)로 취소 | 큰 폴더 스캔 중 중단, 확인 질문 중 중단 |
@@ -53,4 +54,4 @@ JSON을 파일로 받을 때는 npm 배너가 섞이지 않도록 `node dist/app
 오류는 stderr에 `AFO 오류[코드]: 메시지`(공용 `AfoError`) 또는 `AFO 오류: 메시지`(그 밖) 한 줄로 출력합니다.
 
 검증: `tests/cli.test.ts`(0·1·2와 오류 형식)와 `tests/cli-rules.test.ts`(제안→저장→자동 적용→재시작→켜기/끄기→이번만/저장 수정→forget→reset·손상 프로필, 0·1·2·4)가 실제 자식 프로세스와 temp `AFO_STATE_DIR`로 확인합니다.
-TTY 질문은 자식 프로세스에 pty가 없어 `run()`에 응답 함수를 넣는 프로세스 내 테스트로만 확인합니다. 130과 `PROFILE_CHANGED` 경쟁은 CLI 자동 테스트가 없습니다(미검증, 저장 API의 거부 자체는 `tests/profiles.test.ts`).
+TTY 질문은 자식 프로세스에 pty가 없어 `run()`에 응답 함수를 넣는 프로세스 내 테스트로만 확인합니다. 130과 `PROFILE_CHANGED` 경쟁은 CLI 자동 테스트가 없습니다(미검증). 저장 API의 거부는 `tests/profiles.test.ts`, 두 프로세스 동시 저장·reset 경쟁은 `tests/verify-18-recheck.test.ts`(R18-20~22, 저장 API 직접 호출)에서 확인합니다.

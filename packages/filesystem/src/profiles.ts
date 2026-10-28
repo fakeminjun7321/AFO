@@ -1,18 +1,21 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { lstat, rename } from 'node:fs/promises';
+import { lstat, mkdir, rename } from 'node:fs/promises';
 import path from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { z } from 'zod';
 import { AfoError, ProfileSchema, ProfileStoreSchema, RuleProfileV2Schema, isAfoError } from '../../contracts/src/index.js';
 import type { CorrectionMatch, ProfileStore, ProtectedEntry, RuleProfile, RuleProfileV2, ScanResult } from '../../contracts/src/index.js';
 import { digest, emptyProfile, makeCorrection, pathKey, profileFromV1, withCorrection, withRuleEnabled, withStatus, withoutCorrection }
   from '../../engine/src/index.js';
 import type { AnyProfile } from '../../engine/src/index.js';
+import { withRootLock } from './lock.js';
 import { readJson, resolveStateDir, statePaths, writeJsonAtomic } from './state.js';
 
 /**
  * Personal rule profile store (#18): one profile in <state>/profiles/active.json (first version).
  * Only app-local state is written. Reference folders and work roots are never read or touched here.
- * No cross-process lock yet (#13): `expectedRevision` lets a caller refuse a profile another process changed meanwhile.
+ * Every change runs under one lock per state folder (withProfileLock), so the expectedRevision/expectedCorrupt check and the
+ * write are not split by another process using this API. Reads (loadProfile) take no lock; writes are atomic renames.
  */
 /**
  * expectedRevision: the revision the caller saw, or null for "no saved profile (empty store)".
@@ -151,9 +154,59 @@ async function setAside(file: string): Promise<void> {
   const target = path.join(path.dirname(file), `corrupt-${Date.now()}-${randomBytes(4).toString('hex')}.json`);
   try { await rename(file, target); }
   catch (error) {
-    if (error !== null && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return;
+    // Gone although we hold the lock: changed outside AFO's lock (or by hand). Never report the save/reset as done.
+    if (error !== null && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')
+      throw changed('손상된 프로필이 그 사이에 사라졌습니다. 다시 불러온 뒤 확인하세요.');
     throw new AfoError('STATE_CORRUPT', '손상된 프로필을 따로 보관하지 못해 덮어쓰지 않았습니다.', { cause: error });
   }
+}
+
+/** How long a change waits for another process's profile change (each holds the lock for milliseconds) before giving up. */
+export const PROFILE_LOCK_WAIT_MS = 3000;
+/**
+ * Serialises every change to one state folder's profile store across processes: a lock.ts lock in <state>/locks/ keyed by
+ * the dev/inode of <state>/profiles. A held lock is retried briefly; still held after PROFILE_LOCK_WAIT_MS → LOCKED_BY_OTHER.
+ */
+async function withProfileLock<T>(stateDir: string, fn: () => Promise<T>): Promise<T> {
+  const directory = statePaths(stateDir).profiles;
+  let identity: { device: string; inode: string };
+  try {
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const s = await lstat(directory, { bigint: true });
+    if (!s.isDirectory() || s.isSymbolicLink()) throw new AfoError('STATE_CORRUPT', `프로필 폴더가 일반 폴더가 아닙니다: ${directory}`);
+    identity = { device: String(s.dev), inode: String(s.ino) };
+  } catch (error) {
+    throw isAfoError(error) ? error : new AfoError('STATE_CORRUPT', `프로필 폴더를 준비할 수 없습니다: ${directory}`, { cause: error });
+  }
+  const deadline = Date.now() + PROFILE_LOCK_WAIT_MS;
+  let entered = false;
+  for (;;) {
+    try { return await withRootLock(stateDir, identity, () => { entered = true; return fn(); }); }
+    catch (error) {
+      // lock.ts throws LOCKED_BY_OTHER only before fn runs; never retry once fn has started.
+      if (entered || !isAfoError(error, 'LOCKED_BY_OTHER')) throw error;
+      if (Date.now() >= deadline) throw new AfoError('LOCKED_BY_OTHER',
+        `다른 AFO 실행이 개인 규칙 프로필을 바꾸는 중이라 기다렸지만 끝나지 않았습니다. 잠시 뒤 다시 시도하세요. (${error.message})`, { cause: error });
+      await sleep(10 + Math.floor(Math.random() * 40));
+    }
+  }
+}
+
+/**
+ * The decision is made from the store as read, first without the lock (a refused call creates nothing, not even the lock
+ * folder) and then again under the lock, where only the second decision's write runs. A decision needing no write returns at once.
+ */
+type Step<T> = { result: T; apply?: (file: string) => Promise<void> };
+async function transact<T>(options: ProfileStoreOptions, decide: (state: Current) => Step<T>): Promise<T> {
+  const stateDir = options.stateDir ?? resolveStateDir();
+  const file = profileFile(stateDir);
+  const first = decide(await current(file));
+  if (first.apply === undefined) return first.result;
+  return withProfileLock(stateDir, async () => {
+    const step = decide(await current(file));
+    await step.apply?.(file);
+    return step.result;
+  });
 }
 
 /**
@@ -165,26 +218,28 @@ export async function saveConfirmedProfile(input: unknown, options: ProfileStore
   const version = input !== null && typeof input === 'object' && 'formatVersion' in input ? input.formatVersion : undefined;
   const profile = version === 2 ? RuleProfileV2Schema.parse(input) : await profileFromConfirmed(input, now);
   if (profile.status !== 'confirmed') throw new Error('확인한(confirmed) 프로필만 저장할 수 있습니다.');
-  const file = fileOf(options);
-  const state = await current(file);
-  checkExpected(state, options);
-  if (state.kind === 'corrupt') await setAside(file);
-  const floor = state.kind === 'active' ? state.profile.revision : state.kind === 'empty' ? state.lastRevision : 0;
-  const saved = RuleProfileV2Schema.parse({ ...profile, revision: Math.max(profile.revision, floor + 1), updatedAt: now.toISOString() });
-  await write(file, { formatVersion: 2, state: 'active', profile: saved });
-  return saved;
+  return transact(options, (state) => {
+    checkExpected(state, options);
+    const floor = state.kind === 'active' ? state.profile.revision : state.kind === 'empty' ? state.lastRevision : 0;
+    const saved = RuleProfileV2Schema.parse({ ...profile, revision: Math.max(profile.revision, floor + 1), updatedAt: now.toISOString() });
+    return { result: saved, apply: async (file) => {
+      if (state.kind === 'corrupt') await setAside(file);
+      await write(file, { formatVersion: 2, state: 'active', profile: saved });
+    } };
+  });
 }
 
-async function mutate(options: ProfileStoreOptions, change: (profile: RuleProfileV2, now: Date) => RuleProfileV2): Promise<RuleProfileV2> {
-  const file = fileOf(options);
-  const state = await current(file);
+function changeActive(state: Current, options: ProfileStoreOptions,
+  change: (profile: RuleProfileV2, now: Date) => RuleProfileV2): Step<RuleProfileV2> {
   if (state.kind === 'corrupt') throw new AfoError('STATE_CORRUPT', `저장된 프로필이 손상됐습니다: ${state.reason}`);
   if (state.kind === 'empty') throw new Error('저장된 개인 규칙 프로필이 없습니다.');
   checkExpected(state, options);
   const next = change(state.profile, clock(options));
-  if (next !== state.profile) await write(file, { formatVersion: 2, state: 'active', profile: next });
-  return next;
+  return next === state.profile ? { result: next }
+    : { result: next, apply: (file) => write(file, { formatVersion: 2, state: 'active', profile: next }) };
 }
+const mutate = (options: ProfileStoreOptions, change: (profile: RuleProfileV2, now: Date) => RuleProfileV2): Promise<RuleProfileV2> =>
+  transact(options, (state) => changeActive(state, options, change));
 
 /** Turns one saved rule on or off. Same value: no write and no new revision. */
 export const setRuleEnabled = (ruleId: string, enabled: boolean, options: ProfileStoreOptions = {}): Promise<RuleProfileV2> =>
@@ -201,29 +256,28 @@ export const removeCorrection = (correctionId: string, options: ProfileStoreOpti
  * Stores a correction the user chose to apply from now on ("이후에도 적용", CLI --remember). One-off corrections are passed
  * to the preview as overrides and never reach this function. Without a saved profile, a correction-only profile is created.
  */
-export async function addCorrection(match: CorrectionMatch, targetDirectory: string, options: ProfileStoreOptions = {}): Promise<RuleProfileV2> {
-  const file = fileOf(options);
-  const state = await current(file);
-  if (state.kind === 'active') return mutate(options, (p, now) => withCorrection(p, makeCorrection(match, targetDirectory, now), now));
-  if (state.kind === 'corrupt') throw new AfoError('STATE_CORRUPT', `저장된 프로필이 손상됐습니다: ${state.reason}`);
-  checkExpected(state, options);
-  const now = clock(options);
-  const profile = withCorrection(emptyProfile(`local-${randomUUID()}`, state.lastRevision + 1, now),
-    makeCorrection(match, targetDirectory, now), now);
-  await write(file, { formatVersion: 2, state: 'active', profile });
-  return profile;
-}
+export const addCorrection = (match: CorrectionMatch, targetDirectory: string, options: ProfileStoreOptions = {}): Promise<RuleProfileV2> =>
+  transact(options, (state) => {
+    if (state.kind !== 'empty')
+      return changeActive(state, options, (p, now) => withCorrection(p, makeCorrection(match, targetDirectory, now), now));
+    checkExpected(state, options);
+    const now = clock(options);
+    const profile = withCorrection(emptyProfile(`local-${randomUUID()}`, state.lastRevision + 1, now),
+      makeCorrection(match, targetDirectory, now), now);
+    return { result: profile, apply: (file) => write(file, { formatVersion: 2, state: 'active', profile }) };
+  });
 
 /**
  * Forgets every saved rule and correction. Writes an 'empty' record instead of deleting the file so the revision counter
  * keeps rising. A damaged file is set aside first, not deleted. Nothing outside the state folder is touched.
  */
-export async function resetProfile(options: ProfileStoreOptions = {}): Promise<void> {
-  const file = fileOf(options);
-  const state = await current(file);
-  checkExpected(state, options);
-  if (state.kind === 'empty') return; // never saved, or already reset
-  if (state.kind === 'corrupt') await setAside(file);
-  const lastRevision = state.kind === 'active' ? state.profile.revision : 0;
-  await write(file, { formatVersion: 2, state: 'empty', lastRevision, updatedAt: clock(options).toISOString() });
-}
+export const resetProfile = (options: ProfileStoreOptions = {}): Promise<void> =>
+  transact(options, (state) => {
+    checkExpected(state, options);
+    if (state.kind === 'empty') return { result: undefined }; // never saved, or already reset
+    const lastRevision = state.kind === 'active' ? state.profile.revision : 0;
+    return { result: undefined, apply: async (file) => {
+      if (state.kind === 'corrupt') await setAside(file);
+      await write(file, { formatVersion: 2, state: 'empty', lastRevision, updatedAt: clock(options).toISOString() });
+    } };
+  });

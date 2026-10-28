@@ -55,7 +55,8 @@ const allowed: Record<string, readonly string[]> = {
   'suggest-rules': ['json'], 'confirm-rules': ['select'], rules: ['json', 'select', 'confirm'],
 };
 
-interface ProfileInfo { source: 'saved' | 'file' | 'none' | 'skipped' | 'corrupt'; id: string | null; revision: number | null;
+/** 'stale': the saved profile was loaded but not applied because its reference folder looks changed (preview.profileNotice). */
+interface ProfileInfo { source: 'saved' | 'stale' | 'file' | 'none' | 'skipped' | 'corrupt'; id: string | null; revision: number | null;
   status: string | null; warning?: string }
 
 export async function run(args: string[], signal?: AbortSignal, io: CliIo = {}): Promise<string> {
@@ -185,11 +186,16 @@ async function preview(target: string, values: PreviewValues, ctx: { json: boole
       ctx.warn('참고: 개인 규칙 프로필이 꺼져 있어 저장한 수정은 rules enable-all 뒤에 적용됩니다.');
   }
 
+  const stale = analysis.preview.profileNotice?.code === 'PROFILE_STALE';
+  if (stale && info.source === 'saved') info = { ...info, source: 'stale' };
   if (ctx.json) return JSON.stringify({ preview: analysis.preview, suggestedProfile: analysis.suggestedProfile, profile: info,
     ...(values.remember ? { remembered } : {}) }, null, 2);
   const { preview: result } = analysis;
   const labels = { move: '이동 제안', keep: '유지', review: '검토 필요' };
-  const profileLine = info.source === 'file' ? `개인 규칙: --profile 파일 적용(ID ${info.id}, revision ${info.revision}, 상태 ${info.status})`
+  const notApplied = '이번 분석에는 적용하지 않음(참고 폴더 변경 감지, 기본 분류, 참고 파일 보호는 유지)';
+  const profileLine = info.source === 'file' ? stale ? `개인 규칙: --profile 파일(ID ${info.id}, revision ${info.revision}) — ${notApplied}`
+      : `개인 규칙: --profile 파일 적용(ID ${info.id}, revision ${info.revision}, 상태 ${info.status})`
+    : info.source === 'stale' ? `개인 규칙: 저장된 프로필(revision ${info.revision}) — ${notApplied}`
     : info.source === 'skipped' ? '개인 규칙: --no-saved-rules로 적용하지 않음(기본 분류)'
     : info.source === 'none' ? '개인 규칙: 저장된 규칙 없음(기본 분류)'
     : info.source === 'corrupt' ? '개인 규칙: 저장된 프로필 손상으로 적용하지 않음(기본 분류)'

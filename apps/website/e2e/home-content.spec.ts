@@ -15,10 +15,10 @@ test("home explains the available features and links to their actual screens", a
   await expect(page).toHaveURL(/\/rules$/);
   await expect(page.getByRole("heading", { name: "나의 규칙", exact: true })).toBeVisible();
   await page.goto("/");
-  await page.getByRole("link", { name: "샘플로 체험하기" }).click();
-  await expect(page).toHaveURL(/\/demo$/);
-  await page.getByRole("button", { name: "분류 미리보기" }).click();
-  await expect(page.getByText(/샘플 6개의 분류 위치/)).toBeVisible();
+  await page.getByRole("link", { name: "사용 방법과 샘플 예시" }).click();
+  await expect(page).toHaveURL(/\/help$/);
+  await page.getByRole("button", { name: "예시 결과 보기" }).click();
+  await expect(page.getByText(/샘플 6개의 예시 결과/)).toBeVisible();
   await page.goto("/guide");
   await expect(page.getByRole("heading", { name: "명령어로 더 자세하게." })).toBeVisible();
   await page.goto("/faq");

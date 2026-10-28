@@ -9,8 +9,8 @@ export function Closing() {
           <br />
           간단한 시작을.
         </h2>
-        <Link className="button button--black" to="/demo">
-          직접 체험하기 <Arrow />
+        <Link className="button button--black" to="/preview">
+          내 폴더 분석하기 <Arrow />
         </Link>
       </section>
     </>

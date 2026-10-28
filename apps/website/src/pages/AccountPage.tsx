@@ -69,8 +69,8 @@ export function AccountPage() {
         </div>
       )}
       <div className="account-actions">
-        <Link to="/demo" className="button button--orange">
-          정리 흐름 체험하기 <Arrow />
+        <Link to="/preview" className="button button--orange">
+          내 폴더 분석하기 <Arrow />
         </Link>
         <Link to="/rules" className="button button--outline">
           나의 규칙

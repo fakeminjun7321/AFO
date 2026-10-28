@@ -1,3 +1,4 @@
+import { FolderDemo } from "../features/demo/FolderDemo";
 import { HowItWorks } from "../components/HowItWorks";
 import { FAQ } from "../components/FAQ";
 import { Link } from "react-router-dom";
@@ -7,10 +8,10 @@ export function HelpPage() {
     <section className="help-page section-wrap">
       <div className="support-heading">
         <h1>도움말</h1>
-        <p>체험 방법과 자주 묻는 내용을 모았습니다.</p>
+        <p>내 폴더를 분석하는 방법과 샘플 예시, 자주 묻는 내용을 모았습니다.</p>
       </div>
       <section className="help-how" aria-labelledby="help-how-title">
-        <h2 id="help-how-title">이렇게 체험해요.</h2>
+        <h2 id="help-how-title">이렇게 분석해요.</h2>
         <HowItWorks />
       </section>
       <section className="guide-note" aria-labelledby="help-preview-title">
@@ -20,6 +21,7 @@ export function HelpPage() {
       <section className="guide-note" aria-labelledby="guide-cli-title">
         <div><h2 id="guide-cli-title">명령어로 더 자세하게.</h2><p>로컬 CLI는 Node.js가 필요한 별도 프로그램입니다. 선택한 폴더의 중복 후보를 내용 해시로 확인하고, 참고 폴더에서 제안받은 규칙을 확인한 뒤 분류 미리보기에 사용할 수 있습니다. 웹에 보관한 규칙과 CLI는 자동으로 연결되지 않습니다.</p></div>
       </section>
+      <FolderDemo />
       <FAQ />
     </section>
   );

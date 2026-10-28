@@ -26,9 +26,6 @@ export function Header() {
         <NavLink to="/preview" onClick={close}>
           내 폴더 분석
         </NavLink>
-        <NavLink to="/demo" onClick={close}>
-          직접 체험
-        </NavLink>
         <NavLink to="/rules" onClick={close}>
           나의 규칙
         </NavLink>

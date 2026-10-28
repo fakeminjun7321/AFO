@@ -11,7 +11,7 @@ export function ResourcesPage() {
         <Link to="/help">
           <span>
             <strong>사용 방법</strong>
-            <small>체험 순서와 자주 묻는 질문</small>
+            <small>폴더 분석 방법, 샘플 예시와 자주 묻는 질문</small>
           </span>
           <Arrow />
         </Link>

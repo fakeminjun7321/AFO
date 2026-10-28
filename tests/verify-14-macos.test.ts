@@ -5,7 +5,7 @@
  * Synthetic data only: every test makes its own mkdtemp(os.tmpdir()) base with a fake HOME and a temp AFO_STATE_DIR.
  * The real OS trash is used only when AFO_REAL_TRASH_TEST=1, for one synthetic `afo-test-` file; the trash is never read or emptied.
  */
-import test from 'node:test';
+import nodeTest from 'node:test';
 import assert from 'node:assert/strict';
 import type { TestContext } from 'node:test';
 import { spawn, spawnSync } from 'node:child_process';
@@ -14,6 +14,11 @@ import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, utimes, 
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+// macOS physical-path verification (#14). Elsewhere the temp folder can sit under the real home (Windows: AppData\Local\Temp),
+// which the safety guard in setup() refuses, so the whole file is skipped there with a stated reason.
+const test: typeof nodeTest = (process.platform === 'darwin' ? nodeTest
+  : ((name: string, fn: unknown) => nodeTest(name, { skip: 'macOS 실물 경로 검증 전용(#14 macOS). Windows 실물 검증은 별도.' }, fn as never))) as typeof nodeTest;
 
 const CLI = fileURLToPath(new URL('../apps/cli/src/index.js', import.meta.url));
 const REAL_HOME = homedir();

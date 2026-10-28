@@ -207,7 +207,8 @@ test('R18-10 draft read, folder renamed BEFORE rules save (no identity recorded)
 
 test('R18-11 reference path given with different letter case / NFD at save time: no false stale notice', async (t) => {
   const e = await env(t, { ...prefixed('work/Ref정리', REF), ...prefixed('work', NEW) });
-  const variant = path.join(e.base, 'work', 'REF정리'.normalize('NFD'));
+  // APFS folds case and Unicode normalization; NTFS folds case only, so an NFD spelling is a different (missing) name there.
+  const variant = path.join(e.base, 'work', process.platform === 'win32' ? 'REF정리' : 'REF정리'.normalize('NFD'));
   const saved = await saveConfirmedProfile(await confirmedFrom(variant), e.o);
   const { preview } = await analyze(e.dir('work'), { profile: saved, stateDir: e.state });
   assert.deepEqual(table(preview.items), { ...keptUnder('Ref정리'), ...NEW_PERSONAL });

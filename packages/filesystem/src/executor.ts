@@ -7,9 +7,10 @@ import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { AfoError, ApprovalModeSchema, ApprovalSchema, ErrorCodeSchema, ExecutionReportSchema, OpaqueIdSchema, OperationIdSchema,
   OperationPlanSchema, PlanOperationSchema, RelativePathSchema, approvalModeKind, isAfoError } from '../../contracts/src/index.js';
-import type { Approval, ApprovalMode, ErrorCode, ExecutionReport, JournalEntry, OperationPlan, PlanOperation, RootGrant }
-  from '../../contracts/src/index.js';
+import type { ApprovalMode, ErrorCode, ExecutionReport, JournalEntry, PlanOperation, RootGrant } from '../../contracts/src/index.js';
+import type { ApprovedBatch } from './approvals.js';
 import { verifyGrant, within } from './grants.js';
+import { withRootLock } from './lock.js';
 import { PlatformError, deleteFilePermanently, freeSpace, linkMoveNoClobber, moveToTrash } from './platform.js';
 import { appendJournal, assertStateDirOutside, journalFile, readJournal, readJson, writeJsonAtomic } from './state.js';
 
@@ -17,8 +18,9 @@ import { appendJournal, assertStateDirOutside, journalFile, readJournal, readJso
  * Executor (#10 move, #11 trash, #12 permanent delete). Runs an already validated and consumed approval, one operation at a
  * time: journal intent (fsync) → re-verify root/parents/identity/content → OS call → independent check → journal done/failed.
  * Re-checks narrow but cannot close the gap between a check and the OS call (ADR 0001 decision 3).
+ * The batch type is the one consumeApproval (approvals.ts, #8) returns; it is re-exported for callers of this module.
  */
-export interface ApprovedBatch { plan: OperationPlan; approval: Approval; operations: PlanOperation[]; grant: RootGrant; stateDir: string }
+export type { ApprovedBatch } from './approvals.js';
 
 /** OS and journal calls. Tests may replace them; such results are mock results, not OS evidence. */
 export interface ExecutorAdapter {
@@ -244,8 +246,10 @@ async function checkBatch(batch: ApprovedBatch): Promise<ApprovedBatch> {
     if (!parsed.success) throw new AfoError(code, message, { cause: parsed.error });
     return parsed.data;
   };
-  const grant = await verifyGrant(batch.grant, 'work');
   const plan = parse(OperationPlanSchema, batch.plan, 'PLAN_CHANGED', '정리 계획이 계약과 다릅니다.');
+  // The grant must belong to the plan's session (D1). plan.rootGrantId names the planning process's grant and is not used here;
+  // the folder is bound by canonicalPath below and by verifyGrant's dev/inode check.
+  const grant = await verifyGrant(batch.grant, 'work', { sessionId: plan.sessionId });
   const approval = parse(ApprovalSchema, batch.approval, 'APPROVAL_INVALID', '승인 기록이 계약과 다릅니다.');
   if (!Array.isArray(batch.operations)) throw new AfoError('APPROVAL_INVALID', '승인한 작업 목록이 없습니다.');
   const operations = batch.operations.map((op) => parse(PlanOperationSchema, op, 'APPROVAL_INVALID', '승인한 작업이 계약과 다릅니다.'));
@@ -254,8 +258,9 @@ async function checkBatch(batch: ApprovedBatch): Promise<ApprovedBatch> {
   // The grant is re-issued in this process, so its id may differ from plan.rootGrantId; the folder itself must be the same.
   if (grant.canonicalPath !== plan.rootPath) throw new AfoError('ROOT_FORBIDDEN', '계획의 폴더와 권한을 받은 폴더가 다릅니다.');
   await assertStateDirOutside(batch.stateDir, grant.canonicalPath);
-  if (approval.planId !== plan.id || (approval.rootGrantId !== plan.rootGrantId && approval.rootGrantId !== grant.id))
+  if (approval.planId !== plan.id || approval.rootGrantId !== plan.rootGrantId)
     throw new AfoError('APPROVAL_INVALID', '다른 계획·폴더의 승인입니다.');
+  if (approval.sessionId !== plan.sessionId) throw new AfoError('APPROVAL_INVALID', '다른 세션에서 발급한 승인입니다.');
   if (approval.profileId !== plan.profileId || approval.profileRevision !== plan.profileRevision)
     throw new AfoError('PROFILE_CHANGED', '승인 이후 개인 규칙 버전이 바뀌었습니다.');
   if (approval.usedAt === null) throw new AfoError('APPROVAL_INVALID', '아직 확인(소비)되지 않은 승인입니다.');
@@ -438,21 +443,24 @@ export async function listRuns(stateDir: string): Promise<string[]> {
     .sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
 }
 
-interface UndoState { started: boolean; finished: boolean; done: JournalEntry | null; undoOpen: boolean; undoUnknown: boolean; undone: boolean }
+interface UndoState { started: boolean; finished: boolean; forwardUnknown: boolean; done: JournalEntry | null; undoOpen: boolean;
+  undoUnknown: boolean; undone: boolean }
 /**
  * Journal per op. After an `undo-intent`, a later `failed`/`skipped` of the same op is that undo's outcome, not the original op's.
+ * A forward `failed` with UNKNOWN is an unclear outcome (the file may already be at the destination): forwardUnknown (D2).
  */
 function undoStates(entries: JournalEntry[]): Map<string, UndoState> {
   const states = new Map<string, UndoState>();
   for (const e of entries) {
-    const s = states.get(e.opId) ?? { started: false, finished: false, done: null, undoOpen: false, undoUnknown: false, undone: false };
+    const s = states.get(e.opId) ??
+      { started: false, finished: false, forwardUnknown: false, done: null, undoOpen: false, undoUnknown: false, undone: false };
     states.set(e.opId, s);
     if (e.phase === 'intent') s.started = true;
     else if (e.phase === 'done') { s.done = e; s.finished = true; }
     else if (e.phase === 'undo-intent') { s.undoOpen = true; s.undoUnknown = false; }
     else if (e.phase === 'undone') { s.undoOpen = false; s.undone = true; }
     else if (s.undoOpen) { s.undoOpen = false; s.undoUnknown = e.errorCode === 'UNKNOWN'; }
-    else s.finished = true;
+    else { s.finished = true; s.forwardUnknown = e.phase === 'failed' && e.errorCode === 'UNKNOWN'; }
   }
   return states;
 }
@@ -460,7 +468,8 @@ function undoStates(entries: JournalEntry[]): Map<string, UndoState> {
 /**
  * Moves files of a finished organize run back, only where the moved file is unchanged (dev/ino/size, sha256 when recorded)
  * and the original path is empty; never overwrites. Trash and permanent delete are not undone here (restore from the OS trash).
- * Already undone operations are left out of the report; interrupted or unclear ones are reported unknown and not touched.
+ * Already undone operations and definite forward failures (file not changed) are left out of the report; interrupted or unclear
+ * ones (no closing entry, or a forward `failed` with UNKNOWN) are reported unknown and never moved by guesswork.
  * Empty folders created by the move are not removed. Saves runs/<runId>.undo-<n>.json and keeps the original report.
  */
 export async function undoRun(stateDir: string, runId: string, grantInput: RootGrant, options: UndoOptions = {}): Promise<ExecutionReport> {
@@ -495,6 +504,7 @@ export async function undoRun(stateDir: string, runId: string, grantInput: RootG
     if (!state || state.undone) continue;
     if (!state.done) {
       if (state.started && !state.finished) results.push(toResult(opId, unknown('실행 결과가 확인되지 않아 되돌리지 않았습니다. 복구 검사가 필요합니다.')));
+      else if (state.forwardUnknown) results.push(toResult(opId, unknown('결과 불명 이동 — 복구 점검 필요. 자동으로 되돌리지 않았습니다.')));
       continue;
     }
     if (state.undoOpen || state.undoUnknown) {

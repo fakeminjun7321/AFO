@@ -2,6 +2,7 @@ import test from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { chmod, lstat, mkdir, mkdtemp, readFile, rm, symlink, utimes, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createManifest, diffManifest } from './fixtures/index.js';
@@ -240,12 +241,28 @@ test('batch checks: one approval never runs twice (APPROVAL_USED), and re-runnin
   assert.deepEqual(await createManifest(env.root), organized);
 });
 
-test('a grant re-issued for the same folder (new id) is accepted; path and identity are what bind the plan', async (t) => {
+test('a grant re-issued for the same folder and session (new id) is accepted; path, identity and session bind the plan', async (t) => {
   const env = await setup(t, { [`${F}a.txt`]: 'a' });
   const op = await operation(env, 'move', `${F}a.txt`, { destination: `${F}b.txt` });
   const batch = approve(env, [op], 'organize');
-  const reissued = await issueRootGrant(env.root);
+  const reissued = await issueRootGrant(env.root, { sessionId: env.grant.sessionId }); // as consumeApproval re-grants
   assert.notEqual(reissued.id, env.grant.id);
   const report = await executeBatch({ ...batch, grant: reissued });
   assert.equal(report.results[0]!.status, 'moved');
+});
+
+test('session binding (D1): a grant or approval of another session is refused before any write', async (t) => {
+  const env = await setup(t, { [`${F}a.txt`]: 'a' });
+  const op = await operation(env, 'move', `${F}a.txt`, { destination: `${F}b.txt` });
+  const plan = makePlan(env, [op]);
+  const before = await createManifest(env.root);
+  const otherSession = await issueRootGrant(env.root, { sessionId: randomUUID() }); // same folder, another session
+  await assert.rejects(executeBatch({ ...makeBatch(env, plan, makeApproval(plan, [op.id], 'organize')), grant: otherSession }),
+    code('ROOT_FORBIDDEN'), 'grant of another session');
+  await assert.rejects(executeBatch(makeBatch(env, plan, makeApproval(plan, [op.id], 'organize', { sessionId: otherSession.sessionId }))),
+    code('APPROVAL_INVALID'), 'approval of another session');
+  await assert.rejects(executeBatch(makeBatch(env, plan, makeApproval(plan, [op.id], 'organize', { rootGrantId: otherSession.id }))),
+    code('APPROVAL_INVALID'), 'approval naming another grant than the plan');
+  assert.deepEqual(await createManifest(env.root), before);
+  assert.deepEqual(await stateNames(env), [], 'no lock, journal or run record was written');
 });

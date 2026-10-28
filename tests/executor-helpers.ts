@@ -7,7 +7,7 @@ import { ApprovalSchema, OperationPlanSchema, PlanOperationSchema } from '../pac
 import type { Approval, ApprovalMode, JournalEntry, OperationKind, OperationPlan, PlanOperation, RootGrant }
   from '../packages/contracts/src/index.js';
 import { issueRootGrant } from '../packages/filesystem/src/grants.js';
-import type { ApprovedBatch } from '../packages/filesystem/src/executor.js';
+import type { ApprovedBatch } from '../packages/filesystem/src/approvals.js';
 import { journalFile, readJournal } from '../packages/filesystem/src/state.js';
 import { createFixture } from './fixtures/index.js';
 import type { FixtureSpec } from './fixtures/index.js';

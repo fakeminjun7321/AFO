@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { appendFile, lstat, readFile, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import { createManifest, diffManifest } from './fixtures/index.js';
 import { executeBatch, readRun, undoRun } from '../packages/filesystem/src/executor.js';
+import { PlatformError, linkMoveNoClobber } from '../packages/filesystem/src/platform.js';
 import { journalFile } from '../packages/filesystem/src/state.js';
 import { F, abs, approve, journal, operation, phases, setup } from './executor-helpers.js';
 import type { Env } from './executor-helpers.js';
@@ -119,4 +120,33 @@ test('undo: a renamed original parent that became a link to elsewhere is refused
   assert.deepEqual(report.results.map((r) => [r.status, r.errorCode]), [['failed', 'LINK_REJECTED']]);
   assert.equal(await readFile(abs(env, `${F}out/${F}a.txt`), 'utf8'), 'a');
   assert.equal(await lstat(abs(env, `${F}elsewhere/${F}a.txt`)).catch(() => null), null);
+});
+
+test('undo (D2): a forward move closed failed+UNKNOWN is reported unknown and never moved back; a definite failure is left out', async (t) => {
+  const env = await setup(t, { [`${F}u.txt`]: 'unclear', [`${F}f.txt`]: 'failed', [`${F}ok.txt`]: 'ok', [`${F}out/${F}f.txt`]: 'blocker' });
+  const unclear = await operation(env, 'move', `${F}u.txt`, { destination: `${F}out/${F}u.txt` });
+  const failed = await operation(env, 'move', `${F}f.txt`, { destination: `${F}out/${F}f.txt` });
+  const ok = await operation(env, 'move', `${F}ok.txt`, { destination: `${F}out/${F}ok.txt` });
+  // out/f.txt already exists: a definite DEST_EXISTS before any OS call.
+  // (mock) the real no-clobber move of u.txt succeeds, then the adapter reports an unclear outcome.
+  const report = await executeBatch(approve(env, [unclear, failed, ok], 'organize'), { adapter: {
+    linkMoveNoClobber: async (s, d, x) => {
+      const moved = await linkMoveNoClobber(s, d, x);
+      if (s.endsWith(`${F}u.txt`)) throw new PlatformError('UNKNOWN', 'mock unclear');
+      return moved;
+    } } });
+  assert.deepEqual(report.results.map((r) => [r.opId, r.status, r.errorCode]),
+    [[unclear.id, 'unknown', 'UNKNOWN'], [failed.id, 'failed', 'DEST_EXISTS'], [ok.id, 'moved', null]]);
+  const before = await createManifest(env.root);
+  const undo = await undoRun(env.stateDir, report.runId, env.grant);
+  assert.deepEqual(undo.results.map((r) => [r.opId, r.status, r.errorCode]), [[unclear.id, 'unknown', 'UNKNOWN'], [ok.id, 'moved', null]]);
+  assert.match(undo.results[0]!.detail, /결과 불명 이동 — 복구 점검 필요/u);
+  assert.equal(await readFile(abs(env, `${F}out/${F}u.txt`), 'utf8'), 'unclear', 'the unclear move is not guessed back');
+  assert.equal(await readFile(abs(env, `${F}ok.txt`), 'utf8'), 'ok');
+  assert.equal(await readFile(abs(env, `${F}out/${F}f.txt`), 'utf8'), 'blocker');
+  assert.deepEqual(diffManifest(before, await createManifest(env.root)).added, [`${F}ok.txt`]);
+  const tail = phases(await journal(env, report.runId)).slice(6);
+  assert.deepEqual(tail, [`${ok.id}:undo-intent`, `${ok.id}:undone`], 'no undo entry for the unclear or the failed op');
+  const again = await undoRun(env.stateDir, report.runId, env.grant);
+  assert.deepEqual(again.results.map((r) => [r.opId, r.status]), [[unclear.id, 'unknown']], 'still reported on every later undo');
 });

@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-이 변경은 **비활성 상태의 준비**다. GitHub Actions 변수 `AFO_HOSTING_AUTODEPLOY`가 정확히 `enabled`이고 전용 자격 증명이 등록되기 전에는 배포 단계가 실행되지 않는다. 이 문서는 배포 완료나 실제 서비스 검증을 뜻하지 않는다.
+GitHub Actions 변수 `AFO_HOSTING_AUTODEPLOY`가 정확히 `enabled`이고 전용 자격 증명이 등록된 경우에만 배포 단계가 실행된다. 변수·Secret·공개 release의 실제 상태는 별도로 확인해야 하며, 이 문서만으로 실제 배포 성공을 뜻하지 않는다.
 
 대상 저장소는 비공개 `fakeminjun7321/AFO`, Firebase 프로젝트·Hosting 사이트는 `afo-hackathon-2026-7321`, 채널은 `live`, 공개 주소는 `https://afo-hackathon-2026-7321.web.app`이다. 2026-10-28 확인 시 결제 계정은 연결되지 않았고, live 채널에는 release가 없었으며 해당 주소는 HTTP 404였다. 별도의 `website-design` 및 `setup` 미리보기 채널은 이 파이프라인의 배포 대상이 아니다.
 
@@ -16,15 +16,16 @@
 
 ## 활성화 전에 확인할 대상
 
-- 새 서비스 계정 후보: `afo-hosting-cd@afo-hackathon-2026-7321.iam.gserviceaccount.com`.
-- 사용자 정의 역할 후보: 프로젝트 정보 조회와 `firebasehosting.sites.get`, `firebasehosting.sites.list`, `firebasehosting.sites.update`만 부여한다. 사이트 삭제·Auth·Firestore·Functions·결제 권한은 포함하지 않는다. 실제 Firebase CLI가 이 최소 권한으로 동작하는지는 아직 확인하지 않았다.
+- 2026-10-28 사용자 승인 후 전용 서비스 계정 `afo-hosting-cd@afo-hackathon-2026-7321.iam.gserviceaccount.com`과 프로젝트 역할 `afoHostingPublisher`를 만들고 IAM 정책을 다시 읽어 연결을 확인했다.
+- 계정 생성 직후 첫 정책 연결은 계정을 찾지 못한다는 HTTP 400으로 거부됐다. 계정·정책과 감사 로그를 읽어 미반영과 전파 지연을 확인한 뒤 60초 이상 경과 후 한 번 재시도해 성공했다. 기존 정책과 etag를 보존하고 변경 후 다시 읽었다.
+- 역할에는 `firebase.projects.get`, `resourcemanager.projects.get`, `firebasehosting.sites.get`, `firebasehosting.sites.list`, `firebasehosting.sites.update`만 포함한다. 사이트 삭제·Auth·Firestore·Functions·결제 권한은 포함하지 않는다. 실제 Firebase CLI가 이 최소 권한으로 동작하는지는 별도 배포 결과로 확인해야 한다.
 - 이 역할은 프로젝트 범위이므로 `sites.update` 권한이 같은 프로젝트의 다른 Hosting 채널에도 미칠 수 있다. 스크립트는 기본 사이트와 `live`만 지정하지만 IAM 자체가 채널 단위로 제한되는 것은 아니다.
 - 공식 Google Cloud 배포 파이프라인 문서는 Workload Identity Federation 준비 조건으로 결제 활성화 확인을 요구한다. 현재 프로젝트는 결제가 비활성화되어 있으므로 요금제를 바꾸지 않고 검토 가능한 Firebase 공식 GitHub 연동의 서비스 계정 키 방식을 준비했다. 키 없는 방식이 이 프로젝트에서 가능한지는 미검증이다.
 - Spark를 유지할 경우 Hosting은 무료 한도에 도달하면 새 배포가 막히거나 전송량 한도 초과 후 사이트가 비활성화될 수 있다. 결제 계정 연결·Blaze 전환은 수행하지 않는다.
 
 ## 검증과 중단
 
-현재까지는 가짜 자격 증명·임시 Git 저장소로 잘못된 이벤트, 브랜치, 저장소, 계정, 오래된 커밋, 잘못된 Hosting 대상, 관리자 API 활성화 및 출력 디렉터리 링크를 거부하는 검사만 수행한다. 실제 서비스 계정·GitHub Secret·배포는 아직 생성하거나 검증하지 않았다.
+가짜 자격 증명·임시 Git 저장소로 잘못된 이벤트, 브랜치, 저장소, 계정, 오래된 커밋, 잘못된 Hosting 대상, 관리자 API 활성화 및 출력 디렉터리 링크를 거부하는 검사를 수행했다. 실제 Secret 등록·최초 배포와 공개 사용자 경로는 각각의 결과를 따로 확인해야 한다.
 
 활성화된 이후 긴급 중단이 필요하면 GitHub 저장소 변수 `AFO_HOSTING_AUTODEPLOY`를 `disabled`로 바꾼다. 이미 완료된 배포를 되돌리지는 않으므로 Hosting release 상태를 별도로 확인해야 한다. 첫 live 배포 전에는 현재 비어 있는 live 상태를 보존하고, 이후 복구 방법은 실제 release를 확인한 뒤 적용한다.
 

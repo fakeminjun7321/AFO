@@ -2,9 +2,9 @@ name: Website verification
 on:
   push:
     branches: [main]
-    paths: ['apps/website/**', 'firebase/**', '.github/workflows/website.yml']
+    paths: ['apps/website/**', 'firebase/**', 'packages/engine/**', '.github/workflows/website.yml']
   pull_request:
-    paths: ['apps/website/**', 'firebase/**', '.github/workflows/website.yml']
+    paths: ['apps/website/**', 'firebase/**', 'packages/engine/**', '.github/workflows/website.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -43,3 +43,10 @@ jobs:
         working-directory: apps/website
       - run: npm run test:e2e
         working-directory: apps/website
+      # Disabled by default until the exact live target and deployment identity are approved.
+      - name: Deploy verified main to Firebase Hosting
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AFO_HOSTING_AUTODEPLOY == 'enabled' }}
+        env:
+          AFO_HOSTING_AUTODEPLOY: ${{ vars.AFO_HOSTING_AUTODEPLOY }}
+          AFO_FIREBASE_CREDENTIALS: ${{ secrets.AFO_FIREBASE_HOSTING_DEPLOY }}
+        run: bash apps/website/scripts/deploy-hosting.sh

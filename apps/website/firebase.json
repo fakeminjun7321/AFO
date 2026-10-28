@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "afo-hackathon-2026-7321",
     "public": "dist",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "headers": [

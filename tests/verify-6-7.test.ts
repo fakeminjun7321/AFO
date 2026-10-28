@@ -486,7 +486,7 @@ const table: [string, 'move' | 'keep' | 'review', string | null, string][] = [
   ['bundle.ZIP', 'move', '압축/bundle.ZIP', 'DEFAULT_EXTENSION'], ['installer.dmg', 'move', '설치/installer.dmg', 'DEFAULT_EXTENSION'],
   ['setup.EXE', 'move', '설치/setup.EXE', 'DEFAULT_EXTENSION'], ['v1.2.pdf', 'move', '문서/v1.2.pdf', 'DEFAULT_EXTENSION'],
   ['README', 'review', null, 'NO_EXTENSION'], ['Makefile', 'review', null, 'NO_EXTENSION'],
-  ['backup.tar.gz', 'review', null, 'COMPOUND_EXTENSION'], ['invoice.pdf.exe', 'review', null, 'COMPOUND_EXTENSION'],
+  ['backup.tar.gz', 'move', '압축/backup.tar.gz', 'DEFAULT_EXTENSION'], ['invoice.pdf.exe', 'review', null, 'COMPOUND_EXTENSION'],
   ['data.bin', 'review', null, 'UNKNOWN_EXTENSION'], ['model.xyz123', 'review', null, 'UNKNOWN_EXTENSION'],
   ['문서/already.pdf', 'keep', '문서/already.pdf', 'ALREADY_PLACED'], ['이미지/done.png', 'keep', '이미지/done.png', 'ALREADY_PLACED'],
 ];

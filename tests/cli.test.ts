@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PreviewSchema, ProfileSchema } from '../packages/contracts/src/index.js';
@@ -9,8 +11,11 @@ import { run } from '../apps/cli/src/index.js';
 import { fixture, manifest } from './helpers.js';
 
 const cli = fileURLToPath(new URL('../apps/cli/src/index.js', import.meta.url));
+// Saved rules are read by default: every process gets a temp state folder, never the real app-data folder.
+const stateDir = mkdtempSync(path.join(tmpdir(), 'afo-test-state-'));
+test.after(() => { rmSync(stateDir, { recursive: true, force: true }); });
 const invoke = (...args: string[]): ReturnType<typeof spawnSync> =>
-  spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: 15_000 });
+  spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', timeout: 15_000, env: { ...process.env, AFO_STATE_DIR: stateDir } });
 
 test('real CLI process suggests, confirms and reloads rules without changing source files', async (t) => {
   const root = await fixture(t, {
@@ -70,17 +75,19 @@ test('corrupt profiles and directory inputs are rejected', async (t) => {
 });
 test('help needs no implicit filesystem target', async () => {
   assert.match(await run([]), /읽기 전용/u);
-  assert.match(await run(['--help']), /이동·삭제·자동 저장은 수행하지 않습니다/u);
+  assert.match(await run(['--help']), /사용자 파일의 이동·삭제는 수행하지 않습니다/u);
 });
-test('documented exit codes: 0 for help and success, 1 for any refused input (docs/CLI.md)', async (t) => {
+test('documented exit codes: 0 for help and success, 2 for usage errors, 1 for refused input (docs/CLI.md)', async (t) => {
   const root = await fixture(t, { 'a.pdf': 'x' }); const before = await manifest(root);
   assert.equal(invoke('--help').status, 0);
   assert.equal(invoke().status, 0);
   assert.equal(invoke('preview', root).status, 0);
   const refused = invoke('delete', root);
-  assert.equal(refused.status, 1);
+  assert.equal(refused.status, 2);
   assert.match(String(refused.stderr), /^AFO 오류: /u);
-  assert.equal(invoke('preview', root, '--execute').status, 1);
-  assert.equal(invoke('preview', path.join(root, 'missing')).status, 1);
+  assert.equal(invoke('preview', root, '--execute').status, 2);
+  const missing = invoke('preview', path.join(root, 'missing'));
+  assert.equal(missing.status, 1);
+  assert.match(String(missing.stderr), /^AFO 오류\[ROOT_FORBIDDEN\]: /u);
   assert.deepEqual(await manifest(root), before);
 });

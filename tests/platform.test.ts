@@ -3,6 +3,7 @@ import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { link, lstat, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { createHash, randomBytes } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { classifyMoveState, deleteFilePermanently, fileIdentity, freeSpace, isTrashSupported, linkMoveNoClobber,
   moveToTrash, sameVolume } from '../packages/filesystem/src/platform.js';
@@ -119,6 +120,19 @@ test('permanent delete removes only one regular file and records observed free s
   assert.deepEqual(await manifest(root), expected);
   assert.equal(typeof freeBefore, 'number'); assert.equal(typeof freeAfter, 'number');
   t.diagnostic(`statfs bavail*bsize before=${freeBefore} after=${freeAfter} delta=${freeAfter! - freeBefore!} (other processes affect this)`);
+});
+
+test('EPERM on an immutable (chflags uchg) file is PERMISSION_DENIED, not NOT_SUPPORTED (CARRYOVER O-2)', async (t) => {
+  if (process.platform !== 'darwin') { t.skip(`${process.platform}: chflags uchg는 macOS 전용 검사`); return; }
+  const root = await fixture(t, { 'afo-test-locked.txt': 'locked', 'dest/.keep': '' });
+  const locked = path.join(root, 'afo-test-locked.txt');
+  execFileSync('/usr/bin/chflags', ['uchg', locked]);
+  try { // the flag must be cleared before the fixture cleanup can remove the file
+    const before = await manifest(root); const id = (await fileIdentity(locked))!;
+    await assert.rejects(linkMoveNoClobber(locked, path.join(root, 'dest', 'afo-test-locked.txt'), id), code('PERMISSION_DENIED'));
+    await assert.rejects(deleteFilePermanently(locked, id), code('PERMISSION_DENIED'));
+    assert.deepEqual(await manifest(root), before);
+  } finally { execFileSync('/usr/bin/chflags', ['nouchg', locked]); }
 });
 
 test('free space is null when not observable', async (t) => {

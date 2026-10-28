@@ -376,3 +376,30 @@ export type CorrectionMatch = z.infer<typeof CorrectionMatchSchema>;
 export type Correction = z.infer<typeof CorrectionSchema>;
 export type RuleProfileV2 = z.infer<typeof RuleProfileV2Schema>;
 export type ProfileStore = z.infer<typeof ProfileStoreSchema>;
+
+/* ---- Plans and one-time batch approvals (#8). Storage wrappers; the shared service is the only writer. ---- */
+/** Plans expire this long after creation; approvals never outlive their plan. */
+export const PLAN_TTL_MS = 60 * 60 * 1000;
+/** Exact phrase the user types (in addition to the approval code) for permanent deletion. */
+export const PERMANENT_DELETE_PHRASE = '영구 삭제';
+/** Root identity at plan time. Not covered by the plan hash, so approvals repeat it under their MAC. */
+export const GrantIdentitySchema = z.strictObject({
+  canonicalPath: AbsolutePathSchema, device: DigitsSchema, inode: DigitsSchema, sessionId: OpaqueIdSchema,
+});
+/** plans/<planId>.json */
+export const SavedPlanSchema = z.strictObject({ plan: OperationPlanSchema, grant: GrantIdentitySchema }).superRefine((s, ctx) => {
+  if (s.grant.canonicalPath !== s.plan.rootPath || s.grant.sessionId !== s.plan.sessionId) issue(ctx, '계획과 작업 폴더 식별이 다릅니다.');
+});
+/** approvals/<approvalId>.json. mac = HMAC-SHA256(state secret, approval without usedAt + grant). */
+export const SavedApprovalSchema = z.strictObject({
+  formatVersion: z.literal(1), approval: ApprovalSchema, grant: GrantIdentitySchema, mac: Sha256Schema,
+});
+/** What an interface may send to request an approval. Strict: extra keys such as `approved: true` are refused. */
+export const ApprovalRequestSchema = z.strictObject({
+  planId: Sha256Schema, operationIds: z.array(OperationIdSchema).min(1), mode: ApprovalModeSchema,
+  confirmation: z.string().regex(/^[a-f0-9]{8}$/u), confirmPhrase: z.string().max(64).optional(),
+});
+export type GrantIdentity = z.infer<typeof GrantIdentitySchema>;
+export type SavedPlan = z.infer<typeof SavedPlanSchema>;
+export type SavedApproval = z.infer<typeof SavedApprovalSchema>;
+export type ApprovalRequest = z.infer<typeof ApprovalRequestSchema>;

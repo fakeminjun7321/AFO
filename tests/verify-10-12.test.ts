@@ -685,7 +685,8 @@ test('V12-01 permanent delete with valid keeper: target gone, keeper sha256 kept
   assert.equal(typeof report.space.freeBytesBefore, 'number'); assert.equal(typeof report.space.freeBytesAfter, 'number');
   assert.match(report.space.note, /되돌릴 수 없습니다/u);
   assert.match(report.space.note, /정확한 회수량이 아닙니다/u);
-  assert.match(report.space.note, /할당 크기 합/u);
+  // Windows has no st_blocks in Node, so the allocated-size sum is unknown there and the note omits it.
+  if (process.platform !== 'win32') assert.match(report.space.note, /할당 크기 합/u);
   assert.match(report.results[0]!.detail, /할당 크기/u);
   t.diagnostic(`free before=${report.space.freeBytesBefore} after=${report.space.freeBytesAfter} logical=${report.space.logicalBytesSelected}`);
   assert.deepEqual(phases(await journal(e, report.runId)).map((s) => s.split(':').slice(1).join(':')), ['intent', 'done']);

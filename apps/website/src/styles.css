@@ -1625,6 +1625,24 @@ html::-webkit-scrollbar-thumb {
   border-top: 0;
   padding-top: 0;
 }
+.help-sample {
+  margin-top: 36px;
+  padding-top: 36px;
+  border-top: 1px solid var(--line);
+}
+.help-sample .section-heading {
+  display: block;
+  margin-bottom: 24px;
+}
+.help-sample .section-heading h2 {
+  font-size: 26px;
+  line-height: 1.3;
+  letter-spacing: -0.035em;
+}
+.help-sample .section-heading p {
+  max-width: 760px;
+  text-align: left;
+}
 .site-shell:not(.home-route) .help-page .faq {
   display: block;
   padding: 42px 0 0;

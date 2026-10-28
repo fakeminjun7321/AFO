@@ -12,20 +12,20 @@ export function FolderDemo() {
   return (
     <section
       id="demo"
-      className="demo-section section-wrap"
+      className="help-sample"
       aria-labelledby="demo-title"
     >
       <div className="section-heading">
-        <h1 id="demo-title">직접 체험</h1>
+        <h2 id="demo-title">샘플 분류 예시</h2>
         <p>
-          샘플 파일 6개로 분류 흐름을 살펴보세요.
+          아래 목록은 설명을 위해 준비한 가상 파일 6개입니다.
           <br />
-          실제 파일은 변경하지 않습니다.
+          버튼과 기준을 바꾸면 미리 작성된 예시 결과를 보여 줍니다. 실제 파일 분석이나 저장한 개인 규칙은 실행하지 않습니다.
         </p>
       </div>
       <div className={`folder-panel${preview ? " is-preview" : ""}`}>
         <div className="folder-toolbar">
-          <h3>나의 폴더</h3>
+          <h3>예시 폴더</h3>
           <div className="folder-actions">
             <span className="sample-count">샘플 6개</span>
             {preview ? (
@@ -34,7 +34,7 @@ export function FolderDemo() {
                 type="button"
                 onClick={reset}
               >
-                다시 체험하기
+                처음으로
               </button>
             ) : (
               <button
@@ -42,23 +42,23 @@ export function FolderDemo() {
                 type="button"
                 onClick={() => setPreview(true)}
               >
-                분류 미리보기
+                예시 결과 보기
               </button>
             )}
           </div>
         </div>
         {preview && (
           <div className="rule-toolbar">
-            <label htmlFor="rule">문서 분류 기준</label>
+            <label htmlFor="rule">분류 예시 기준</label>
             <select
               id="rule"
               value={personal ? "personal" : "default"}
               onChange={(e) => setPersonal(e.target.value === "personal")}
             >
               <option value="default">기본 분류</option>
-              <option value="personal">과목별 정리</option>
+              <option value="personal">과목별 정리 예시</option>
             </select>
-            <span>기준을 바꾸면 미리보기도 달라져요.</span>
+            <span>미리 작성된 두 가지 예시를 비교할 수 있어요.</span>
           </div>
         )}
         <div
@@ -104,8 +104,8 @@ export function FolderDemo() {
         </div>
         <div className="panel-footer" role="status" aria-live="polite">
           {preview
-            ? "샘플 6개의 분류 위치를 확인했어요. 실제 파일은 변경하지 않았습니다."
-            : "파일을 옮기기 전에, 결과부터 확인하세요."}
+            ? "샘플 6개의 예시 결과입니다. 실제 분석 결과는 내 폴더 분석에서 확인하세요."
+            : "이 목록은 가상 파일로 구성된 설명용 예시입니다."}
         </div>
       </div>
     </section>

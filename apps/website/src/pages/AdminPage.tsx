@@ -250,8 +250,8 @@ export function AdminPage() {
         )}
       </section>
       <div className="admin-links">
-        <Link to="/demo">
-          분류 체험 확인 <Arrow />
+        <Link to="/preview">
+          폴더 분석 화면 확인 <Arrow />
         </Link>
         <Link to="/help">
           도움말 <Arrow />

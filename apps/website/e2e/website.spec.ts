@@ -37,15 +37,24 @@ test("public routes, responsive navigation, sample demo and real local rule pers
   await page.getByRole("button", { name: "메뉴 열기" }).click();
   await page
     .getByRole("navigation", { name: "주 메뉴" })
-    .getByRole("link", { name: "직접 체험" })
+    .getByRole("link", { name: "내 폴더 분석" })
     .click();
-  await expect(page).toHaveURL(/\/demo$/);
-  await page.getByRole("button", { name: "분류 미리보기" }).click();
-  await page.getByLabel("문서 분류 기준").selectOption("personal");
+  await expect(page).toHaveURL(/\/preview$/);
+  await expect(page.getByRole("heading", { name: /폴더를 열고/ })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "주 메뉴" }).getByRole("link", { name: "직접 체험" })).toHaveCount(0);
+  // Old bookmarks lead to Help, where the fixed sample is explicitly explained.
+  await page.goto("/demo");
+  await expect(page).toHaveURL(/\/help$/);
+  await expect(page.locator("h1")).toHaveCount(1);
+  await expect(page.getByRole("heading", { name: "샘플 분류 예시" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "예시 폴더" })).toBeVisible();
+  await expect(page.getByText(/실제 파일 분석이나 저장한 개인 규칙은 실행하지 않습니다/)).toBeVisible();
+  await page.getByRole("button", { name: "예시 결과 보기" }).click();
+  await page.getByLabel("분류 예시 기준").selectOption("personal");
   await expect(page.getByText("학교/물리", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "다시 체험하기" }).click();
+  await page.getByRole("button", { name: "처음으로" }).click();
   await expect(
-    page.getByRole("button", { name: "분류 미리보기" }),
+    page.getByRole("button", { name: "예시 결과 보기" }),
   ).toBeVisible();
   await page.goto("/rules");
   await page.getByRole("button", { name: /규칙 추가/ }).click();

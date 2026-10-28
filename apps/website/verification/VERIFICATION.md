@@ -65,3 +65,13 @@ Not verified / 미검증: 실제 계정 로그인·클라우드 규칙 저장·C
 ## 남은 단계
 
 로그인·규칙 동기화·로컬 CLI 연결은 각각 별도 통합과 실제 결과 검증이 필요하다. Hosting의 성공이 Auth·Firestore·로컬 파일 처리의 성공을 증명하지 않는다. 본 채널은 만료되는 미리보기이며 프로덕션 live 전환이나 PR 병합은 실행하지 않았다.
+
+## 2026-10-28 샘플을 도움말로 통합
+
+- 기준: main `43f8a9f`, 작업 브랜치 `one-way/afo-demo-help`, 이슈 #32 후속 사용자 수정 요청.
+- 구현: 주요 CTA와 로그인 없이 시작하기는 `/preview`, 고정 샘플은 `/help` 안의 설명용 예시로 통합. `/demo`는 `/help`로 replace 이동. 가상 파일·미리 작성된 결과이며 실제 분류나 개인 규칙을 실행하지 않는다고 명시.
+- Unit-verified / 단위 검증: 웹 테스트 7개 통과.
+- Simulator-verified / 로컬 브라우저 검증: Firebase Emulator + headless Chromium E2E 21개 통과. 기존 주소 이동, 단일 h1, 샘플 전환·초기화, 모바일 메뉴의 실제 분석 진입과 합성 폴더 분석을 확인. 화면 너비 320/390/1440px 경로 검사, 홈은 320/390/768/1024/1440px 검사.
+- 운영 빌드도 localhost:15179에서 `/demo`→도움말→예시 결과→과목별 예시, 로그인 없이 내 폴더 분석하기→`/preview`를 확인. 1440/390px 렌더, 페이지 제목, 가로 넘침, 페이지 오류 없음 확인. Browser plugin not available; regular Playwright를 백그라운드로 사용. 이미지와 임시 검수 스크립트는 `/tmp/afo-help-*.png`, `/tmp/afo-demo-help-qa.mjs`에 저장.
+- 명령: website `npm test`, `npm run build`, `npm run build:emulator`, Java PATH를 지정한 `npm run test:e2e`. 운영 빌드에는 기존 500kB 초과 청크 경고가 남음.
+- 공개 Hosting 요청: 0회. 실제 공개 사이트에 이 수정 배포, Google 본인 인증, 네이티브 폴더 선택 창 수동 조작, 실물 모바일은 미검증. 이번 로컬 검사를 공개 서비스 검증으로 표현하지 않음.

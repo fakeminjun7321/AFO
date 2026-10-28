@@ -207,8 +207,8 @@ export function AuthPage({ mode }: { mode: Mode }) {
             로그인으로 돌아가기
           </Link>
         )}
-        <Link className="auth-back-demo" to="/demo">
-          로그인 없이 체험하기
+        <Link className="auth-back-demo" to="/preview">
+          로그인 없이 내 폴더 분석하기
         </Link>
       </div>
     </section>

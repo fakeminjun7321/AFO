@@ -10,7 +10,6 @@ import {
 import { Header } from "./components/Header";
 import { Hero } from "./components/Hero";
 import { HomeContent } from "./components/HomeContent";
-import { FolderDemo } from "./features/demo/FolderDemo";
 import { Footer } from "./components/Footer";
 import { HelpPage } from "./pages/HelpPage";
 import { StatusPage } from "./pages/StatusPage";
@@ -35,7 +34,6 @@ const titles: Record<string, string> = {
   "/guide": "사용 방법",
   "/help": "도움말",
   "/status": "개발 현황",
-  "/demo": "직접 체험",
   "/preview": "내 폴더 미리보기",
   "/faq": "자주 묻는 질문",
   "/login": "로그인",
@@ -83,7 +81,7 @@ function Shell() {
           <Route path="/help" element={<HelpPage />} />
           <Route path="/status" element={<StatusPage />} />
           <Route path="/guide" element={<Navigate to="/help" replace />} />
-          <Route path="/demo" element={<FolderDemo />} />
+          <Route path="/demo" element={<Navigate to="/help" replace />} />
           <Route path="/preview" element={<Suspense fallback={<p className="route-status" role="status">폴더 분석 화면을 열고 있어요.</p>}><LocalPreview /></Suspense>} />
           <Route path="/faq" element={<Navigate to="/help" replace />} />
           <Route

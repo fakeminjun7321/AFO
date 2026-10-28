@@ -281,10 +281,13 @@ test('R18-16 AFO_STATE_DIR and the default OS path are honoured when no stateDir
   await assert.rejects(analyzeRoot(work, { reference }), code('STATE_DIR_CONFLICT'));
   process.env['AFO_STATE_DIR'] = e.state;
   assert.equal((await analyzeRoot(work, { reference })).preview.items.length, 1);
-  // Default path: HOME/Library/Application Support/AFO. With HOME = the work root's folder it lies inside the work root.
+  // Default path: HOME/Library/Application Support/AFO on macOS, %LOCALAPPDATA%\AFO on Windows. Pointing it at the work root puts it inside.
   delete process.env['AFO_STATE_DIR'];
-  process.env['HOME'] = e.dir('work');
-  await assert.rejects(analyzeRoot(work), code('STATE_DIR_CONFLICT'));
+  const key = process.platform === 'win32' ? 'LOCALAPPDATA' : 'HOME';
+  const saved = process.env[key];
+  process.env[key] = e.dir('work');
+  try { await assert.rejects(analyzeRoot(work), code('STATE_DIR_CONFLICT')); }
+  finally { if (saved === undefined) delete process.env[key]; else process.env[key] = saved; }
   process.env['HOME'] = FAKE_HOME;
   assert.equal((await analyzeRoot(work)).preview.items.length, 1, 'default path outside the work root is accepted');
   assert.deepEqual(await oracle(e.base), before);

@@ -7,8 +7,9 @@ import { AfoError, ProfileStoreSchema } from '../packages/contracts/src/index.js
 import type { ErrorCode, RuleProfile, RuleProfileV2 } from '../packages/contracts/src/index.js';
 import { confirmProfile, suggestProfile } from '../packages/engine/src/index.js';
 import { analyzeRoot, issueReferenceGrant, issueRootGrant, readReference } from '../packages/filesystem/src/index.js';
-import { addCorrection, disableProfile, enableProfile, loadProfile, profileFile, removeCorrection, resetProfile, saveConfirmedProfile,
-  setRuleEnabled } from '../packages/filesystem/src/profiles.js';
+import { PROFILE_LOCK_WAIT_MS, addCorrection, disableProfile, enableProfile, loadProfile, profileFile, removeCorrection, resetProfile,
+  saveConfirmedProfile, setRuleEnabled } from '../packages/filesystem/src/profiles.js';
+import { withRootLock } from '../packages/filesystem/src/lock.js';
 import type { ProfileStoreOptions } from '../packages/filesystem/src/profiles.js';
 import { createFixture, manifest } from './helpers.js';
 import type { TestContext } from 'node:test';
@@ -63,7 +64,8 @@ test('confirmed rules are saved in app state only; reference originals and work 
   assert.equal(preview.profileId, saved.id); assert.equal(preview.profileRevision, saved.revision);
   const after = await manifest(base);
   for (const key of Object.keys(before)) if (!key.startsWith('state')) assert.deepEqual(after[key], before[key], key);
-  assert.deepEqual(Object.keys(after).filter((k) => !(k in before)).sort(), ['state/profiles', 'state/profiles/active.json']);
+  // locks/ is the profile lock folder (#18 F-2); no lock file is left behind.
+  assert.deepEqual(Object.keys(after).filter((k) => !(k in before)).sort(), ['state/locks', 'state/profiles', 'state/profiles/active.json']);
 });
 
 test('restart: a separate node process saves, another reloads and reproduces the same classification', async (t) => {
@@ -352,4 +354,27 @@ test('O-4 expectedRevision null pins an empty store; expectedCorrupt pins the da
   assert.equal(await loadProfile(o), null);
   // A fingerprint is not accepted for a healthy store.
   await assert.rejects(saveConfirmedProfile(v1, { ...o, expectedCorrupt: now.fingerprint }), code('PROFILE_CHANGED'));
+});
+
+test('F-2 changes wait for the profile lock: released soon → the change runs; still held → LOCKED_BY_OTHER, nothing written', async (t) => {
+  const { state, o } = await setup(t);
+  const profiles = path.join(state, 'profiles');
+  await mkdir(profiles);
+  const s = await lstat(profiles, { bigint: true });
+  const identity = { device: String(s.dev), inode: String(s.ino) };
+  let release!: () => void;
+  const held = withRootLock(state, identity, () => new Promise<void>((resolve) => { release = resolve; }));
+  await new Promise((r) => setTimeout(r, 50));
+  const waiting = addCorrection({ type: 'file-name', name: 'a.pdf' }, '보관', { ...o, expectedRevision: null });
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(await loadProfile(o), null, 'nothing written while the lock is held');
+  release(); await held;
+  assert.equal((await waiting).corrections.length, 1);
+  const started = Date.now();
+  await withRootLock(state, identity, async () => {
+    await assert.rejects(addCorrection({ type: 'file-name', name: 'b.pdf' }, '보관', o), code('LOCKED_BY_OTHER'));
+    assert.ok(Date.now() - started >= PROFILE_LOCK_WAIT_MS, 'retried for the whole wait');
+    assert.equal(asProfile(await loadProfile(o)).corrections.length, 1);
+  });
+  assert.deepEqual(await readdir(path.join(state, 'locks')), [], 'no lock file left behind');
 });

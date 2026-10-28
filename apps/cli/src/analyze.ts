@@ -19,7 +19,8 @@ export async function readJsonFile(file: string): Promise<unknown> {
   return JSON.parse(await readFile(file, 'utf8')) as unknown;
 }
 
-export interface ProfileInfo { source: 'saved' | 'file' | 'none' | 'skipped' | 'corrupt'; id: string | null; revision: number | null;
+/** 'stale': the saved profile was loaded but not applied because its reference folder looks changed (preview.profileNotice). */
+export interface ProfileInfo { source: 'saved' | 'stale' | 'file' | 'none' | 'skipped' | 'corrupt'; id: string | null; revision: number | null;
   status: string | null; warning?: string }
 export interface AnalyzeValues { profile?: string | undefined; reference?: string | undefined; 'no-saved-rules'?: boolean | undefined;
   move?: string[] | undefined; remember?: boolean | undefined }
@@ -29,8 +30,11 @@ export interface AnalyzeContext { warn: (line: string) => void; stateDir: () => 
 export interface Target { grant: RootGrant; referenceGrant: ReferenceGrant | undefined; analysis: Analysis; info: ProfileInfo; saved: Stored;
   picked: { fileId: string; relativePath: string; target: string }[] }
 
-export function profileLine(info: ProfileInfo): string {
-  return info.source === 'file' ? `개인 규칙: --profile 파일 적용(ID ${info.id}, revision ${info.revision}, 상태 ${info.status})`
+export function profileLine(info: ProfileInfo, stale = info.source === 'stale'): string {
+  const notApplied = '이번 분석에는 적용하지 않음(참고 폴더 변경 감지, 기본 분류, 참고 파일 보호는 유지)';
+  return info.source === 'file' ? stale ? `개인 규칙: --profile 파일(ID ${info.id}, revision ${info.revision}) — ${notApplied}`
+      : `개인 규칙: --profile 파일 적용(ID ${info.id}, revision ${info.revision}, 상태 ${info.status})`
+    : info.source === 'stale' ? `개인 규칙: 저장된 프로필(revision ${info.revision}) — ${notApplied}`
     : info.source === 'skipped' ? '개인 규칙: --no-saved-rules로 적용하지 않음(기본 분류)'
     : info.source === 'none' ? '개인 규칙: 저장된 규칙 없음(기본 분류)'
     : info.source === 'corrupt' ? '개인 규칙: 저장된 프로필 손상으로 적용하지 않음(기본 분류)'
@@ -99,5 +103,6 @@ export async function analyzeTarget(target: string, values: AnalyzeValues, ctx: 
     if (item.reasonCode === 'PROTECTED_REFERENCE') throw new Error(`참고한 기존 파일은 옮기지 않습니다: ${p.relativePath}`);
     if (item.reasonCode === 'READ_FAILED') throw new Error(`읽지 못한 파일은 수정할 수 없습니다: ${p.relativePath}`);
   }
+  if (analysis.preview.profileNotice?.code === 'PROFILE_STALE' && info.source === 'saved') info = { ...info, source: 'stale' };
   return { grant, referenceGrant, analysis, info, saved, picked };
 }

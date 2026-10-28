@@ -131,7 +131,7 @@ async function preview(target: string, values: AnalyzeValues, ctx: { json: boole
   const once = new Set(picked.map((p) => p.fileId));
   return ['AFO 정리 미리보기 — 실제 파일은 변경하지 않았습니다.',
     `분석: ${result.items.length}개 / 스캔 ${result.scanComplete ? '완료' : '일부 미완료'} / 제외·오류 ${result.skipped.length}개`,
-    profileLine(info),
+    profileLine(info, analysis.preview.profileNotice?.code === 'PROFILE_STALE'),
     ...(result.profileNotice ? [`경고: ${result.profileNotice.reason} 'rules list'로 확인한 뒤 suggest-rules → rules save로 다시 저장하세요.`] : []),
     ...result.items.map((item) => `[${labels[item.action]}] ${item.source}${item.destination ? ` → ${item.destination}` : ''}` +
       `${once.has(item.fileId) ? values.remember ? ' (사용자 수정, 이후에도 적용 저장)' : ' (이번만 적용)' : ''}\n  ${item.reason}`),

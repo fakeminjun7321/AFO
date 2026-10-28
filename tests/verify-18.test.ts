@@ -503,7 +503,7 @@ test('V18-11 restart: one node process saves, two others load and analyze; same 
   const after = await oracle(e.base);
   for (const key of Object.keys(before)) if (!key.startsWith('state')) assert.equal(after[key], before[key], key);
   assert.deepEqual(Object.keys(after).filter((k) => !(k in before)).sort(),
-    ['state/profiles', 'state/profiles/active.json', 'state2', 'state2/profiles', 'state2/profiles/active.json']);
+    ['state/locks', 'state/profiles', 'state/profiles/active.json', 'state2', 'state2/locks', 'state2/profiles', 'state2/profiles/active.json']);
 });
 
 test('V18-12a a separate reference folder renamed after saving: rules still apply relative to the work root', async (t) => {

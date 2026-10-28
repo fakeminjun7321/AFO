@@ -107,7 +107,7 @@ function humanPlan(plan: OperationPlan, previous: SavedPlan | null, choices: Ret
   const lines = ['AFO 정리 계획 — 실제 파일은 변경하지 않았습니다(계획만 앱 상태 폴더에 저장).',
     `계획 ID: ${plan.id}`, `만료: ${plan.expiresAt} (지나면 다시 plan 하세요)`,
     `분석: ${extra.preview.items.length}개 / 스캔 ${extra.preview.scanComplete ? '완료' : '일부 미완료'} / 제외·오류 ${extra.preview.skipped.length}개`,
-    profileLine(extra.info),
+    profileLine(extra.info, extra.preview.profileNotice?.code === 'PROFILE_STALE'),
     `삭제 방식: ${plan.deleteMode === 'trash' ? '휴지통(trash) — OS 휴지통에서 복원 가능' : `영구 삭제(permanent) — 되돌릴 수 없습니다`}`];
 
   // Operation IDs hash the file identity, target and keeper, so an unchanged ID is the same operation the user already saw.

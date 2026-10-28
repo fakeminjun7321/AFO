@@ -81,3 +81,69 @@ Release blocker and unblock condition: 데이터 손실·덮어쓰기·루트 �
 - O-3 일회성 override는 `RelativePathSchema`만 검사해 숨김 폴더(`.숨김/a.pdf`)를 목적지로 받습니다. 저장 수정은 숨김 목적지를 거부하므로 둘이 다릅니다. 참고⊂작업일 때 override로 참고 하위 폴더에 새 이름 파일을 넣는 것은 허용됩니다(같은 이름은 `DEST_CONFLICT`). CLI/#8에서 정책 확인 필요.
 - O-4 `expectedRevision`은 "아직 저장된 프로필 없음"을 표현하지 못합니다. 빈 저장소에 `expectedRevision: 0` 또는 `1`을 주면 모두 `PROFILE_CHANGED`. 첫 저장 경합은 막을 수 없고, 프로세스 간 잠금도 없습니다(#13 범위, builder 주석과 일치).
 - 확인된 결정 그대로: `.tar.gz`·`.tgz`는 압축(`default-2`), `report.pdf.exe`는 개인 규칙이 있어도 review, 저장 수정 ID는 조건+목적지로 결정적.
+
+## 재검증(2026-10-28)
+
+역할: verifier. 대상은 `origin/feat/18-land`의 `76f2fdf`(PR #47, main `43f8a9f` 위 병합본)입니다. 검증 브랜치 `verify-18-recheck`.
+제품 코드(`packages/`, `apps/`)와 builder 테스트는 수정하지 않았고 `tests/verify-18-recheck.test.ts`(R18-01~28)와 이 절만 추가했습니다.
+기대값은 손으로 쓴 표이며 제품의 확장자 표를 import하지 않았습니다. 모든 사례는 자체 oracle(inode·nlink·mode·size·mtime·ctime·sha256)로 분석 전후 동일을 확인합니다.
+
+```text
+Issue / PR / Commit: #18 / PR #47 / 대상 76f2fdf, 검증 브랜치 verify-18-recheck
+Environment: macOS 27.0.1 (26A434) arm64, 실물 Mac, Node v24.18.0. temp 볼륨 APFS(대소문자·정규화 구분 없음). Windows 미검증(CI 대기)
+Fixture: realpath(os.tmpdir())/afo-test-* 새 mkdtemp 폴더. 상태 폴더는 그 안의 temp(stateDir 또는 AFO_STATE_DIR). HOME은 빈 temp(가짜 홈)
+Steps: git fetch origin && git checkout -b verify-18-recheck origin/feat/18-land
+  rm -rf dist && npm run typecheck && npm test                      (검증 테스트 추가 후)
+  node --test dist/tests/*.test.js → exit 0 (todo 실패는 종료 코드에 반영되지 않음)
+  변이 확인: dist 사본에서 dev/inode 일치 제거 → R18-08 실패, analyzeRoot의 상태 폴더 검사 제거 → R18-15/16/25 실패. 확인 후 다시 빌드
+Result: tests 250, pass 245, fail 0, skipped 2(실제 휴지통), todo 3 (verify-18-recheck: 28 = pass 25 + todo 3(F-2 ×2, F-3))
+After run: ~/Library/Application Support/AFO 전후 모두 없음, $TMPDIR/afo-test-* 잔여 0개
+Verification level: Unit-verified + macOS 실물 temp 파일(Physical, 이 Mac). Windows·CI(VM) 미실행
+```
+
+### 수정 항목별 판정
+
+| 항목 | 판정 | 근거(테스트) |
+| --- | --- | --- |
+| F-1 작업 루트 안 참고 폴더 이름 변경 | PASS | R18-02: `정리→정리2` 뒤 원본 6개(규칙 없는 `메모.txt`·`기타/단독.hwp` 포함) 모두 `keep/PROTECTED_REFERENCE`, `PROFILE_STALE`, 개인 규칙 미적용(새 파일은 `문서/`), `profileId/profileRevision = null`, 중복·큰 파일 후보 없음 |
+| F-1 작업 루트 안 다른 위치로 이동 | PASS | R18-03 `보관/2026/정리`: 같은 보호·알림 |
+| F-1 복사(새 inode) | PASS | R18-04: 원본과 `정리 사본` 모두 보호, 알림에 `정리 사본` 표시, 중복 후보 없음 |
+| F-1 바깥으로 이동 | PASS | R18-05: 작업 루트는 개인 규칙 적용·알림 없음. 옮긴 폴더나 그 상위를 작업 루트로 분석하면 보호 + 알림 |
+| F-1 삭제 후 같은 경로에 복원(새 inode, 교차 볼륨 이동 모사) | PASS | R18-06: 경로 ID만 일치 → 보호 + 알림 |
+| F-1 근거 예시 파일만 이름 변경 | PASS | R18-07: 폴더 식별 유지 → 보호, 규칙 적용, 알림 없음. R18-08: 폴더·근거 모두 이름 변경 → dev/inode로 인식 |
+| F-1 근거 예시 1개/2개가 다른 폴더에 | PASS | R18-09: 1개는 보호 안 함(일반 파일로 규칙 적용), 2개면 그 폴더 보호 + 알림 |
+| F-1 초안 뒤 이름 변경, 그 다음 저장(식별 없음) | PASS | R18-10: `referenceRootIdentity` 없음이어도 근거 예시로 보호 + 알림 |
+| F-1 저장 때 대소문자·NFD가 다른 경로 | PASS | R18-11: realpath가 실제 이름으로 정규화 → 거짓 알림 없음 |
+| stale 분석은 저장소에 쓰지 않음 | PASS | R18-14: 저장 파일 바이트 동일, 상태 `confirmed` 유지 |
+| V18-12a 기대값 변경 판정 | **타당** | R18-13: 이름 바뀐 별도 참고 폴더 자체를 작업 루트로 분석하면 규칙이 다루지 않는 파일(`메모.txt`·`기타/단독.hwp`·`영상.mov`)까지 모두 `PROTECTED_REFERENCE`. 이전 기대값 `ALREADY_PLACED`는 규칙 목적지와 우연히 일치한 파일만 지키는 결과였습니다. 경로 ID만 쓰던 방식이라면 나머지 파일은 기본 규칙 이동 대상이었을 것입니다(V18-12b·F-1과 같은 원인, 코드 기준 추론). 바뀌지 않은 원래 폴더는 알림 없이 보호, 무관한 작업 루트에는 규칙 적용·알림 없음 |
+| O-2 상태 폴더 겹침 | PASS | R18-15: 작업 안(존재/아직 없는 하위)·같음·작업을 포함·symlink로 작업 안을 가리킴·대소문자 다른 경로·참고 안·참고와 같음·참고 하위 모두 `STATE_DIR_CONFLICT`, 아무것도 만들지 않음. R18-16: `AFO_STATE_DIR`가 작업/참고 안이면 거부, 옵션 없을 때 기본 경로(`HOME/Library/Application Support/AFO`)가 작업 안이면 거부, 분석은 기본 상태 폴더를 만들지 않음. R18-25: CLI `preview` 종료 코드 1, `AFO 오류[STATE_DIR_CONFLICT]` |
+| O-3 이번만 override 목적지 | PASS | R18-17: `.숨김`·`보관/.git`·`..`·`../밖`·`./보관`·절대·`C:/x`·역슬래시·`CON`·`nul`·`aux/하위`·`LPT1.txt`·`com9`·빈 값·끝 `/`·끝 `.`/공백·NUL·4096자 초과 23종 거부. `숙제`·`2학기/숙제 폴더`·`a..b`·`console`은 `USER_OVERRIDE` 이동. 참고 원본에 override를 줘도 `keep`. R18-18: CLI `--move` 7종 × (`--remember` 유무) 종료 코드 2, stdout 비어 있음, 상태 폴더 변화 없음 |
+| O-4 순차 고정 | PASS | R18-19: 빈 저장소에 `0`은 거부·`null`은 허용, 활성 저장소에 `null` 거부, revision+fingerprint 동시 지정 거부, 손상 파일에 revision/`null` 거부, 다른 손상 파일로 바뀐 뒤 옛 fingerprint 거부, 거부 시 쓰기 없음 |
+| O-4 빈 저장소 동시 첫 저장(두 프로세스) | **FAIL → F-2** | R18-20(todo): 8/8 라운드에서 두 프로세스 모두 성공 응답(각각 다른 프로필 ID, 둘 다 revision 2), 저장소에는 하나만 남고 다른 쪽 수정은 사라짐 |
+| O-4 손상 파일 위 동시 reset | PASS(보존) / 참고 | R18-21: 8/8 라운드 손상 바이트가 `corrupt-*.json` 1개로 정확히 보존, 최종 empty. 다만 7/8 라운드에서 두 reset 모두 성공 응답(두 번째의 `ENOENT`를 무시) — 결과가 같아 손실은 없음 |
+| O-4 손상 파일 위 save와 reset 경쟁 | **FAIL → F-2** | R18-22(todo, 시점 의존): 시작 지연 0–7 ms를 바꿔 가며 8라운드. 실행마다 1~2라운드에서 둘 다 성공 응답·최종 empty(저장했다는 프로필이 사라짐). 손상 바이트는 매번 1개 보존 |
+| CLI stale 경고 | PASS / 부분 F-3 | R18-23: 실제 프로세스 `preview`가 `경고:` 줄을 정확히 1개 출력(stdout), 원본은 `[유지] 정리2/…`, 새 파일은 `문서/`, `--json`에 `profileNotice.code = PROFILE_STALE`·`profileId = null`, 저장 파일 바이트 불변. 단 바로 위 줄이 `개인 규칙: 저장된 프로필 적용(revision 2)` → F-3 |
+| `.tar.gz`/`.tgz` 공용 기본 표 | PASS | R18-26: 18개 이름에 대해 `defaults.ts`의 `defaultCategory`, `classifyFile`, CLI 프로세스 `preview --json --no-saved-rules`가 손 작성 표와 모두 일치(`archive.tar.gz`·`BIG.TAR.GZ`·`.tgz` → 압축, `report.pdf.exe`·`photo.jpg.gz`·`data.tar.zip`·`a.tar.tgz`·`archive.tar.gz.exe` → review `COMPOUND_EXTENSION`) |
+| `report.pdf.exe`는 개인 규칙이 있어도 review | PASS | R18-27: 학습한 `.exe → 프로그램` 규칙이 있어도 review, `setup.exe`만 이동. 학습한 `.gz → 백업` 규칙은 `x.tar.gz`에 적용, `y.tgz`는 기본 `압축/` |
+
+### 결함
+
+#### F-2 프로필 저장소에 프로세스 간 상호 배제가 없어 `expectedRevision: null`/`expectedCorrupt` 고정이 동시 실행에서 지켜지지 않음 (#18/#13, 중간)
+
+- 재현(R18-20): 빈 상태 폴더에서 두 node 프로세스가 같은 시각에 `addCorrection({type:'file-name', name:'p<i>.pdf'}, '보관<i>', { stateDir, expectedRevision: null })`.
+- 관측: 8/8 라운드 모두 두 호출이 성공을 반환(서로 다른 `local-*` ID, 둘 다 revision 2). `active.json`에는 하나만 남고 수정 1개뿐 → 다른 쪽 CLI는 "이후에도 적용하도록 저장"이라고 출력했지만 저장되지 않음.
+  R18-22: 손상 파일 위 `saveConfirmedProfile(… expectedCorrupt)`와 `resetProfile(… expectedCorrupt)`가 둘 다 성공 응답, 최종 empty(저장 성공이라던 프로필 소실). 손상 바이트 보존은 지켜짐.
+- 원인: `current()` 검사와 `writeJsonAtomic` 교체 사이에 잠금이 없음. `setAside`가 `ENOENT`(다른 프로세스가 이미 옮김)를 조용히 성공으로 처리.
+- 기대: 패킷 "하나만 성공", CARRYOVER "첫 저장·손상 위 reset 경쟁 고정". 사용자 파일 손실은 없고(앱 상태만), 실행 계층(#8/#10) 이전이므로 출시 차단 여부는 coordinator 판단. 제안: 상태 폴더 `locks/` 아래 프로필 잠금(lock.ts 방식)으로 검사·쓰기 직렬화, `setAside`의 `ENOENT`는 `PROFILE_CHANGED`로.
+
+#### F-3 stale 프로필인데 CLI 사람용 출력이 "저장된 프로필 적용"이라고 표시 (#18 CLI, 낮음)
+
+- 재현(R18-24): 저장 뒤 작업 루트 안 참고 폴더 이름 변경 → `preview <work>`.
+- 관측: `개인 규칙: 저장된 프로필 적용(revision 2)` 다음 줄에 `경고: … 개인 규칙을 적용하지 않습니다`. 두 줄이 서로 모순. JSON `profile.source`도 `saved`(단 `preview.profileNotice`와 `profileId: null`로 구분 가능).
+- 제안: `profileNotice`가 있으면 profileLine을 "저장된 프로필이 바뀐 참고 폴더 때문에 적용하지 않음(기본 분류, 참고 파일 보호는 유지)"처럼 바꿈.
+
+### 관찰
+
+- O-5 근거 예시 이름 2개가 작업 루트 최상위 구조에 그대로 있으면(R18-12: `수학/수학_과제1.pdf`·`수학/수학_과제2.pdf`, 내용은 다름) 작업 루트 전체가 보호되고 알림이 "작업 폴더 자체"로 나옵니다. 데이터 쪽으로는 안전하지만, 같은 이름의 파일을 우연히 가진 폴더는 정리 대상이 전부 `keep`이 됩니다. 사용자 테스트에서 오탐 빈도를 보고 임계값(2개)·내용 비교 여부를 결정하세요.
+- O-6 변이 확인에서 dev/inode 일치를 끄면 R18-02/03(이름 변경·이동)은 여전히 통과합니다. 근거 예시 2개 이상 규칙이 독립 보호망이기 때문이며, dev/inode 경로 자체는 R18-08(근거 이름까지 바꾼 경우)만 단독으로 검증합니다.
+- O-7 잘못된 override는 항목 review가 아니라 `analyzeRoot` 전체가 Zod 오류로 실패합니다. CLI는 그 전에 `--move` 형식을 검사해 종료 코드 2로 막으므로 사용자 경로에는 영향 없음.

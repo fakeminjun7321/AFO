@@ -274,7 +274,8 @@ export function protectedReferencePaths(workRoot: string, sources: { root: strin
 /** stateDir: the app state folder in use (default resolveStateDir()); a work or reference root overlapping it is refused. */
 export interface AnalyzeOptions extends ScanOptions { profile?: unknown; reference?: ReferenceGrant; overrides?: Record<string, string>;
   stateDir?: string }
-export interface Analysis { preview: Preview; suggestedProfile: ReturnType<typeof suggestProfile> | null;
+/** scan: the hashed snapshot the preview was built from (same files and hashes). Pass it to buildPlan instead of scanning again. */
+export interface Analysis { preview: Preview; scan: ScanResult; suggestedProfile: ReturnType<typeof suggestProfile> | null;
   reference: ReferenceScan | null; protected: ProtectedEntry[] }
 
 /** scan → reference metadata → hash size candidates (protected excluded) → preview. No filesystem writes. */
@@ -301,7 +302,7 @@ export async function analyzeRoot(grant: RootGrant, options: AnalyzeOptions = {}
   const applied = stored.stale === null ? profile : undefined;
   const built = buildPreview(hashed, { protectedPaths, ...(applied ? { profile: applied } : {}), ...(options.overrides ? { overrides: options.overrides } : {}) });
   const preview = stored.stale === null ? built : PreviewSchema.parse({ ...built, profileNotice: { code: 'PROFILE_STALE', reason: stored.stale } });
-  return { preview,
+  return { preview, scan: hashed,
     suggestedProfile: reference ? suggestProfile(reference) : null, reference, protected: protectedEntries };
 }
 

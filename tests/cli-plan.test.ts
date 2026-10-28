@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { access, readdir, writeFile } from 'node:fs/promises';
+import { access, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { TestContext } from 'node:test';
 import { OperationPlanSchema, PreviewSchema } from '../packages/contracts/src/index.js';
 import type { OperationPlan, Preview } from '../packages/contracts/src/index.js';
 import { approvalChoices, approvalCode } from '../packages/engine/src/index.js';
+import { LAST_COPY_REASON } from '../packages/engine/src/plan.js';
 import { loadSavedPlan } from '../packages/filesystem/src/approvals.js';
 import { createFixture, manifest } from './helpers.js';
 
@@ -169,6 +170,37 @@ test('plan: refusals and exit codes (docs/CLI.md); nothing is written into the w
   await assert.rejects(access(inside));
   assert.deepEqual(await manifest(dirs.work), before);
   assert.deepEqual(await readdir(dirs.state), [], 'refused plans store nothing');
+});
+
+test('plan: picking every copy of one content needs --delete-last-copy; without it exit 1 and nothing is stored', async (t) => {
+  const { dirs, invoke, plan, human } = await setup(t);
+  const before = await manifest(dirs.work);
+  const both = ['--delete-file', 'report.pdf', '--delete-file', 'report copy.pdf'];
+  const refused = invoke(['plan', dirs.work, ...both]);
+  assert.equal(refused.status, 1, refused.stderr);
+  assert.match(refused.stderr, /^AFO 오류\[KEEPER_INVALID\]: 모든 사본이 삭제됩니다: .*--delete-last-copy/u);
+  assert.equal(refused.stdout, '');
+  assert.deepEqual(await readdir(dirs.state), [], 'a refused plan stores nothing');
+  const flagOnly = invoke(['plan', dirs.work, '--delete-last-copy']);
+  assert.equal(flagOnly.status, 2, flagOnly.stderr);
+  assert.match(flagOnly.stderr, /--delete-file과 함께/u);
+
+  const out = plan(...both, '--delete-last-copy', '--delete-mode', 'permanent');
+  const deletes = out.plan.operations.filter((op) => op.kind === 'delete');
+  assert.deepEqual(deletes.map((op) => [op.source, op.keeper]).sort(), [['report copy.pdf', null], ['report.pdf', null]]);
+  assert.ok(deletes.every((op) => op.reason === LAST_COPY_REASON));
+  const text = human(...both, '--delete-last-copy');
+  assert.match(text, /경고: --delete-last-copy로 같은 내용의 마지막 사본까지 지우는 작업 2개/u);
+  // One copy of the pair (the other stays) and a unique file need no flag.
+  assert.equal(invoke(['plan', dirs.work, '--delete-file', 'report.pdf', '--delete-file', 'clip.mp4']).status, 0);
+  assert.deepEqual(await manifest(dirs.work), before);
+});
+
+test('plan builds from the analysis scan: the CLI plan module never scans or hashes on its own', async () => {
+  // Regression guard for the second scan/hash that used to run between analysis and buildPlan (double I/O, race window).
+  const source = await readFile(fileURLToPath(new URL('../apps/cli/src/plan.js', import.meta.url)), 'utf8');
+  assert.doesNotMatch(source, /\b(scanRoot|hashCandidates|scanFolder|analyzeRoot)\b/u);
+  assert.match(source, /analysis\.scan|\{ preview, scan \} = analysis/u);
 });
 
 test('plan: bound to the saved profile revision; a --profile file that is not the saved profile is refused', async (t) => {

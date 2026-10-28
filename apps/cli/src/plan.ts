@@ -4,7 +4,7 @@ import { AfoError, PERMANENT_DELETE_PHRASE, approvalModeKind, isAfoError } from 
 import type { ApprovalMode, OperationKind, OperationPlan, PlanOperation, Preview, ReviewItem, SavedPlan } from '../../../packages/contracts/src/index.js';
 import { approvalChoices, buildPlan, diffPlans, pathKey } from '../../../packages/engine/src/index.js';
 import type { DeleteSelection } from '../../../packages/engine/src/index.js';
-import { hashCandidates, scanRoot } from '../../../packages/filesystem/src/index.js';
+import { LAST_COPY_REASON, LastCopyError } from '../../../packages/engine/src/plan.js';
 import { loadSavedPlan, savePlan } from '../../../packages/filesystem/src/approvals.js';
 import { readJson, statePaths, writeJsonAtomic } from '../../../packages/filesystem/src/state.js';
 import { analyzeTarget, profileLine } from './analyze.js';
@@ -16,7 +16,8 @@ import { usage } from './rules.js';
  * Nothing here writes the work root, and no approval is issued: codes are only displayed for the later `apply`.
  */
 export interface PlanValues extends AnalyzeValues {
-  'delete-mode'?: string | undefined; 'delete-duplicates'?: string | undefined; 'delete-file'?: string[] | undefined }
+  'delete-mode'?: string | undefined; 'delete-duplicates'?: string | undefined; 'delete-file'?: string[] | undefined;
+  'delete-last-copy'?: boolean | undefined }
 
 /** CLI-owned index plans/latest-<rootId>.json: the last plan shown for a root, so the next plan can show only what changed. */
 const LatestSchema = z.strictObject({ formatVersion: z.literal(1), planId: z.string().regex(/^[a-f0-9]{64}$/u) });
@@ -42,14 +43,13 @@ export async function planCommand(target: string, values: PlanValues, ctx: { jso
   const dupPrefixes = dupSpec === undefined || dupSpec === 'all' ? [] : dupSpec.split(',').map((s) => s.trim().toLowerCase());
   if (dupPrefixes.some((p) => !/^[a-f0-9]{8,64}$/u.test(p)))
     throw usage('--delete-duplicates는 all 또는 쉼표로 구분한 중복 그룹 해시(앞 8자 이상)입니다.');
+  const allowLastCopy = values['delete-last-copy'] === true;
+  if (allowLastCopy && !(values['delete-file'] ?? []).length) throw usage('--delete-last-copy는 --delete-file과 함께 써야 합니다.');
 
   const { grant, analysis, info, picked } = await analyzeTarget(target, values, { ...ctx, writesState: true });
-  const { preview } = analysis;
-  // analyzeRoot does not return its hashed scan, so take a second snapshot with the same hash exclusions (protected files).
-  // buildPlan refuses it if the file list differs from the preview, and a changed duplicate fails the keeper hash check.
-  const raw = await scanRoot(grant, ctx.options);
-  if (raw.cancelled) throw new AfoError('CANCELLED', '분석을 취소했습니다.');
-  const scan = await hashCandidates(grant, raw, { ...ctx.options, exclude: analysis.protected.map((p) => p.relativePath) });
+  // The plan uses the very scan (with hashes) the preview was built from: no second scan, no window between the two.
+  const { preview, scan } = analysis;
+  if (scan.cancelled) throw new AfoError('CANCELLED', '분석을 취소했습니다.');
 
   const deleteSelections: DeleteSelection[] | 'all-duplicates' | undefined = dupSpec === 'all' ? 'all-duplicates'
     : dupPrefixes.length ? dupPrefixes.map((prefix) => {
@@ -62,8 +62,15 @@ export async function planCommand(target: string, values: PlanValues, ctx: { jso
     const folded = preview.items.filter((i) => pathKey(i.source) === pathKey(rel));
     return exact?.source ?? (folded.length === 1 ? folded[0]!.source : rel);
   });
-  const plan = buildPlan(preview, { scan, grant, sessionId: grant.sessionId, deleteMode, now: new Date(),
-    ...(deleteSelections ? { deleteSelections } : {}), ...(explicitDeletes.length ? { explicitDeletes } : {}) });
+  let plan: OperationPlan;
+  try {
+    plan = buildPlan(preview, { scan, grant, sessionId: grant.sessionId, deleteMode, now: new Date(), allowLastCopy,
+      ...(deleteSelections ? { deleteSelections } : {}), ...(explicitDeletes.length ? { explicitDeletes } : {}) });
+  } catch (error) {
+    if (error instanceof LastCopyError) throw new AfoError('KEEPER_INVALID', `모든 사본이 삭제됩니다: 같은 내용의 파일 ${error.paths.join(', ')}이(가) ` +
+      '모두 삭제 대상이라 남는 사본이 없습니다. 하나를 --delete-file에서 빼거나, 정말 모두 지우려면 --delete-last-copy를 붙이세요.');
+    throw error;
+  }
 
   const stateDir = path.resolve(ctx.stateDir());
   const rootId = ROOT_ID.test(preview.root.id) ? preview.root.id : null;
@@ -121,6 +128,9 @@ function humanPlan(plan: OperationPlan, previous: SavedPlan | null, choices: Ret
 
   const { move, trash, delete: purge } = plan.summary;
   lines.push(`작업 ${plan.operations.length}개: 이동 ${move}, 휴지통 ${trash}, 영구 삭제 ${purge}`);
+  const last = plan.operations.filter((op) => op.reason === LAST_COPY_REASON);
+  if (last.length) lines.push(`경고: --delete-last-copy로 같은 내용의 마지막 사본까지 지우는 작업 ${last.length}개가 있습니다(남는 사본 없음): ` +
+    last.map((op) => op.source).join(', '));
   for (const choice of choices) {
     const kind = approvalModeKind[choice.mode];
     const ops = plan.operations.filter((op) => op.kind === kind);

@@ -5,6 +5,7 @@ import type { ErrorCode, OperationPlan, Preview, RootGrant, ScanResult } from '.
 import { approvalChoices, approvalCode, buildPlan, buildPreview, chooseKeeper, diffPlans, planHash, selectOperations }
   from '../packages/engine/src/index.js';
 import type { BuildPlanOptions } from '../packages/engine/src/index.js';
+import { LAST_COPY_REASON, LastCopyError } from '../packages/engine/src/plan.js';
 import { scanFixture } from './helpers.js';
 
 /* #8 plan builder: pure, synthetic snapshots only (no filesystem). */
@@ -102,6 +103,33 @@ test('invalid duplicate selections are KEEPER_INVALID; explicit deletes have no 
   assert.throws(() => buildPlan(forged, opts({ scan: s, deleteSelections: [{ sha256: A, candidates: ['report.pdf'] }] })), code('KEEPER_INVALID'));
   const plan = buildPlan(p, opts({ explicitDeletes: ['notes'], deleteMode: 'permanent' }));
   assert.deepEqual([bySource(plan)['notes']!.kind, bySource(plan)['notes']!.keeper], ['delete', null]);
+});
+
+test('O-4: deleting every copy of one content is refused unless allowLastCopy is exactly true; single files need no flag', () => {
+  const p = preview();
+  const both = ['report.pdf', 'report copy.pdf'];
+  const refused = (over: Partial<BuildPlanOptions>): void => {
+    assert.throws(() => buildPlan(p, opts(over)), (e: unknown) => e instanceof LastCopyError && e.code === 'KEEPER_INVALID' &&
+      /마지막 사본/u.test(e.message) && e.paths.join() === 'report copy.pdf,report.pdf');
+  };
+  refused({ explicitDeletes: both });
+  refused({ explicitDeletes: both, deleteMode: 'permanent' });
+  refused({ explicitDeletes: both, allowLastCopy: 'yes' as unknown as boolean });
+  refused({ explicitDeletes: both, allowLastCopy: false });
+  for (const mode of ['trash', 'permanent'] as const) {
+    const plan = buildPlan(p, opts({ explicitDeletes: both, allowLastCopy: true, deleteMode: mode }));
+    for (const source of both) {
+      assert.equal(bySource(plan)[source]!.keeper, null);
+      assert.equal(bySource(plan)[source]!.reason, LAST_COPY_REASON);
+    }
+  }
+  // Not a last copy: one file of a pair, a file with unique content, an unhashed file, or a duplicate deletion that keeps its keeper.
+  for (const over of [{ explicitDeletes: ['report.pdf'] }, { explicitDeletes: ['clip.mp4', 'notes'] },
+    { deleteSelections: 'all-duplicates' as const }, { deleteSelections: 'all-duplicates' as const, explicitDeletes: ['clip.mp4'] }]) {
+    const plan = buildPlan(p, opts(over));
+    assert.ok(plan.operations.every((op) => op.reason !== LAST_COPY_REASON), JSON.stringify(over));
+  }
+  assert.equal(bySource(buildPlan(p, opts({ explicitDeletes: ['clip.mp4'] })))['clip.mp4']!.reason, '사용자가 직접 고른 삭제 파일입니다.');
 });
 
 test('a move onto or below another file of the plan, or colliding with another move, becomes review', () => {

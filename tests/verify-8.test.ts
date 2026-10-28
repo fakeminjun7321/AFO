@@ -565,10 +565,13 @@ test('V8-K1 "delete all duplicates" keeps ≥1 keeper per group; keepers are nev
 
 test('V8-K2 explicit picks: a file the user names one by one gets keeper null — even when that removes every copy (recorded)', async (t) => {
   const env = await setup(t, { deleteMode: 'permanent', save: false });
-  const plan = buildPlan(env.preview, { scan: env.scan, grant: env.grant, sessionId: env.grant.sessionId, deleteMode: 'permanent',
-    explicitDeletes: ['a.pdf', 'b.pdf'], now: env.now });
+  const input = { scan: env.scan, grant: env.grant, sessionId: env.grant.sessionId, deleteMode: 'permanent' as const,
+    explicitDeletes: ['a.pdf', 'b.pdf'], now: env.now };
+  // O-4 follow-up (feat/8-followups): removing every copy is refused unless allowLastCopy is explicitly true.
+  assert.throws(() => buildPlan(env.preview, input), code('KEEPER_INVALID'));
+  const plan = buildPlan(env.preview, { ...input, allowLastCopy: true });
   assert.deepEqual(plan.operations.filter((o) => o.kind === 'delete').map((o) => [o.source, o.keeper]), [['a.pdf', null], ['b.pdf', null]]);
-  t.diagnostic('explicitDeletes of both members of a duplicate group plans both deletions with keeper null (no copy left)');
+  t.diagnostic('explicitDeletes of both members of a duplicate group: refused by default, allowed only with allowLastCopy: true (keeper null)');
 });
 
 /* ---------- profile binding ---------- */

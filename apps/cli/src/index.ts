@@ -19,7 +19,7 @@ const help = `AFO 미리보기·개인 규칙·정리 계획 (사용자 파일�
 preview <폴더> [--reference <참고 폴더>] [--profile <JSON>] [--no-saved-rules]
         [--move <상대 경로>=<목적지 폴더>]... [--remember] [--json]
 plan <폴더> [preview와 같은 분석 옵션, --remember 제외] [--delete-mode trash|permanent]
-     [--delete-duplicates all|<그룹 해시,...>] [--delete-file <상대 경로>]... [--json]
+     [--delete-duplicates all|<그룹 해시,...>] [--delete-file <상대 경로>]... [--delete-last-copy] [--json]
      정리 계획을 상태 폴더에 저장하고 작업 ID·이유·방식별 승인 코드를 출력
 suggest-rules <참고 폴더> [--json]       규칙 후보(초안) JSON을 stdout에, 요약을 stderr에 출력
 rules save <초안 JSON> --select <규칙ID,...>
@@ -33,6 +33,7 @@ confirm-rules <규칙 JSON> --select <규칙ID,...>   (이전 방식: 확인한 
 preview는 저장된 개인 규칙을 자동 적용합니다. --move는 이번 미리보기에만 적용하고,
 --remember를 붙이면 그 수정을 이후에도 적용하도록 저장합니다.
 plan의 --delete-mode 기본값은 trash(휴지통)입니다. permanent(영구 삭제)는 되돌릴 수 없습니다.
+--delete-file로 같은 내용의 사본을 모두 고르면 거부합니다. 마지막 사본까지 지우려면 --delete-last-copy를 붙입니다.
 이 버전은 파일을 읽고 결과를 출력합니다. 사용자 파일의 이동·삭제는 수행하지 않습니다. 실행 명령은 다음 버전에서 제공합니다.
 규칙 저장과 plan은 앱 로컬 상태 폴더(AFO_STATE_DIR)에만 씁니다.
 `;
@@ -51,7 +52,7 @@ export interface CliIo {
 /** Each command's accepted options; anything else is a usage error rather than being ignored. */
 const allowed: Record<string, readonly string[]> = {
   preview: ['profile', 'reference', 'json', 'no-saved-rules', 'move', 'remember'],
-  plan: ['profile', 'reference', 'json', 'no-saved-rules', 'move', 'delete-mode', 'delete-duplicates', 'delete-file'],
+  plan: ['profile', 'reference', 'json', 'no-saved-rules', 'move', 'delete-mode', 'delete-duplicates', 'delete-file', 'delete-last-copy'],
   'suggest-rules': ['json'], 'confirm-rules': ['select'], rules: ['json', 'select', 'confirm'],
 };
 
@@ -63,7 +64,7 @@ export async function run(args: string[], signal?: AbortSignal, io: CliIo = {}):
       profile: { type: 'string' }, reference: { type: 'string' }, select: { type: 'string' }, json: { type: 'boolean' },
       'no-saved-rules': { type: 'boolean' }, move: { type: 'string', multiple: true }, remember: { type: 'boolean' },
       confirm: { type: 'string' }, 'delete-mode': { type: 'string' }, 'delete-duplicates': { type: 'string' },
-      'delete-file': { type: 'string', multiple: true },
+      'delete-file': { type: 'string', multiple: true }, 'delete-last-copy': { type: 'boolean' },
     } });
   } catch (error) {
     throw usage(`옵션을 해석할 수 없습니다(${error instanceof Error ? error.message : String(error)}). --help 참고`);

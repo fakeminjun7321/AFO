@@ -18,6 +18,12 @@ import { assertStateDirOutside, readJson, statePaths, writeJsonAtomic } from './
  * Approval files carry an HMAC under a per-state-folder secret, so a record written by anything else (CLI JSON, a GUI, a hand-made file)
  * is refused even when it names a valid saved plan. The secret only protects against writers that cannot read the state folder.
  */
+/**
+ * Binding (ADR 0003): the approval is tied to the saved plan's sessionId and root identity (canonicalPath + device + inode), not to the
+ * consuming process's session; re-selecting the same folder (same dev/inode) keeps it valid, a replaced or moved folder is refused.
+ * Not re-checked here: the files. consumeApproval never stats the operation sources or destinations, so `operations[].expected` is what
+ * the plan saw. The executor must re-verify each file (lstat identity, size, mtime, links, sha256 when set) right before acting.
+ */
 export interface ApprovedBatch {
   plan: OperationPlan; approval: Approval;          // verified and consumed (usedAt recorded) approval
   operations: PlanOperation[];                       // in approval.operationIds order, a subset of plan.operations
@@ -34,6 +40,11 @@ const planFile = (stateDir: string, planId: string): string => path.join(statePa
 const approvalFile = (stateDir: string, id: string): string => path.join(statePaths(stateDir).approvals, `${id}.json`);
 /** Created with O_EXCL at consumption and never removed: the atomic "used" bit, even if the JSON record is rolled back. */
 const usedMarker = (stateDir: string, id: string): string => path.join(statePaths(stateDir).approvals, `${id}.used`);
+/** A caller-supplied clock must be a valid Date; anything else is APPROVAL_INVALID rather than a raw TypeError. */
+const validNow = (value: unknown): Date => {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) throw fail('APPROVAL_INVALID', '승인 시각(now)이 올바른 날짜가 아닙니다.');
+  return value;
+};
 const identity = (g: GrantIdentity): GrantIdentity =>
   ({ canonicalPath: g.canonicalPath, device: g.device, inode: g.inode, sessionId: g.sessionId });
 
@@ -87,7 +98,9 @@ async function regrant(stateDir: string, saved: GrantIdentity): Promise<RootGran
 
 /** Stores plan + root identity in <state>/plans/<planId>.json. The grant must be the live grant the plan was built with. */
 export async function savePlan(stateDir: string, planInput: unknown, grantInput: unknown): Promise<SavedPlan> {
-  const plan = OperationPlanSchema.parse(planInput);
+  const parsed = OperationPlanSchema.safeParse(planInput);
+  if (!parsed.success) throw fail('PLAN_CHANGED', '계획 형식이 계약과 다릅니다(변조 또는 다른 버전). 다시 계획하세요.', parsed.error);
+  const plan = parsed.data;
   if (planHash(plan) !== plan.id) throw fail('PLAN_CHANGED', '계획 내용이 계획 ID와 다릅니다.');
   const grant = await verifyGrant(grantInput, 'work', { sessionId: plan.sessionId });
   if (grant.id !== plan.rootGrantId || grant.canonicalPath !== plan.rootPath) throw fail('ROOT_FORBIDDEN', '계획과 다른 작업 폴더 권한입니다.');
@@ -118,15 +131,17 @@ async function planFor(stateDir: string, planId: string): Promise<SavedPlan> {
 
 /**
  * Issues a one-time approval for exactly `operationIds` of one mode. `confirmation` must be the code the user typed
- * (approvalCode of this plan, these IDs and mode); permanent-delete also needs confirmPhrase '영구 삭제'.
- * Extra request fields (e.g. `approved: true`) are refused.
+ * (approvalCode of this plan, these IDs and mode); permanent-delete also needs confirmPhrase '영구 삭제', compared after NFC
+ * normalization (a decomposed NFD input of the same phrase is accepted). Extra request fields (e.g. `approved: true`), a malformed
+ * request or an invalid `now` are APPROVAL_INVALID.
  */
 export async function issueApproval(stateDir: string, input: ApprovalRequest & { now?: Date }): Promise<Approval> {
-  const { now: nowInput, ...rest } = (input ?? {}) as ApprovalRequest & { now?: Date };
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) throw fail('APPROVAL_INVALID', '승인 요청 형식이 올바르지 않습니다.');
+  const { now: nowInput, ...rest } = input as ApprovalRequest & { now?: unknown };
   const parsed = ApprovalRequestSchema.safeParse(rest);
   if (!parsed.success) throw fail('APPROVAL_INVALID', '승인 요청 형식이 올바르지 않습니다.', parsed.error);
   const request = parsed.data;
-  const now = nowInput ?? new Date();
+  const now = validNow(nowInput ?? new Date());
   const dir = path.resolve(stateDir);
   const { plan, grant } = await planFor(dir, request.planId);
   if (now.getTime() >= Date.parse(plan.expiresAt)) throw fail('APPROVAL_EXPIRED', '계획의 유효 시간이 지났습니다. 다시 계획하세요.');
@@ -151,7 +166,8 @@ export async function issueApproval(stateDir: string, input: ApprovalRequest & {
  * Verifies and consumes an approval, then returns the batch to execute. Order: record and MAC → expiry → used → plan hash and
  * binding → selection and mode → profile → root identity → atomic "used" marker (O_EXCL) and usedAt. Only one caller ever succeeds.
  */
-export async function consumeApproval(stateDir: string, approvalId: string, now: Date = new Date()): Promise<ApprovedBatch> {
+export async function consumeApproval(stateDir: string, approvalId: string, nowInput: Date = new Date()): Promise<ApprovedBatch> {
+  const now = validNow(nowInput);
   const dir = path.resolve(stateDir);
   const id = OpaqueIdSchema.safeParse(approvalId);
   if (!id.success) throw fail('APPROVAL_MISSING', '승인 ID가 없거나 형식이 다릅니다.');

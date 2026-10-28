@@ -35,6 +35,20 @@ export interface BuildPlanOptions {
   deleteSelections?: DeleteSelection[] | 'all-duplicates';
   /** Files the user picked one by one for deletion (no keeper). */
   explicitDeletes?: string[]; now: Date;
+  /**
+   * Deleting every copy of a content group (all files with one sha256) is refused with KEEPER_INVALID unless this is exactly true.
+   * Then those operations carry LAST_COPY_REASON. A single non-duplicate file never needs it.
+   */
+  allowLastCopy?: boolean;
+}
+
+/** Reason of a delete operation that removes the last copy of its content (allowed only with allowLastCopy: true). */
+export const LAST_COPY_REASON = '사용자가 직접 고른 삭제 파일입니다. 주의: 같은 내용의 사본이 모두 삭제 대상이라 남는 사본이 없습니다(마지막 사본 삭제를 명시적으로 허용).';
+/** The KEEPER_INVALID error buildPlan throws when every copy of some content would be deleted. `paths` lists those files. */
+export class LastCopyError extends AfoError {
+  constructor(readonly paths: string[]) {
+    super('KEEPER_INVALID', `같은 내용의 모든 사본이 삭제됩니다(마지막 사본 포함): ${paths.join(', ')}. 하나를 남기거나 마지막 사본 삭제를 명시적으로 허용하세요.`);
+  }
 }
 
 const fail = (code: ConstructorParameters<typeof AfoError>[0], message: string): AfoError => new AfoError(code, message);
@@ -109,6 +123,16 @@ export function buildPlan(previewInput: unknown, options: BuildPlanOptions): Ope
     deletes.set(source, { keeper: null, reason: '사용자가 직접 고른 삭제 파일입니다.' });
   }
   for (const keeper of keepers) if (deletes.has(keeper)) throw fail('KEEPER_INVALID', '남길 파일을 삭제 대상으로 고를 수 없습니다.');
+  // Last copy: a content group (two or more hashed files of one sha256) whose every member is deleted leaves no copy behind.
+  const byContent = new Map<string, string[]>();
+  for (const { file } of bySource.values())
+    if (file.sha256 !== null && file.size > 0 && !unreadable.has(file.relativePath))
+      byContent.set(file.sha256, [...byContent.get(file.sha256) ?? [], file.relativePath]);
+  const lastCopies = [...byContent.values()].filter((group) => group.length > 1 && group.every((p) => deletes.has(p))).flat().sort(compare);
+  if (lastCopies.length) {
+    if (options.allowLastCopy !== true) throw new LastCopyError(lastCopies);
+    for (const source of lastCopies) deletes.set(source, { ...deletes.get(source)!, reason: LAST_COPY_REASON });
+  }
 
   const sources = [...bySource.keys()].sort(compare);
   const moves: Array<{ source: string; item: PreviewItem }> = [];

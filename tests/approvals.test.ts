@@ -9,7 +9,7 @@ import type { TestContext } from 'node:test';
 import { AfoError, SavedApprovalSchema, SavedPlanSchema } from '../packages/contracts/src/index.js';
 import type { Approval, ApprovalMode, ErrorCode, OperationPlan, RootGrant, SavedApproval } from '../packages/contracts/src/index.js';
 import { approvalChoices, approvalCode, buildPlan, buildPreview, diffPlans, planHash } from '../packages/engine/src/index.js';
-import { hashCandidates, issueRootGrant, scanRoot } from '../packages/filesystem/src/index.js';
+import { analyzeRoot, hashCandidates, issueRootGrant, scanRoot } from '../packages/filesystem/src/index.js';
 import { consumeApproval, issueApproval, loadSavedPlan, savePlan } from '../packages/filesystem/src/approvals.js';
 import { addCorrection, disableProfile, loadProfile, resetProfile } from '../packages/filesystem/src/profiles.js';
 import { createFixture, manifest } from './helpers.js';
@@ -248,4 +248,51 @@ test('state folder inside the root, foreign grants and inconsistent plans are re
     code('PLAN_CHANGED'));
   const other = await issueRootGrant(work);
   await assert.rejects(savePlan(state, plan, other), code('ROOT_FORBIDDEN'));
+});
+
+test('O-7: schema-invalid plans, malformed requests and invalid clocks are AfoError codes, never raw ZodError/TypeError', async (t) => {
+  const { state, grant, plan } = await setup(t);
+  for (const bad of [{ ...plan, deleteMode: 'shred' }, { ...plan, operations: 'x' }, null, 'plan', []] as unknown[])
+    await assert.rejects(savePlan(state, bad, grant), code('PLAN_CHANGED'));
+  const ids = idsOf(plan, 'trash');
+  for (const now of [new Date(Number.NaN), '2026-10-28T00:00:00.000Z', 0, {}] as unknown[])
+    await assert.rejects(approve(state, plan, 'trash', ids, { now }), code('APPROVAL_INVALID'), String(now));
+  for (const input of [null, undefined, 'trash', 42, [plan.id]] as unknown[])
+    await assert.rejects(issueApproval(state, input as never), code('APPROVAL_INVALID'), String(input));
+  const approval = await approve(state, plan, 'trash');
+  for (const now of [new Date(Number.NaN), 'now', 1] as unknown[])
+    await assert.rejects(consumeApproval(state, approval.id, now as Date), code('APPROVAL_INVALID'), String(now));
+  assert.equal((await readRecord(state, approval.id)).approval.usedAt, null, 'an invalid clock does not consume the approval');
+  assert.equal((await consumeApproval(state, approval.id)).approval.id, approval.id);
+});
+
+test('the permanent-delete phrase is compared after NFC normalization (an NFD-typed phrase is accepted)', async (t) => {
+  const p = await setup(t, { deleteMode: 'permanent' });
+  const nfd = '영구 삭제'.normalize('NFD');
+  assert.notEqual(nfd, '영구 삭제');
+  const approval = await approve(p.state, p.plan, 'permanent-delete', idsOf(p.plan, 'permanent-delete'), { confirmPhrase: nfd });
+  assert.equal(approval.mode, 'permanent-delete');
+});
+
+test('analyzeRoot returns the hashed scan its preview was built from; a plan from it reads no file again', async (t) => {
+  const { root: base } = await createFixture({ 'work/report.pdf': 'same bytes', 'work/report copy.pdf': 'same bytes',
+    'work/clip.mp4': 'video', 'state/': '' }, t);
+  const work = path.join(base, 'work'); const state = path.join(base, 'state');
+  const grant = await issueRootGrant(work);
+  const analysis = await analyzeRoot(grant, { stateDir: state });
+  assert.deepEqual(analysis.scan.files.map((f) => `${f.id} ${f.relativePath}`).sort(),
+    analysis.preview.items.map((i) => `${i.fileId} ${i.source}`).sort(), 'same files as the preview');
+  const group = analysis.preview.duplicates[0]!;
+  assert.equal(analysis.scan.files.filter((f) => f.sha256 === group.sha256).length, 2, 'duplicates are hashed in the returned scan');
+  // Files changed after analysis do not reach the plan: buildPlan uses only this snapshot (the executor re-verifies before acting).
+  const snapshot = new Map(analysis.scan.files.map((f) => [f.relativePath, f]));
+  for (const name of ['report.pdf', 'report copy.pdf', 'clip.mp4']) await writeFile(path.join(work, name), `changed after analysis: ${name}`);
+  const plan = buildPlan(analysis.preview, { scan: analysis.scan, grant, sessionId: grant.sessionId, deleteMode: 'trash',
+    deleteSelections: 'all-duplicates', now: new Date() });
+  assert.deepEqual(plan.summary.trash, 1);
+  for (const op of plan.operations) {
+    const f = snapshot.get(op.source)!;
+    assert.deepEqual(op.expected, { size: f.size, modifiedNs: f.modifiedNs, device: f.device, inode: f.inode, sha256: f.sha256 }, op.source);
+  }
+  await savePlan(state, plan, grant);
 });

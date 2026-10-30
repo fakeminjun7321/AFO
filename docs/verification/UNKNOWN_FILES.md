@@ -112,3 +112,57 @@ rm -rf dist && npm run typecheck && npm test
 - 웹 `/preview`의 실제 브라우저 화면(파일 선택 UI)은 실행하지 않았습니다. `makePreview` 함수를 Node에서 ad hoc로만 대조했습니다.
 - pty에서 NUL 바이트 입력은 하지 않았습니다(U7은 `runCli` io 주입).
 - 실제 OS 휴지통 경로는 이 변경과 무관해 다시 실행하지 않았습니다.
+
+## 재검증(bd0bd41)
+
+```text
+Issue / PR / Commit: D1~D3·O1~O6 수정 재검증 / PR #54(검증만, 병합 안 함) / 기준 origin/feat/unknown-files bd0bd41(eda7eb2 병합 포함)
+Environment: macOS 27.0.1 (26A434), Apple M5 (arm64), Node v24.18.0, Python 3.13.9 — physical(이 Mac), 합성 temp 폴더·가짜 HOME·temp AFO_STATE_DIR만
+Fixture and baseline manifest: 1차와 같음(같은 테스트 파일의 setup·snap). 새 테스트 R1~R7
+Steps or exact commands: git checkout -B verify-unknown-files-2 origin/feat/unknown-files → rm -rf dist && npm run typecheck && npm test → (apps/website) npm run build:shared && npm test
+Observed files / hashes / journal / exit status: 아래 표
+Passed / Failed / Not run: 재검증 항목 11행 PASS 11 / FAIL 0 / NOT-RUN 1(Windows 실물·pty)
+Verification level: Physical-device-verified(macOS, 이 Mac, 실제 pty + io 주입 일부) / Windows NOT-RUN(CI에서 io·비대화형만 실행, pty는 사유와 skip)
+Release blocker and unblock condition: 없음(이 범위). 관찰 R-O1~R-O4는 수정 권장 수준
+```
+
+- 기준(bd0bd41, 이 커밋의 테스트 변경 전) `npm test`: tests 485 / pass 474 / fail 0 / skipped 11 / todo 0.
+- 재검증 테스트 추가 뒤 `rm -rf dist && npm run typecheck && npm test`: typecheck 오류 없음, **tests 493 / pass 482 / fail 0 / skipped 11 / todo 0**.
+  이 파일은 21개(1차 13개 + R1~R7·R1b 8개) 모두 통과. 웹사이트 `npm test` 7/7 pass.
+
+| # | 검사 | 결과 | 근거 |
+| --- | --- | --- | --- |
+| 1 | D1 경계, 안내형 (R1, io로 실제 이동) | PASS | 255바이트 ASCII·한글 85자(NFC 255 B)·한글 85자를 NFD(510 B)로 입력 → 받아들이고 실제로 폴더를 만들어 이동(sha256 동일). 256 B·한글 86자(258 B)·이모지 64개(256 B) → "이름이 너무 길어요(한 단계 255바이트까지)". 250 B×4 단계 → "옮긴 뒤의 전체 경로가 너무 길어요". 거부된 확장자의 파일은 그대로 |
+| 2 | D1 공용 스키마 `plan --move` (R1b) | PASS | 한글 85자 목적지는 계획 저장, 256 B는 "--move의 목적지는 …" 오류로 거부·approvals/runs/journal 없음 |
+| 3 | 기존 저장 프로필에 256 B 목적지 (R2) | PASS(안전) | `preview`: 경고 "저장된 개인 규칙 프로필이 손상돼 적용하지 않았습니다: 저장된 프로필이 계약과 다릅니다 (profile.corrections.0.targetDirectory). `rules reset`…", `profile.source = corrupt`, 기본 분류. 안내형 2): "저장된 내 정리 규칙 파일이 손상돼 이번 정리에만 적용해요.", "다음에도" 없음. 파일·`active.json` 바이트 불변. 문구는 R-O1 |
+| 4 | D2 재현 A: 파일 `기타` + 1) (R3, pty) | PASS | "옮기지 못하는 파일 3개(그대로 둬요): sub/f.qqq, e.xyz, 기타 — '기타'라는 파일이 이미 있어 그 이름으로 폴더를 만들 수 없어요(이름 충돌)" → stdout "옮길 수 있는 파일이 없어요. 아무것도 바꾸지 않았어요." "파일이 바뀌어" 없음. 파일 불변 |
+| 5 | D2 재현 B: 같은 이름 충돌 + 기존 목적지 (R3, pty) | PASS | "3개를 '기타' 폴더로 … ('기타' 폴더에 이미 있는 1개는 그대로 둬요)", "t.qqq — 옮길 곳에 같은 이름이 이미 있어요(이름 충돌, 덮어쓰지 않아요)", "a/s.xyz, b/s.xyz — 옮길 곳에서 다른 파일과 이름이 겹쳐요(덮어쓰지 않아요)". 빈 코드 4, 파일 불변 |
+| 6 | D3 `x`+`x=y.xyz`, `=`·공백·이모지 조합 (R4, pty; U7c-D3 io) | PASS | `x`, `x=y.xyz`, `a = b 😀.xyz`, `a = b 😀`, `=.qqq`, `k=v`, `k`, `sub dir=1/c d=2.xyz` → 목적지 `자료 = 1 😀/`, `폴더=2/`, `기타/`로 8개 실제 이동(sha256·mtime 동일), 화면에 `--move` 없음. 새 프로세스 `afo undo` 뒤 manifest(파일·폴더) 처음과 동일, 루트 밖 불변 |
+| 7 | 첫 분석 뒤 파일 이름이 바뀜 (R6, io) | PASS | 질문 중 `d.xyz`→`d2.xyz` → "분석 중 파일이 바뀌었습니다. 다시 실행하세요." 계획·승인 없음, 이동 없음 |
+| 8 | O6 목적지 폴더 안 파일 (R5, pty) | PASS | 2)에서 `자료`·`기타` 선택 시 "'자료' 폴더에 이미 있는 1개는 그대로 둬요." 등, 계획 2개. `자료/x.qqq`·`기타/z.xyz` 바이트·mtime 불변, "옮기지 못하는 파일"로 보고하지 않음 |
+| 9 | O1 저장 뒤 멈춤 문구 (R7, U6) | PASS | 이번 실행에서 저장했으면 "코드를 입력하지 않아 실행하지 않았어요. 파일은 바꾸지 않았어요(저장한 규칙은 남아 있어요)." 저장이 없던 실행은 이전 문구 그대로 |
+| 10 | O2·O3 거부 이유 (U4 확장) | PASS | 15개 각각 이유 표시: 절대 경로 3(`/abs/x`, `C:\x`, `a:b` — 드라이브 문자로 시작), `..`·`.` 4, 숨김 1, 예약 이름 3, 끝의 점 1, `//` 1, 특수 문자 2. 3번째는 이유와 "그대로 둘게요"가 한 줄 |
+| 11 | **회귀**: 나쁜 폴더 이름 15종(U4), 루트 밖 무변경(U3·U4·U5·U6·R4), undo 원상(U3·R4), `.part` 무변경(U3), 웹 표 일치(U1·U1b·U2) | PASS | 1차 테스트 13개 모두 그대로 통과 |
+| — | Windows 실물·pty | NOT-RUN | 이 Mac에서 검증 불가 |
+
+### builder가 바꾼 검증 테스트 기대값 판정
+
+- U3: `2024.10.30`이 "확장자 없음 2개(예: 2024.10.30)"로 묶이도록 기대 변경 — O4 수정(숫자로만 된 확장자는 확장자 없음 묶음)과 일치, 이동 결과 기대(`기타/2024.10.30`)·undo 검사는 그대로. **타당**.
+- U7b: 300자 이름이 이제 질문에서 거부되므로 답을 `N` → Enter(그대로 두기)로, 종료 3·ENAMETOOLONG 기대 → 종료 0으로 변경. "파일을 잃거나 덮어쓰지 않음" 검사(manifest)는 그대로. **타당**.
+- U5-D2·U7b-D1·U7c-D3: todo만 해제, 단언은 바꾸지 않음. **타당**.
+- 절차 메모: `tests/verify-*.test.ts`는 verifier 쓰기 범위입니다(세션 역할 규칙). 이번 변경은 내용상 맞지만 다음부터는 verifier에게 넘기는 편이 역할 분리에 맞습니다.
+
+### 이번 커밋의 테스트 수정(Windows CI)
+
+- PR #54 windows-latest에서 U2·U7·U7b·U7b-D1·U7c-D3가 `synthetic base must not be inside the real home`으로 실패(Windows runner의 `os.tmpdir()`가 `C:\Users\runneradmin\AppData\Local\Temp` — 제품 결함 아님).
+  → base가 `realpath(os.tmpdir())` 아래면 홈 아래여도 허용, 단 temp 폴더가 홈 자체면 거부, 그 밖에 홈 아래면 계속 거부.
+- 같은 파일의 Windows 가정 점검: 자식 프로세스 env의 `PATH`를 `:`로 이어 붙이던 부분을 `path.delimiter`로 바꾸고, Windows에서는 시스템 변수(`SystemRoot` 등)를 유지하며 `USERPROFILE`도 가짜 HOME으로 지정. pty 테스트 8개는 win32에서 "Windows에는 POSIX pty가 없어…" 사유로 skip. manifest 키는 `/`로 직접 이어 붙여 OS와 무관, `chmod`·하드코딩된 `/` 경로 없음.
+- 남은 Windows 위험(미검증): R1은 작업 폴더 경로 + 255자 폴더 이름이라 260자를 넘습니다. Node fs는 긴 경로를 처리하지만, Windows CI에서 실패하면 제품의 Windows 긴 경로 처리 결과로 따로 봐야 합니다. U2의 점 이름 HIDDEN 판정도 Windows 스캐너 동작에 따릅니다.
+
+### 재검증 관찰
+
+- R-O1. 손상 처리는 안전합니다(적용 안 함·파일 불변·손상 파일 보존). 다만 안내가 개발자 용어("계약과 다릅니다 (profile.corrections.0.targetDirectory)")이고 "폴더 이름이 너무 길다"는 원인을 말하지 않습니다. 수정 1개 때문에 저장 규칙 전체가 꺼지고, 권하는 해결책 `rules reset`은 전부 지웁니다. 안내형에서는 같은 경고가 분석 때와 계획 때 두 번 나옵니다.
+- R-O2. 255바이트 기준은 APFS(UTF-16 255단위: 한글 86자·이모지 64개도 생성됨)보다 엄격합니다. ext4·NTFS 공통 하한이라 보수적이며, 받아들인 이름이 실패하는 경우는 찾지 못했습니다. NFD로 입력한 한글 85자(510 B)는 NFC 기준으로 받아들이며 APFS·NTFS에서는 생성됩니다.
+- R-O3. `a:b`는 "절대 경로는 안 돼요"로 안내합니다(Windows에서는 드라이브 상대 경로라 틀린 말은 아님).
+- R-O4. 재현 A에서 파일 `기타` 자신도 "'기타'라는 파일이 이미 있어…" 이유로 목록에 나옵니다. 자기 자신을 자기 이름의 폴더로 옮길 수 없다는 뜻이라 사실이지만 조금 어색합니다.
+- 전체 경로 1023바이트 사전 검사는 안내형 2)에만 있습니다. `--move`의 깊은 경로는 계획의 DEST_INVALID에 맡깁니다(builder의 `rules.test.ts`가 검사, 이번에 따로 실행 확인하지 않음).

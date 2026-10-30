@@ -4,7 +4,8 @@
  * - Interactive paths run the built CLI in a REAL pseudo-terminal (Python pty.fork): Enter "\r", Ctrl+C byte 0x03.
  *   Only NUL/very long folder names go through runCli's io (a pty line discipline would not deliver a NUL byte as typed).
  * - File results come from an independent manifest written here (lstat, no link following: type, size, mtimeNs, sha256).
- * - Synthetic data only: mkdtemp(os.tmpdir()) base with a fake HOME and a temp AFO_STATE_DIR. The real home is refused.
+ * - Synthetic data only: mkdtemp(os.tmpdir()) base with a fake HOME and a temp AFO_STATE_DIR. A base inside the real home is refused
+ *   unless it is under the OS temp folder (Windows runners keep %TEMP% under the home). pty tests skip on Windows with a reason.
  * D1 long folder names, D2 silent conflicts and D3 "=" names were `todo` tests; fixed in the builder commit after eda7eb2, now plain tests.
  */
 import test from 'node:test';
@@ -13,6 +14,7 @@ import type { TestContext } from 'node:test';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm, writeFile } from 'node:fs/promises';
+import { renameSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -198,11 +200,19 @@ type Spec = Record<string, string>;
 interface Step { expect: string; send?: string }
 interface PtyResult { exit: number; transcript: string; stdout: string }
 const esc = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+/** `child` is `parent` itself or below it (same drive on Windows). */
+const isInside = (parent: string, child: string): boolean => {
+  const rel = path.relative(parent, child);
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+};
 
 async function setup(t: TestContext, spec: Spec) {
-  const base = await realpath(await mkdtemp(path.join(tmpdir(), 'afo-verify-unknown-')));
-  const rel = path.relative(REAL_HOME, base);
-  assert.ok(rel.startsWith('..') || path.isAbsolute(rel), 'synthetic base must not be inside the real home');
+  const tmpRoot = await realpath(tmpdir());
+  const base = await realpath(await mkdtemp(path.join(tmpRoot, 'afo-verify-unknown-')));
+  // Windows runners keep the OS temp folder under the home (C:\Users\<u>\AppData\Local\Temp): allowed there, never the home itself.
+  const realHome = await realpath(REAL_HOME);
+  assert.ok(!isInside(realHome, base) || (tmpRoot !== realHome && isInside(tmpRoot, base)),
+    'synthetic base must be under the OS temp folder (not the home itself) or outside the real home');
   t.after(() => rm(base, { recursive: true, force: true }));
   const home = path.join(base, 'home'); const state = path.join(base, 'state'); const work = path.join(home, '정리 대상');
   await mkdir(work, { recursive: true }); await mkdir(state);
@@ -218,8 +228,11 @@ async function setup(t: TestContext, spec: Spec) {
   await put(work, spec);
   const driver = path.join(base, 'ptydrive.py');
   await writeFile(driver, DRIVER);
-  const env: Record<string, string> = { PATH: `${path.dirname(process.execPath)}:/usr/bin:/bin`, HOME: home, AFO_STATE_DIR: state,
-    TERM: 'xterm-256color', LANG: 'en_US.UTF-8', TMPDIR: tmpdir(), TZ: 'Asia/Seoul' };
+  // Windows: keep the system variables (SystemRoot etc.) a child node needs and point USERPROFILE (os.homedir) at the fake home.
+  const env: Record<string, string> = process.platform === 'win32'
+    ? { ...process.env as Record<string, string>, HOME: home, USERPROFILE: home, AFO_STATE_DIR: state, TZ: 'Asia/Seoul' }
+    : { PATH: [path.dirname(process.execPath), '/usr/bin', '/bin'].join(path.delimiter), HOME: home, AFO_STATE_DIR: state,
+      TERM: 'xterm-256color', LANG: 'en_US.UTF-8', TMPDIR: tmpdir(), TZ: 'Asia/Seoul' };
   let n = 0;
   const pty = async (steps: Step[], extra: string[] = []): Promise<PtyResult> => {
     n += 1;
@@ -330,6 +343,12 @@ test('U4 pty 2) bad folder names (hidden, .., absolute, C:\\, backslash, CON/nul
   const r = await pty(steps);
   assert.equal(r.exit, 0, r.transcript);
   assert.equal((r.transcript.match(new RegExp(REFUSED, 'gu')) ?? []).length, 15, 'every bad name refused once');
+  // Re-verification (bd0bd41): each refusal names its reason (O3).
+  // 'a:b' starts with a drive letter (a drive-relative path on Windows), so it is named as an absolute path.
+  const reasons: [string, number][] = [['절대 경로는 안 돼요', 3], ["'..'·'.'은 쓸 수 없어요", 4], ['점(.)으로 시작하는 숨김 폴더는 안 돼요', 1],
+    ['CON·NUL·AUX 같은 Windows 예약 이름은 안 돼요', 3], ['이름 끝에 점이나 공백은 안 돼요', 1], ['빈 폴더 이름(//)은 안 돼요', 1],
+    ['같은 특수 문자나 제어 문자는 안 돼요', 2]];
+  for (const [reason, n] of reasons) assert.equal((r.transcript.match(new RegExp(esc(reason), 'gu')) ?? []).length, n, reason);
   assert.ok(!r.transcript.includes('다음에도'), 'no save question without a folder');
   assert.ok(!r.transcript.includes('계속하려면 아래 코드를'), 'no plan offered');
   assert.match(r.stdout, /옮길 파일이 없어요\. 아무것도 바꾸지 않았어요\./u);
@@ -471,4 +490,144 @@ test('U7c-D3 file names with "=" that also prefix another file name do not crash
   try { await runCli([], undefined, s.io); } catch (error) { thrown = `${exitCodeOf(error)} ${errorLine(error)}`; }
   assert.deepEqual(await snap(work).then((a) => Object.keys(filesOf(a)).length), Object.keys(filesOf(before)).length, 'no file lost either way');
   assert.equal(thrown, undefined, `stopped with: ${thrown}`);
+});
+
+// =====================================================================================================================================
+// Re-verification of bd0bd41 (D1~D3, O1~O6 fixes). Same rules: synthetic folders, independent manifest, real pty where interactive.
+// =====================================================================================================================================
+const NFC = (m: Snap): Record<string, string | null> =>
+  Object.fromEntries(Object.entries(filesOf(m)).map(([k, e]) => [k.normalize('NFC'), e.sha256]));
+const TOO_LONG = '이름이 너무 길어요(한 단계 255바이트까지)';
+
+test('R1 D1 boundaries (io, real moves): 255 ASCII / 85 한글 (NFC 255 B) / 85 한글 typed as NFD accepted and really created; 256 B, 86 한글, 64 emoji, too-long total path refused', async (t) => {
+  const { work, state } = await setup(t, { 'f.aa': '1', 'f.ab': '2', 'f.ac': '3', 'f.ad': '4', 'f.ae': '5' });
+  const before = await snap(work);
+  const a255 = 'a'.repeat(255); const h85 = '가'.repeat(85); const n85 = '나'.repeat(85).normalize('NFD');
+  const deep = Array.from({ length: 4 }, () => 'b'.repeat(250)).join('/');
+  const s = session(state, [work, '1', '2', a255, 'N', h85, 'N', n85, 'N', 'a'.repeat(256), '가'.repeat(86), '😀'.repeat(64), deep, '', shownCode]);
+  const r = await runCli([], undefined, s.io);
+  assert.equal(r.exitCode, 0, r.output);
+  const screen = s.screen();
+  assert.equal((screen.match(new RegExp(esc(TOO_LONG), 'gu')) ?? []).length, 3, '256 B, 86 한글 (258 B), 64 emoji (256 B)');
+  assert.match(screen, /그 이름은 폴더로 쓸 수 없어요\(이름이 너무 길어요\(한 단계 255바이트까지\)\)\. '\.ad' 파일 1개는 그대로 둘게요\./u, '3rd: reason and keep on one line (O2)');
+  assert.match(screen, /그 이름은 폴더로 쓸 수 없어요\(옮긴 뒤의 전체 경로가 너무 길어요\)\. 이 폴더 안에 만들 폴더 이름을 다시 입력해 주세요\./u);
+  assert.match(r.output, /옮김 3 · 건너뜀 0 · 실패 0/u);
+  const want = { ...NFC(before) };
+  for (const [f, dir] of [['f.aa', a255], ['f.ab', h85], ['f.ac', n85]] as const) { want[`${dir}/${f}`.normalize('NFC')] = want[f]!; delete want[f]; }
+  assert.deepEqual(NFC(await snap(work)), want, 'three files really in the long folders; f.ad and f.ae untouched');
+});
+
+test('R1b D1 shared schema: `plan --move` accepts a 255-byte folder and refuses 256 bytes before writing anything', async (t) => {
+  const { work, state, plain, stateWrites } = await setup(t, { 'd.xyz': 'x' });
+  const before = await snap(work);
+  const ok = plain(['plan', work, '--move', `d.xyz=${'가'.repeat(85)}`, '--json']);
+  assert.equal(ok.status, 0, ok.stderr);
+  const bad = plain(['plan', work, '--move', `d.xyz=${'a'.repeat(256)}`]);
+  assert.notEqual(bad.status, 0);
+  assert.match(bad.stderr, /--move의 목적지는 작업 폴더 안의 상대 폴더여야 합니다/u);
+  assert.deepEqual(await snap(work), before);
+  assert.deepEqual(await stateWrites(), []);
+  assert.ok(await exists(path.join(state, 'plans')), 'only the accepted plan was saved in the state folder');
+});
+
+test('R2 a stored profile whose saved correction points to a 256-byte folder is treated as corrupt: not applied, files untouched, the file kept', async (t) => {
+  const { work, state, plain } = await setup(t, { 'd.xyz': 'x', 'y.pdf': 'p' });
+  // Save a valid 255-byte correction through the guided flow, then make it 256 bytes (as an older build could have stored it).
+  await runCli([], undefined, session(state, [work, '1', '2', 'a'.repeat(255), 'y', '']).io).catch(() => undefined);
+  const file = path.join(state, 'profiles', 'active.json');
+  const doc = JSON.parse(await readFile(file, 'utf8')) as { profile: { corrections: { targetDirectory: string }[] } };
+  doc.profile.corrections[0]!.targetDirectory += 'a';
+  await writeFile(file, JSON.stringify(doc, null, 2));
+  const stored = await readFile(file);
+  const before = await snap(work);
+  const p = plain(['preview', work, '--json']);
+  assert.equal(p.status, 0, p.stderr);
+  assert.match(p.stderr, /저장된 개인 규칙 프로필이 손상돼 적용하지 않았습니다: 저장된 프로필이 계약과 다릅니다 \(profile\.corrections\.0\.targetDirectory\)/u);
+  const items = (JSON.parse(p.stdout) as { preview: { items: { source: string; reasonCode: string }[] }; profile: { source: string } });
+  assert.equal(items.profile.source, 'corrupt');
+  assert.deepEqual(items.preview.items.map((i) => [i.source, i.reasonCode]).sort(), [['d.xyz', 'UNKNOWN_EXTENSION'], ['y.pdf', 'DEFAULT_EXTENSION']]);
+  const g = session(state, [work, '1', '2', '자료', '']);
+  await assert.rejects(runCli([], undefined, g.io), (e: unknown) => exitCodeOf(e) === 4);
+  assert.match(g.screen(), /저장된 내 정리 규칙 파일이 손상돼 이번 정리에만 적용해요\./u);
+  assert.ok(!g.screen().includes('다음에도'), 'no save question over a corrupt profile');
+  assert.deepEqual(await snap(work), before);
+  assert.deepEqual(await readFile(file), stored, 'the corrupt profile file is neither rewritten nor deleted');
+});
+
+test('R3 pty D2: the file "기타" and same-name collisions are explained by reason; "파일이 바뀌어" is not used when nothing changed', { skip: SKIP }, async (t) => {
+  const { work, pty, put } = await setup(t, { '기타': 'a file named gita', 'e.xyz': 'e', 'sub/f.qqq': 'f' });
+  let before = await snap(work);
+  const r = await pty([{ expect: FOLDER, send: work + ENTER }, { expect: MENU, send: `1${ENTER}` }, { expect: UNKNOWN_Q, send: `1${ENTER}` }]);
+  assert.equal(r.exit, 0, r.transcript);
+  assert.match(r.transcript, /옮기지 못하는 파일 3개\(그대로 둬요\):\n {2}[^\n]*e\.xyz[^\n]* — '기타'라는 파일이 이미 있어 그 이름으로 폴더를 만들 수 없어요\(이름 충돌\)/u);
+  assert.equal(r.stdout.trim(), '옮길 수 있는 파일이 없어요. 아무것도 바꾸지 않았어요.');
+  assert.ok(!r.transcript.includes('파일이 바뀌어'));
+  assert.deepEqual(await snap(work), before);
+
+  await rm(work, { recursive: true }); await mkdir(work);
+  await put(work, { 'a/s.xyz': '1', 'b/s.xyz': '2', 't.qqq': 'root t', '기타/t.qqq': 'already there', 'k.pdf': 'k' });
+  before = await snap(work);
+  const r2 = await pty([{ expect: FOLDER, send: work + ENTER }, { expect: MENU, send: `1${ENTER}` }, { expect: UNKNOWN_Q, send: `1${ENTER}` },
+    { expect: "종류를 모르는 파일 3개를 '기타' 폴더로 옮기는 계획을 만들게요\\. \\('기타' 폴더에 이미 있는 1개는 그대로 둬요\\)" },
+    { expect: '옮기지 못하는 파일 3개\\(그대로 둬요\\):' },
+    { expect: '이렇게 정리할게요\\(파일 1개, 덮어쓰지 않아요\\):' }, { expect: CODE, send: ENTER }]);
+  assert.equal(r2.exit, 4, r2.transcript);
+  assert.match(r2.transcript, /^ {2}t\.qqq — 옮길 곳에 같은 이름이 이미 있어요\(이름 충돌, 덮어쓰지 않아요\)$/mu);
+  assert.match(r2.transcript, /^ {2}a\/s\.xyz, b\/s\.xyz — 옮길 곳에서 다른 파일과 이름이 겹쳐요\(덮어쓰지 않아요\)$/mu);
+  assert.deepEqual(await snap(work), before);
+});
+
+test('R4 pty D3: names with "=", spaces and emoji (x and x=y.xyz together) are moved by file ID, then afo undo restores the manifest', { skip: SKIP }, async (t) => {
+  const { work, pty, outside } = await setup(t, { 'x': 'plain', 'x=y.xyz': 'eq', 'a = b 😀.xyz': 'emo', 'a = b 😀': 'emo2', '=.qqq': 'eqq',
+    'k=v': 'kv', 'k': 'k', 'sub dir=1/c d=2.xyz': 'deep' });
+  const before = await snap(work); const out0 = await outside();
+  const r = await pty([{ expect: FOLDER, send: work + ENTER }, { expect: MENU, send: `1${ENTER}` }, { expect: UNKNOWN_Q, send: `2${ENTER}` },
+    { expect: where("'.xyz' 파일 3개"), send: `자료 = 1 😀${ENTER}` }, { expect: again('.xyz', '자료 = 1 😀'), send: `N${ENTER}` },
+    { expect: where("'.qqq' 파일 1개"), send: `폴더=2${ENTER}` }, { expect: again('.qqq', '폴더=2'), send: `N${ENTER}` },
+    { expect: where('확장자 없는 파일 4개'), send: `기타${ENTER}` },
+    { expect: '확장자가 없는\\(또는 숫자로만 된\\) 파일은 기억할 수 없어 이번에만 옮겨요\\.' },
+    { expect: '이렇게 정리할게요\\(파일 8개, 덮어쓰지 않아요\\):' }, { expect: CODE, send: `{1}${ENTER}` }]);
+  assert.equal(r.exit, 0, r.transcript);
+  assert.ok(!r.transcript.includes('--move'), 'no internal --move text');
+  assertMoved(before, await snap(work), { 'x': '기타/x', 'x=y.xyz': '자료 = 1 😀/x=y.xyz', 'a = b 😀.xyz': '자료 = 1 😀/a = b 😀.xyz',
+    'a = b 😀': '기타/a = b 😀', '=.qqq': '폴더=2/=.qqq', 'k=v': '기타/k=v', 'k': '기타/k', 'sub dir=1/c d=2.xyz': '자료 = 1 😀/c d=2.xyz' });
+  const u = await pty([{ expect: UNDO, send: `{1}${ENTER}` }], ['undo']);
+  assert.equal(u.exit, 0, u.transcript);
+  assert.deepEqual(await snap(work), before, 'files and folders as before');
+  assert.deepEqual(await outside(), out0);
+});
+
+test('R5 pty O6: files already inside the chosen folder are not counted and stay byte-for-byte; the others move', { skip: SKIP }, async (t) => {
+  const { work, pty } = await setup(t, { '자료/x.qqq': 'inside', 'y.qqq': 'outside', '기타/z.xyz': 'in 기타', 'w.xyz': 'w' });
+  const before = await snap(work);
+  const r = await pty([{ expect: FOLDER, send: work + ENTER }, { expect: MENU, send: `1${ENTER}` }, { expect: UNKNOWN_Q, send: `2${ENTER}` },
+    { expect: where("'.qqq' 파일 2개"), send: `자료${ENTER}` }, { expect: "'자료' 폴더에 이미 있는 1개는 그대로 둬요\\." },
+    { expect: again('.qqq', '자료'), send: `N${ENTER}` },
+    { expect: where("'.xyz' 파일 2개"), send: `기타${ENTER}` }, { expect: "'기타' 폴더에 이미 있는 1개는 그대로 둬요\\." },
+    { expect: again('.xyz', '기타'), send: `N${ENTER}` },
+    { expect: '이렇게 정리할게요\\(파일 2개, 덮어쓰지 않아요\\):' }, { expect: CODE, send: `{1}${ENTER}` }]);
+  assert.equal(r.exit, 0, r.transcript);
+  assert.ok(!r.transcript.includes('옮기지 못하는 파일'), 'files already in place are not reported as failures');
+  assertMoved(before, await snap(work), { 'y.qqq': '자료/y.qqq', 'w.xyz': '기타/w.xyz' });
+});
+
+test('R6 io D3: a file renamed after the first analysis stops with FILE_CHANGED before any plan or approval; nothing moves', async (t) => {
+  const { work, state, stateWrites } = await setup(t, { 'd.xyz': 'x', 'y.pdf': 'p' });
+  const s = session(state, [work, '1', () => { renameSync(path.join(work, 'd.xyz'), path.join(work, 'd2.xyz')); return '1'; }]);
+  let stopped: string | undefined;
+  try { await runCli([], undefined, s.io); } catch (error) { stopped = errorLine(error); }
+  assert.match(stopped ?? '', /분석 중 파일이 바뀌었습니다\. 다시 실행하세요\./u);
+  assert.deepEqual(Object.keys(filesOf(await snap(work))).sort(), ['d2.xyz', 'y.pdf']);
+  assert.deepEqual(await stateWrites(), []);
+});
+
+test('R7 O1: a rule saved in this run, then no code → "파일은 바꾸지 않았어요(저장한 규칙은 남아 있어요)."; without a save the old sentence', async (t) => {
+  const { work, state, corrections } = await setup(t, { 'd.xyz': 'x' });
+  const before = await snap(work);
+  await assert.rejects(runCli([], undefined, session(state, [work, '1', '2', '자료', 'y', '']).io),
+    (e: unknown) => exitCodeOf(e) === 4 && errorLine(e) === '코드를 입력하지 않아 실행하지 않았어요. 파일은 바꾸지 않았어요(저장한 규칙은 남아 있어요).');
+  assert.deepEqual(await corrections(), [[{ type: 'keyword', extension: '.xyz', keyword: null }, '자료']]);
+  await assert.rejects(runCli([], undefined, session(state, [work, '1', '']).io),
+    (e: unknown) => exitCodeOf(e) === 4 && errorLine(e) === '코드를 입력하지 않아 실행하지 않았어요. 아무것도 바꾸지 않았어요.');
+  assert.deepEqual(await snap(work), before);
 });

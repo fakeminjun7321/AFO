@@ -24,7 +24,7 @@ export function HomeContent() {
         </div>
         <div className="home-other-features">
           <article><span className="home-index">02 / 나의 정리 기준</span><h3>자주 쓰는 기준을<br />내 방식으로.</h3><p>확장자와 파일 이름에 맞춰 원하는 폴더를 정해 보세요. 브라우저에 저장한 활성 규칙은 웹 미리보기에 적용되고, JSON으로 옮기거나 로그인 후 클라우드에도 보관할 수 있습니다.</p><Link className="home-text-link" to="/rules">나의 규칙 살펴보기 <Arrow /></Link><small>클라우드에만 있는 규칙은 불러온 뒤 브라우저에 저장해 주세요.</small></article>
-          <article><span className="home-index">03 / CLI</span><h3>더 자세한 분석은<br />로컬 CLI에서.</h3><p>명령어로 선택한 폴더의 중복 후보와 분류 미리보기를 확인할 수 있습니다. 참고 폴더에서 규칙을 제안받아 확인한 뒤 재사용하는 기능도 준비되어 있어요.</p><Link className="home-text-link" to="/guide">사용 방법 알아보기 <Arrow /></Link><small>CLI의 실행과 설치는 웹과 별도입니다.</small></article>
+          <article><span className="home-index">03 / CLI</span><h3>실제 정리는<br />로컬 CLI에서.</h3><p>명령어로 중복 후보와 분류를 확인하고 정리 계획을 만듭니다. 승인 코드를 입력한 항목만 옮기거나 휴지통으로 보내고, 옮긴 파일은 되돌릴 수 있어요. 참고 폴더에서 만든 개인 규칙도 저장해 다시 씁니다.</p><Link className="home-text-link" to="/guide">사용 방법 알아보기 <Arrow /></Link><small>CLI의 실행과 설치는 웹과 별도입니다.</small></article>
         </div>
       </div>
     </section>

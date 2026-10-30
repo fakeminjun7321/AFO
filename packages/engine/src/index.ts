@@ -10,7 +10,7 @@ import { compare, digest, pathKey } from './util.js';
 export { digest, pathKey } from './util.js';
 export { CLASSIFICATION_VERSION, categoryExtensions, classifyFile, extensionOf } from './classify.js';
 export type { Classification } from './classify.js';
-export { SPACE_NOTE, chooseKeeper, findDuplicates, spaceEstimate } from './duplicates.js';
+export { SPACE_NOTE, chooseKeeper, findDuplicates, hasCopyMark, spaceEstimate } from './duplicates.js';
 export { activeRules, classifyPersonal, emptyProfile, makeCorrection, parseProfile, profileFromV1, withCorrection, withRuleEnabled,
   withStatus, withoutCorrection } from './rules.js';
 export type { AnyProfile } from './rules.js';

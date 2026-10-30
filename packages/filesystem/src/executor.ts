@@ -1,6 +1,6 @@
 import { constants } from 'node:fs';
 import type { BigIntStats } from 'node:fs';
-import { lstat, mkdir, open, readdir, realpath } from 'node:fs/promises';
+import { lstat, mkdir, open, readdir, realpath, rmdir } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
@@ -50,6 +50,8 @@ export const RunRecordSchema = z.strictObject({
   mode: ApprovalModeSchema, root: z.strictObject({ canonicalPath: z.string().min(1), device: DigitsSchema, inode: DigitsSchema }),
   operationIds: z.array(OperationIdSchema).min(1), startedAt: z.iso.datetime(), finishedAt: z.iso.datetime().nullable(),
   report: ExecutionReportSchema.nullable(),
+  /** Folders this run created (mkdir succeeded), with their identity. Absent in older records and in runs that created none. */
+  createdDirectories: z.array(z.strictObject({ path: RelativePathSchema, device: DigitsSchema, inode: DigitsSchema })).optional(),
 }).superRefine((r, ctx) => {
   if ((r.finishedAt === null) !== (r.report === null)) issue(ctx, '끝난 실행만 결과를 가집니다.');
   if (r.report && (!sameRun(r.runId, r.report) || r.report.planId !== r.planId || r.report.approvalId !== r.approvalId))
@@ -125,6 +127,7 @@ async function hashFile(abs: string, expected: BigIntStats): Promise<string> {
 }
 
 interface Ctx { root: string; device: bigint; inode: bigint; adapter: ExecutorAdapter }
+interface CreatedDirectory { path: string; device: string; inode: string }
 interface Track { created: number; phase: 'prepare' | 'os' }
 type Identity = NonNullable<JournalEntry['after']>;
 interface Outcome { status: ExecutionReport['results'][number]['status']; errorCode: ErrorCode | null; detail: string;
@@ -144,17 +147,20 @@ function inside(ctx: Ctx, rel: string): { abs: string; parts: string[] } {
  * Every folder from the root down to the parent of `parts`: a real folder, not a link, on the root's volume (CARRYOVER O-1).
  * With `onCreate`, a missing folder is created one level at a time (non-recursive) and re-checked. The final real path must be inside the root.
  */
-async function folders(ctx: Ctx, parts: string[], onCreate: (() => void) | null): Promise<void> {
+async function folders(ctx: Ctx, parts: string[], onCreate: ((relative: string, stat: BigIntStats | null) => void) | null): Promise<void> {
   const root = await lstat(ctx.root, { bigint: true });
   if (!root.isDirectory() || root.isSymbolicLink() || root.dev !== ctx.device || root.ino !== ctx.inode)
     throw changed('선택한 폴더가 바뀌었습니다(다른 폴더·링크로 교체).');
   let dir = ctx.root;
+  const walked: string[] = [];
   for (const part of parts.slice(0, -1)) {
-    dir = path.join(dir, part);
+    dir = path.join(dir, part); walked.push(part);
     let stat = await lstatOrNull(dir);
     if (!stat && onCreate) {
-      try { await mkdir(dir); onCreate(); } catch (error) { if (errnoOf(error) !== 'EEXIST') throw error; }
+      let made = false;
+      try { await mkdir(dir); made = true; } catch (error) { if (errnoOf(error) !== 'EEXIST') throw error; }
       stat = await lstatOrNull(dir);
+      if (made) onCreate(walked.join('/'), stat);
     }
     if (!stat) throw new AfoError(onCreate ? 'FILE_CHANGED' : 'SOURCE_MISSING', '경로의 폴더가 없습니다.');
     if (stat.isSymbolicLink()) throw new AfoError('LINK_REJECTED', '경로 중간에 링크·바로가기가 있어 다루지 않습니다.');
@@ -332,7 +338,7 @@ async function runBatch({ plan, approval, operations, grant, stateDir }: Approve
       after, errorCode, at: new Date().toISOString() });
   const permanent = approval.mode === 'permanent-delete';
   const freeBytesBefore = permanent ? await adapter.freeSpace(ctx.root) : null;
-  const results: Result[] = [];
+  const results: Result[] = []; const createdDirectories: CreatedDirectory[] = [];
   let broken: ErrorCode | null = null; let cancelled = false; let skipJournal = true; let allocated: number | null = 0;
   const progress = (): void => { try { options.onProgress?.({ done: results.length, total: operations.length }); } catch { /* UI callback */ } };
 
@@ -349,7 +355,7 @@ async function runBatch({ plan, approval, operations, grant, stateDir }: Approve
       progress(); continue;
     }
     options.faultInjection?.('after-intent', op.id);
-    const outcome = await runOperation(ctx, op, options);
+    const outcome = await runOperation(ctx, op, options, createdDirectories);
     options.faultInjection?.('before-done', op.id);
     if (outcome.status === 'deleted') allocated = allocated === null || outcome.allocated === null ? null : allocated + outcome.allocated;
     try { await write(success(outcome.status) ? 'done' : 'failed', op, outcome.after, outcome.errorCode); } catch (error) {
@@ -364,7 +370,8 @@ async function runBatch({ plan, approval, operations, grant, stateDir }: Approve
   const report = ExecutionReportSchema.parse({ formatVersion: 1, runId, planId: plan.id, approvalId: approval.id, results,
     space: { logicalBytesSelected: operations.reduce((sum, op) => sum + op.expected.size, 0), freeBytesBefore, freeBytesAfter,
       note: spaceNote(approval.mode, freeBytesBefore, freeBytesAfter, deletedAny ? allocated : null) } });
-  try { await saveRun(stateDir, { ...record, finishedAt: new Date().toISOString(), report }); }
+  try { await saveRun(stateDir, { ...record, finishedAt: new Date().toISOString(), report,
+    ...(createdDirectories.length ? { createdDirectories } : {}) }); }
   catch (error) {
     throw new RunRecordError(isAfoError(error) ? error.code : 'JOURNAL_FAILED',
       '실행은 끝났지만 결과 파일을 저장하지 못했습니다. 항목별 결과는 저널에 있습니다.', report, { cause: error });
@@ -372,7 +379,7 @@ async function runBatch({ plan, approval, operations, grant, stateDir }: Approve
   return report;
 }
 
-async function runOperation(ctx: Ctx, op: PlanOperation, options: ExecuteOptions): Promise<Outcome> {
+async function runOperation(ctx: Ctx, op: PlanOperation, options: ExecuteOptions, createdDirectories: CreatedDirectory[]): Promise<Outcome> {
   const track: Track = { created: 0, phase: 'prepare' };
   const expected = { device: op.expected.device, inode: op.expected.inode, size: op.expected.size, modifiedNs: op.expected.modifiedNs };
   let src = ''; let dst: string | null = null; let before: BigIntStats;
@@ -382,7 +389,12 @@ async function runOperation(ctx: Ctx, op: PlanOperation, options: ExecuteOptions
       if (op.destination === null) throw new AfoError('PLAN_CHANGED', '이동 목적지가 없습니다.');
       const target = inside(ctx, op.destination);
       dst = target.abs;
-      await folders(ctx, target.parts, () => { track.created += 1; });
+      await folders(ctx, target.parts, (relative, stat) => {
+        track.created += 1;
+        // Only a real folder on the root's volume is remembered; undo may later remove it, and only while it is empty.
+        if (stat && stat.isDirectory() && !stat.isSymbolicLink() && stat.dev === ctx.device)
+          createdDirectories.push({ path: relative, device: String(stat.dev), inode: String(stat.ino) });
+      });
       if (await lstatOrNull(dst)) throw new AfoError('DEST_EXISTS', '목적지에 이미 파일이 있어 덮어쓰지 않았습니다.');
       track.phase = 'os';
       await ctx.adapter.linkMoveNoClobber(src, dst, expected);
@@ -478,7 +490,9 @@ function undoStates(entries: JournalEntry[]): Map<string, UndoState> {
  * and the original path is empty; never overwrites. Trash and permanent delete are not undone here (restore from the OS trash).
  * Already undone operations and definite forward failures (file not changed) are left out of the report; interrupted or unclear
  * ones (no closing entry, or a forward `failed` with UNKNOWN) are reported unknown and never moved by guesswork.
- * Empty folders created by the move are not removed. Saves runs/<runId>.undo-<n>.json and keeps the original report.
+ * Afterwards, folders the run itself created (runs/<runId>.json createdDirectories) are removed deepest first, one rmdir each and
+ * only while empty and still the same folder; anything else stays and is listed in report.directories.kept. Older records without
+ * the list remove nothing. Saves runs/<runId>.undo-<n>.json and keeps the original report.
  * Holds the root lock once for the whole undo, like executeBatch (LOCKED_BY_OTHER: no journal entry, undo record or file change).
  */
 export async function undoRun(stateDir: string, runId: string, grantInput: RootGrant, options: UndoOptions = {}): Promise<ExecutionReport> {
@@ -537,9 +551,12 @@ async function undoLocked(stateDir: string, runId: string, grant: RootGrant, ada
     results.push(toResult(opId, outcome));
   }
 
+  const directories = run.createdDirectories ? await removeCreatedFolders(ctx, run.createdDirectories) : undefined;
   const report = ExecutionReportSchema.parse({ formatVersion: 1, runId: run.runId, planId: run.planId, approvalId: run.approvalId, results,
     space: { logicalBytesSelected: logical, freeBytesBefore: null, freeBytesAfter: null,
-      note: '되돌리기는 같은 볼륨 안에서 위치만 바꾸므로 저장 공간을 바꾸지 않습니다. 이동하면서 만든 빈 폴더는 지우지 않습니다.' } });
+      note: `되돌리기는 같은 볼륨 안에서 위치만 바꾸므로 저장 공간을 바꾸지 않습니다. ${directories ? '이 실행이 새로 만든 폴더는 비어 있을 때만 지우고, 원래 있던 폴더·다른 파일이 든 폴더는 그대로 둡니다.'
+        : '이 실행 기록에는 새로 만든 폴더 목록이 없어 빈 폴더를 지우지 않았습니다.'}` },
+    ...(directories ? { directories } : {}) });
   const n = ((await undoIndexes(stateDir, run.runId)).at(-1) ?? 0) + 1;
   try {
     await writeJsonAtomic(undoFile(stateDir, run.runId, n),
@@ -549,6 +566,33 @@ async function undoLocked(stateDir: string, runId: string, grant: RootGrant, ada
       '되돌리기는 끝났지만 결과 파일을 저장하지 못했습니다. 항목별 결과는 저널에 있습니다.', report, { cause: error });
   }
   return report;
+}
+
+/**
+ * Removes folders the run created, deepest first: each must still be the same folder (dev/ino, not a link, parents checked by
+ * folders()) and empty. rmdir never recurses; a non-empty, replaced or unreadable folder is kept and reported. Already gone: skipped.
+ */
+async function removeCreatedFolders(ctx: Ctx, created: CreatedDirectory[]): Promise<NonNullable<ExecutionReport['directories']>> {
+  const removed: string[] = []; const kept: { path: string; reason: string }[] = [];
+  const depth = (p: string): number => p.split('/').length;
+  for (const d of [...created].sort((a, b) => depth(b.path) - depth(a.path) || (a.path < b.path ? 1 : a.path > b.path ? -1 : 0))) {
+    try {
+      const { abs, parts } = inside(ctx, d.path);
+      await folders(ctx, parts, null);
+      const stat = await lstatOrNull(abs);
+      if (!stat) continue;
+      if (stat.isSymbolicLink() || !stat.isDirectory() || String(stat.dev) !== d.device || String(stat.ino) !== d.inode) {
+        kept.push({ path: d.path, reason: '정리할 때 만든 폴더가 아니게 바뀌어 그대로 뒀습니다.' }); continue;
+      }
+      await rmdir(abs);
+      removed.push(d.path);
+    } catch (error) {
+      const code = errnoOf(error);
+      kept.push({ path: d.path, reason: code === 'ENOTEMPTY' || code === 'EEXIST' ? '안에 다른 항목이 있어 그대로 뒀습니다.'
+        : `지우지 못해 그대로 뒀습니다(${code || codeOf(error)}).` });
+    }
+  }
+  return { removed, kept };
 }
 
 async function undoOperation(ctx: Ctx, done: JournalEntry, after: Identity): Promise<Outcome> {

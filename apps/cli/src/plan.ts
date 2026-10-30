@@ -35,8 +35,21 @@ function opLines(op: PlanOperation, once: Set<string>): string[] {
   return [head, `    이유: ${op.reason}`];
 }
 
-export async function planCommand(target: string, values: PlanValues, ctx: { json: boolean; warn: (line: string) => void;
-  stateDir: () => string; options: { signal?: AbortSignal } }): Promise<string> {
+export interface PlanContext { warn: (line: string) => void; stateDir: () => string; options: { signal?: AbortSignal } }
+/** A saved plan with what plan/gui show next to it. */
+export interface CreatedPlan { plan: OperationPlan; choices: ReturnType<typeof approvalChoices>; previous: SavedPlan | null;
+  preview: Preview; info: Parameters<typeof profileLine>[0]; picked: { fileId: string }[]; grant: { device: string; inode: string } }
+
+export async function planCommand(target: string, values: PlanValues, ctx: PlanContext & { json: boolean }): Promise<string> {
+  const created = await createPlan(target, values, ctx);
+  const { plan, choices } = created;
+  if (ctx.json) return JSON.stringify({ planId: plan.id, plan, approvalChoices: choices, reviewItems: plan.reviewItems }, null, 2);
+  return humanPlan(plan, created.previous, choices, { preview: created.preview, info: created.info,
+    once: new Set(created.picked.map((p) => p.fileId)), grant: created.grant });
+}
+
+/** analyze → buildPlan → savePlan (+ the CLI's latest-plan index). Shared by `plan` and `gui`; writes only the state folder. */
+export async function createPlan(target: string, values: PlanValues, ctx: PlanContext): Promise<CreatedPlan> {
   const deleteMode = values['delete-mode'] ?? 'trash';
   if (deleteMode !== 'trash' && deleteMode !== 'permanent') throw usage('--delete-mode는 trash 또는 permanent입니다.');
   const dupSpec = values['delete-duplicates'];
@@ -96,9 +109,7 @@ export async function planCommand(target: string, values: PlanValues, ctx: { jso
     catch (error) { ctx.warn(`경고: 최근 계획 기록을 저장하지 못했습니다(다음 plan에서 비교하지 않음): ${message(error)}`); }
   }
 
-  const choices = approvalChoices(plan);
-  if (ctx.json) return JSON.stringify({ planId: plan.id, plan, approvalChoices: choices, reviewItems: plan.reviewItems }, null, 2);
-  return humanPlan(plan, previous, choices, { preview, info, once: new Set(picked.map((p) => p.fileId)), grant });
+  return { plan, choices: approvalChoices(plan), previous, preview, info, picked, grant };
 }
 
 function humanPlan(plan: OperationPlan, previous: SavedPlan | null, choices: ReturnType<typeof approvalChoices>, extra: {

@@ -277,6 +277,9 @@ export const ExecutionReportSchema = z.strictObject({
   /** Trash moves are not reclaimed space; free-space values are observations other processes may affect. */
   space: z.strictObject({ logicalBytesSelected: ByteCountSchema, freeBytesBefore: ByteCountSchema.nullable(),
     freeBytesAfter: ByteCountSchema.nullable(), note: z.string() }),
+  /** Undo only: folders the run itself created, removed because they were empty after the undo, or kept (with the reason). */
+  directories: z.strictObject({ removed: z.array(RelativePathSchema),
+    kept: z.array(z.strictObject({ path: RelativePathSchema, reason: z.string().min(1) })) }).optional(),
 }).superRefine((r, ctx) => {
   if (duplicated(r.results.map((x) => x.opId))) issue(ctx, '중복 작업 결과입니다.');
   for (const x of r.results) {

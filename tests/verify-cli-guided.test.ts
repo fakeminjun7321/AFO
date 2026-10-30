@@ -13,10 +13,12 @@ import assert from 'node:assert/strict';
 import type { TestContext } from 'node:test';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rename, rm, rmdir, symlink, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { FileSnapshot } from '../packages/contracts/src/index.js';
+import { findDuplicates, hasCopyMark, pathKey } from '../packages/engine/src/index.js';
 
 const CLI = fileURLToPath(new URL('../apps/cli/src/index.js', import.meta.url));
 const REAL_HOME = homedir();
@@ -132,7 +134,7 @@ async function setup(t: TestContext, spec: Spec) {
   const driver = path.join(base, 'ptydrive.py');
   await writeFile(driver, DRIVER);
   const env: Record<string, string> = { PATH: `${path.dirname(process.execPath)}:/usr/bin:/bin`, HOME: home, AFO_STATE_DIR: state,
-    TERM: 'xterm-256color', LANG: 'en_US.UTF-8', TMPDIR: tmpdir() };
+    TERM: 'xterm-256color', LANG: 'en_US.UTF-8', TMPDIR: tmpdir(), TZ: 'Asia/Seoul' };
   let n = 0;
   /** One interactive session in a real pty. argv defaults to `node <cli>`; extra are the CLI arguments. */
   const pty = async (steps: Step[], extra: string[] = [], argv: string[] = [process.execPath, CLI]): Promise<PtyResult> => {
@@ -427,4 +429,287 @@ test('pty: menu 2 sends one synthetic afo-test- copy to the real OS trash and ke
   for (const p of pair) if (after[p] !== undefined) assert.deepEqual(after[p], before[p], 'keeper unchanged');
   assert.deepEqual(after['other.pdf'], before['other.pdf']);
   t.diagnostic(`trashed one synthetic ${tag} copy; the trash is never read or emptied`);
+});
+
+// =====================================================================================================================
+// Re-verification of b1ae8ff (1cde928 + b1ae8ff): keeper rule, undo removing only the empty folders the run created, wording.
+// =====================================================================================================================
+
+// ---------- R-K: default keeper of a duplicate group (engine is the system under test; expectations written by hand) ----------
+const HASH = 'b'.repeat(64);
+const fileSnap = (relativePath: string, i: number): FileSnapshot => ({ id: (i + 1).toString(16).padStart(64, '0'), relativePath, size: 7,
+  modifiedNs: '1', device: '1', inode: String(100 + i), sha256: HASH });
+function keeperOf(paths: string[], protectedPaths: string[] = []): { keep: string; candidates: string[] } {
+  const { duplicates } = findDuplicates(paths.map(fileSnap), new Set(protectedPaths.map(pathKey)));
+  assert.equal(duplicates.length, 1, paths.join(' | '));
+  return { keep: duplicates[0]!.suggestedKeep, candidates: [...duplicates[0]!.candidates].sort() };
+}
+function* permutations<T>(items: T[]): Generator<T[]> {
+  if (items.length <= 1) { yield items; return; }
+  for (let i = 0; i < items.length; i++) for (const rest of permutations([...items.slice(0, i), ...items.slice(i + 1)])) yield [items[i]!, ...rest];
+}
+// [group, expected keeper, protected paths] — written by hand from the stated order: protected → no copy mark → shallower → shorter → path.
+const KEEPER_TABLE: [string[], string, string[]?][] = [
+  [['보고서 (1).pdf', '보고서.pdf'], '보고서.pdf'],
+  [['보고서 - Copy.pdf', '보고서.pdf', '보고서 - Copy (2).pdf'], '보고서.pdf'],                // Windows (English)
+  [['보고서 - 복사본 (2).pdf', '보고서 - 복사본.pdf', '보고서.pdf'], '보고서.pdf'],              // Windows (Korean)
+  [['사진 복사본 2.jpg', '사진 복사본.jpg', '사진.jpg'], '사진.jpg'],                            // Finder (Korean)
+  [['photo copy 2.jpg', 'photo copy.jpg', 'photo.jpg'], 'photo.jpg'],                          // Finder (English)
+  [['archive (1).tar.gz', 'archive.tar.gz'], 'archive.tar.gz'],
+  [['v1.2 (1).pdf', 'v1.2.pdf'], 'v1.2.pdf'],
+  [['copy.txt', 'copy (1).txt'], 'copy.txt'],                                                 // looks like a mark, is the base name
+  [['사본.txt', '사본 (1).txt'], '사본.txt'],
+  [['(1)보고서 (1).pdf', '(1)보고서.pdf'], '(1)보고서.pdf'],                                     // "(1)" at the start is not a mark
+  [['a (1).pdf', 'a (2).pdf'], 'a (1).pdf'],                                                  // both marked: same depth/length → path order
+  [['깊은/곳/원본.pdf', '원본 (1).pdf'], '깊은/곳/원본.pdf'],                                    // no mark beats shallower
+  [['x/y/z.pdf', 'z.pdf', 'x/z.pdf'], 'z.pdf'],                                               // shallower
+  [['최종보고서.pdf', '보고서.pdf'], '보고서.pdf'],                                              // shorter name
+  [['b.pdf', 'a.pdf'], 'a.pdf'],                                                              // path order
+  [['보고서.pdf', '참고/보고서 (1).pdf'], '참고/보고서 (1).pdf', ['참고/보고서 (1).pdf']],          // protected first, even with a mark
+  [['보고서.pdf', '사진 사본.pdf'.normalize('NFD')], '보고서.pdf'],                              // NFD mark is still a mark
+];
+
+test('R-K1 keeper table (hand-written): no copy mark > shallower > shorter > path order; protected first; any input order', () => {
+  for (const [group, keep, prot = []] of KEEPER_TABLE) {
+    const expected = { keep, candidates: group.filter((p) => p !== keep && !prot.includes(p)).sort() };
+    for (const order of permutations(group)) assert.deepEqual(keeperOf(order, prot), expected, `${order.join(' | ')}`);
+  }
+  for (const name of ['copy.txt', '사본.txt', '(1)보고서.pdf', '복사본.pdf', 'photocopy.pdf', 'a(1).pdf', 'a (0).pdf', 'a (100).pdf', 'file.copy.txt'])
+    assert.equal(hasCopyMark(name), false, `not a mark: ${name}`);
+  for (const name of ['archive (1).tar.gz', 'a copy.tar.gz', 'X - Copy (12).PDF', 'notes (3)', '사진복사본.jpg'])
+    assert.equal(hasCopyMark(name), true, `mark: ${name}`);
+  const five = ['다운로드 (2).pdf', 'x/다운로드.pdf', '다운로드 copy.pdf', '다운로드.pdf', 'y/z/다운로드.pdf'];
+  for (const order of permutations(five)) assert.equal(keeperOf(order).keep, '다운로드.pdf'); // all 120 orders
+});
+
+type Plain = (args: string[]) => { status: number | null; stdout: string; stderr: string };
+type PlanOps = { plan: { operations: { kind: string; source: string; keeper: string | null }[] } };
+const trashPairs = (r: { status: number | null; stdout: string; stderr: string }): string[] => {
+  assert.equal(r.status, 0, r.stderr);
+  return (JSON.parse(r.stdout) as PlanOps).plan.operations.filter((op) => op.kind === 'trash').map((op) => `${op.source} <- ${op.keeper}`).sort();
+};
+
+test('R-K2 keeper through the CLI on real files: plan --delete-duplicates all and the guided trash list keep the unmarked/protected file', { skip: SKIP }, async (t) => {
+  const { state, work, pty, plain } = await setup(t, { '보고서.pdf': 'R', '보고서 (1).pdf': 'R', '받은/보고서 copy.pdf': 'R',
+    'archive (1).tar.gz': 'Z', 'archive.tar.gz': 'Z', 'copy (1).txt': 'C', 'copy.txt': 'C',
+    '정리함/과제/물리/물리_1.pdf': 'r1', '정리함/과제/물리/물리_2.pdf': 'r2', '정리함/원본.hwp': 'P', '원본.hwp': 'P' });
+  const before = await snap(work);
+  assert.deepEqual(trashPairs(plain(['plan', work, '--delete-duplicates', 'all', '--json'])), ['archive (1).tar.gz <- archive.tar.gz',
+    'copy (1).txt <- copy.txt', '받은/보고서 copy.pdf <- 보고서.pdf', '보고서 (1).pdf <- 보고서.pdf', '정리함/원본.hwp <- 원본.hwp'].sort());
+  // The keeper may still be picked for deletion explicitly while another copy remains (no KEEPER_INVALID).
+  assert.equal(plain(['plan', work, '--delete-file', '보고서.pdf', '--json']).status, 0);
+
+  // Saved rules from 정리함/ (reference inside the work folder): its files are protected and not even hashed (analyzeRoot excludes
+  // protected paths), so the 원본.hwp pair disappears instead of "protected copy = keeper". Neither copy is offered for the trash.
+  await savePhysicsRule(plain, path.join(work, '정리함'), path.join(path.dirname(state), 'draft-k.json'));
+  const withRef = trashPairs(plain(['plan', work, '--delete-duplicates', 'all', '--json']));
+  assert.deepEqual(withRef, ['archive (1).tar.gz <- archive.tar.gz', 'copy (1).txt <- copy.txt', '받은/보고서 copy.pdf <- 보고서.pdf',
+    '보고서 (1).pdf <- 보고서.pdf'].sort());
+
+  const g = await pty([{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `2${ENTER}` }, { expect: CODE, send: ENTER }]);
+  assert.equal(g.exit, 4, g.transcript);
+  assert.match(g.transcript, / {2}보고서 \(1\)\.pdf \(같은 내용의 '보고서\.pdf' 파일은 남겨요\)/u);
+  assert.match(g.transcript, / {2}archive \(1\)\.tar\.gz \(같은 내용의 'archive\.tar\.gz' 파일은 남겨요\)/u);
+  assert.ok(!g.transcript.includes('원본.hwp ('), 'reference copies are not in the trash list');
+  assert.deepEqual(await snap(work), before);
+});
+
+// ---------- R-U: undo removes only empty folders the run itself created ----------
+/** Non-TTY plan + apply (organize) with the code from plan --json; returns the run ID. */
+function organize(plain: Plain, work: string, extra: string[] = []): string {
+  const p = plain(['plan', work, ...extra, '--json']);
+  assert.equal(p.status, 0, p.stderr);
+  const parsed = JSON.parse(p.stdout) as { planId: string; approvalChoices: { mode: string; code: string }[] };
+  const code = parsed.approvalChoices.find((c) => c.mode === 'organize')!.code;
+  const a = plain(['apply', parsed.planId, '--mode', 'organize', '--confirm', code, '--json']);
+  assert.equal(a.status, 0, a.stderr);
+  return (JSON.parse(a.stdout) as { runId: string }).runId;
+}
+const runFile = (state: string, runId: string): string => path.join(state, 'runs', `${runId}.json`);
+async function editRun(state: string, runId: string, edit: (r: Record<string, unknown>) => void): Promise<void> {
+  const r = JSON.parse(await readFile(runFile(state, runId), 'utf8')) as Record<string, unknown>;
+  edit(r);
+  await writeFile(runFile(state, runId), JSON.stringify(r, null, 2));
+}
+
+test('R-U1 undo: created folders removed deepest first; pre-existing folders (also empty) kept; user content and replaced folders kept', { skip: SKIP }, async (t) => {
+  const { base, state, work, pty, plain } = await setup(t, { 'a.pdf': 'A', 'memo.txt': 'M', 'b.jpg': 'B', 'clip.mp4': 'V', 'song.mp3': 'S',
+    'x.zip': 'Z', 'setup.dmg': 'D', 'readme.md': 'R' });
+  await mkdir(path.join(work, '문서')); await mkdir(path.join(work, '빈폴더'));  // pre-existing, empty
+  const outside = path.join(base, 'outside'); await mkdir(outside);
+  const start = await snap(work);
+  const runId = organize(plain, work, ['--move', 'a.pdf=깊은/폴더/안', '--move', 'readme.md=DS폴더']);
+  const record = JSON.parse(await readFile(runFile(state, runId), 'utf8')) as { createdDirectories?: { path: string }[] };
+  assert.deepEqual((record.createdDirectories ?? []).map((d) => d.path).sort(),
+    ['DS폴더', '깊은', '깊은/폴더', '깊은/폴더/안', '설치', '압축', '영상', '음악', '이미지'].sort(), 'only folders this run created; 문서/ existed');
+
+  // The user changes things before undo.
+  await writeFile(path.join(work, '영상', '내 메모.txt'), 'user');                          // file added
+  await mkdir(path.join(work, '음악', '앨범'));                                            // subfolder added
+  await writeFile(path.join(work, 'DS폴더', '.DS_Store'), 'finder');                       // hidden file added
+  await writeFile(path.join(work, 'x.zip'), 'new user file');                              // original path taken → partial failure
+  await rename(path.join(work, '설치'), path.join(work, '설치.old'));                       // same-name folder replaced by another folder
+  await mkdir(path.join(work, '설치')); await rename(path.join(work, '설치.old', 'setup.dmg'), path.join(work, '설치', 'setup.dmg'));
+  await rmdir(path.join(work, '설치.old'));
+  await rename(path.join(work, '이미지'), path.join(outside, '이미지-target'));             // replaced by a symlink to outside
+  await symlink(path.join(outside, '이미지-target'), path.join(work, '이미지'));
+  const beforeUndo = await snap(work); const outsideBefore = await snap(outside);
+
+  const u = await pty([{ expect: UNDO, send: `{1}${ENTER}` }], ['undo']);
+  assert.equal(u.exit, 3, u.transcript);   // b.jpg (link in path) and x.zip (original path taken) are not moved back
+  const after = await snap(work);
+  for (const d of ['깊은', '깊은/폴더', '깊은/폴더/안']) assert.equal(after[d], undefined, `${d} removed (empty, created by the run)`);
+  for (const p of ['a.pdf', 'memo.txt', 'clip.mp4', 'song.mp3', 'setup.dmg', 'readme.md']) assert.equal(after[p]?.sha256, start[p]!.sha256, `${p} back`);
+  assert.deepEqual(after['문서'], start['문서'], 'pre-existing empty 문서/ kept');
+  assert.deepEqual(after['빈폴더'], start['빈폴더'], 'untouched pre-existing empty folder kept');
+  assert.deepEqual(after['영상/내 메모.txt'], beforeUndo['영상/내 메모.txt']);
+  assert.equal(after['음악/앨범']?.type, 'dir');
+  assert.deepEqual(after['DS폴더/.DS_Store'], beforeUndo['DS폴더/.DS_Store']);
+  assert.deepEqual(after['x.zip'], beforeUndo['x.zip'], 'user file at the original path untouched');
+  assert.deepEqual(after['압축/x.zip'], beforeUndo['압축/x.zip'], 'not moved back; its folder kept (not empty)');
+  assert.equal(after['설치']?.type, 'dir', 'replaced 설치/ kept (not the folder the run made)');
+  assert.deepEqual(after['이미지'], beforeUndo['이미지'], 'symlink kept');
+  assert.deepEqual(await snap(outside), outsideBefore, 'nothing changed behind the symlink');
+  const changedKeys = Object.keys({ ...beforeUndo, ...after }).filter((k) => JSON.stringify(beforeUndo[k]) !== JSON.stringify(after[k])).sort();
+  assert.deepEqual(changedKeys, ['a.pdf', 'clip.mp4', 'memo.txt', 'readme.md', 'setup.dmg', 'song.mp3', 'DS폴더/readme.md', '깊은', '깊은/폴더',
+    '깊은/폴더/안', '깊은/폴더/안/a.pdf', '문서/memo.txt', '설치/setup.dmg', '영상/clip.mp4', '음악/song.mp3'].sort(), 'only the undone moves and 3 folders changed');
+  assert.match(u.stdout, /정리할 때 만든 빈 폴더 3개도 지웠어요\./u);
+  assert.match(u.stdout, /정리할 때 만든 폴더 6개는 그대로 뒀어요:/u);
+  for (const k of ['영상', '음악', 'DS폴더', '압축']) assert.match(u.stdout, new RegExp(`\\n {2}${k} — 안에 다른 항목이 있어 그대로 뒀어요\\.`, 'u'));
+  for (const k of ['설치', '이미지']) assert.match(u.stdout, new RegExp(`\\n {2}${k} — 정리할 때 만든 폴더가 아니게 바뀌어 그대로 뒀어요\\.`, 'u'));
+  t.diagnostic(u.stdout);
+});
+
+test('R-U2 undo with tampered createdDirectories (outside, "..", root itself, absolute, via link, wrong identity) deletes nothing', { skip: SKIP }, async (t) => {
+  const cases: [string, { path: string; device: string; inode: string }, boolean][] = [
+    ['..', { path: '..', device: '1', inode: '1' }, false],
+    ['parent escape', { path: '영상/../..', device: '1', inode: '1' }, false],
+    ['root itself (empty path)', { path: '', device: '1', inode: '1' }, false],
+    ['root itself (".")', { path: '.', device: '1', inode: '1' }, false],
+    ['absolute outside', { path: 'OUTSIDE_ABS', device: 'DEV', inode: 'INO' }, false],
+    ['through a link to outside', { path: 'link/empty', device: 'DEV', inode: 'INO' }, true],
+    ['the link itself', { path: 'link', device: 'DEV', inode: 'INO' }, true],
+    ['created folder, wrong inode', { path: '영상', device: 'VDEV', inode: '1' }, true],
+    // Not in the packet's list: a forged entry naming a pre-existing EMPTY folder with its real dev/ino (needs write access to the
+    // state folder). Observed and reported (R1); only that empty folder may change, no file.
+    ['pre-existing empty folder, real identity', { path: '빈폴더', device: 'EDEV', inode: 'EINO' }, true],
+  ];
+  for (const [label, tamper, readable] of cases) {
+    const { base, state, work, pty, plain } = await setup(t, { 'clip.mp4': 'V', 'notes': 'n' });
+    const outside = path.join(base, 'outside'); await mkdir(path.join(outside, 'empty'), { recursive: true });
+    await symlink(outside, path.join(work, 'link'));
+    await mkdir(path.join(work, '빈폴더'));
+    const both = async () => ({ work: await snap(work), outside: await snap(outside) });
+    const start = await both();
+    const runId = organize(plain, work);
+    const o = await lstat(path.join(outside, 'empty'), { bigint: true }); const v = await lstat(path.join(work, '영상'), { bigint: true });
+    const e = await lstat(path.join(work, '빈폴더'), { bigint: true });
+    await editRun(state, runId, (r) => {
+      r['createdDirectories'] = [{ path: tamper.path === 'OUTSIDE_ABS' ? path.join(outside, 'empty') : tamper.path,
+        device: { DEV: String(o.dev), VDEV: String(v.dev), EDEV: String(e.dev) }[tamper.device] ?? tamper.device,
+        inode: { INO: String(o.ino), EINO: String(e.ino) }[tamper.inode] ?? tamper.inode }];
+    });
+    const moved = await both();
+    const u = await pty(readable ? [{ expect: UNDO, send: `{1}${ENTER}` }] : [], ['undo']);
+    const after = await both();
+    assert.deepEqual(after.outside, start.outside, `${label}: outside unchanged`);
+    if (!readable) {
+      // The record fails the contract: the whole undo is refused (files stay where they were moved), nothing is removed.
+      assert.equal(u.exit, 0, `${label}\n${u.transcript}`);
+      assert.match(u.transcript, /읽을 수 없는 실행 기록 1개는 건너뛰었어요/u, label);
+      assert.deepEqual(after, moved, `${label}: nothing changed`);
+      const direct = plain(['undo', runId, '--confirm', runId.slice(0, 8)]);
+      assert.equal(direct.status, 1, `${label}: undo <ID> refuses\n${direct.stderr}`);
+      assert.deepEqual(await both(), moved, `${label}: nothing changed (undo <ID>)`);
+    } else if (tamper.device === 'EDEV') {
+      assert.equal(u.exit, 0, `${label}\n${u.transcript}`);
+      assert.deepEqual(filesOf(after.work), filesOf(start.work), `${label}: every file back, no file touched`);
+      t.diagnostic(`R1 ${label}: 빈폴더 ${after.work['빈폴더'] ? 'kept' : 'REMOVED'}; stdout: ${u.stdout.replace(/\n/gu, ' / ')}`);
+    } else {
+      assert.equal(u.exit, 0, `${label}\n${u.transcript}`);
+      assert.deepEqual(after.work['빈폴더'], start.work['빈폴더'], `${label}: pre-existing empty folder kept`);
+      assert.deepEqual(after.work['link'], start.work['link'], `${label}: link kept`);
+      assert.equal(after.work['clip.mp4']?.sha256, start.work['clip.mp4']!.sha256, `${label}: file back`);
+      assert.equal(after.work['영상']?.type, 'dir', `${label}: 영상/ not in the (tampered) list or identity differs → kept`);
+      assert.match(u.stdout, /그대로 뒀어요/u, `${label}\n${u.stdout}`);
+      t.diagnostic(`${label}: ${u.stdout.replace(/\n/gu, ' / ')}`);
+    }
+  }
+});
+
+test('R-U3 older run record (no createdDirectories): undo works, no folder removed; a folder still used by a later run is kept', { skip: SKIP }, async (t) => {
+  const { state, work, pty, plain } = await setup(t, { 'clip.mp4': 'V', 'a.pdf': 'A' });
+  const start = await snap(work);
+  const runId = organize(plain, work);
+  await editRun(state, runId, (r) => { delete r['createdDirectories']; });
+  const u = await pty([{ expect: UNDO, send: `{1}${ENTER}` }], ['undo']);
+  assert.equal(u.exit, 0, u.transcript);
+  const after = await snap(work);
+  assert.deepEqual(filesOf(after), filesOf(start), 'files back');
+  assert.equal(after['영상']?.type, 'dir'); assert.equal(after['문서']?.type, 'dir');
+  assert.deepEqual(await readdir(path.join(work, '영상')), []);
+  t.diagnostic(`older record, afo undo stdout: ${u.stdout.replace(/\n/gu, ' / ')}`);
+
+  const s2 = await setup(t, { 'clip.mp4': 'V' });
+  const first = organize(s2.plain, s2.work);
+  await writeFile(path.join(s2.work, 'second.mp4'), 'V2');
+  organize(s2.plain, s2.work);
+  const direct = s2.plain(['undo', first, '--confirm', first.slice(0, 8)]);
+  assert.equal(direct.status, 0, direct.stderr);
+  assert.match(direct.stdout, /이 실행이 만든 폴더를 그대로 둠: 영상 — 안에 다른 항목이 있어 그대로 뒀습니다\./u);
+  const s2after = await snap(s2.work);
+  assert.equal(s2after['영상/second.mp4']?.type, 'file'); assert.equal(s2after['clip.mp4']?.type, 'file');
+});
+
+// ---------- R-W: wording ----------
+test('R-W guided wording: no "AFO 오류" on user stops (codes kept), 해요체, trash note, copy hint, short IDs, short undo screen in local time', { skip: SKIP }, async (t) => {
+  const { state, work, pty } = await setup(t, BASE);
+  const stops: [string, Step[], number][] = [
+    ['wrong code', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `1${ENTER}` }, { expect: CODE, send: `00000000${ENTER}` }], 4],
+    ['empty code', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `2${ENTER}` }, { expect: CODE, send: ENTER }], 4],
+    ['3 bad folders', [{ expect: FOLDER, send: `/없음1${ENTER}` }, { expect: FOLDER, send: `/없음2${ENTER}` }, { expect: FOLDER, send: `/없음3${ENTER}` }], 1],
+    ['3 bad answers', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `9${ENTER}` }, { expect: MENU, send: `8${ENTER}` }, { expect: MENU, send: `7${ENTER}` }], 2],
+    ['Ctrl+C', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: CTRL_C }], 130],
+    ['undo empty code', [], 4],
+  ];
+  const screens: string[] = [];
+  for (const [label, steps, code] of stops) {
+    if (label === 'undo empty code') continue; // run after a real organize below
+    const r = await pty(steps);
+    assert.equal(r.exit, code, `${label}\n${r.transcript}`);
+    assert.ok(!r.transcript.includes('AFO 오류'), `${label}: no "AFO 오류" prefix\n${r.transcript}`);
+    screens.push(r.transcript);
+  }
+  const s = screens[0]!;
+  assert.match(s, /2\) 중복 파일을 휴지통으로 보내기\(휴지통에서 다시 꺼낼 수 있어요\. afo undo로는 되돌리지 않아요\) — 사본 1개/u);
+  assert.match(s, /\n {5}같은 내용의 사본 1개도 함께 옮겨요\. 먼저 2\)로 정리할 수도 있어요\./u);
+  assert.match(s, /휴지통으로 보낼 수 있는 사본 1개/u);
+  assert.match(s, /직접 확인이 필요한 파일: 1개 — 확장자 없음 1\n/u);
+
+  const ok = await pty([{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `1${ENTER}` }, { expect: CODE, send: `{1}${ENTER}` }]);
+  assert.equal(ok.exit, 0, ok.transcript);
+  assert.match(ok.stdout, /정리를 마쳤어요\. \(실행 ID [0-9a-f]{8}\)\n/u);
+  assert.match(ok.stdout, /전체 실행 ID와 기록은 afo runs로 볼 수 있어요\./u);
+  const runId = (await readdir(path.join(state, 'runs'))).find((f) => /^[0-9a-f-]{36}\.json$/u.test(f))!.slice(0, -5);
+  const started = (JSON.parse(await readFile(runFile(state, runId), 'utf8')) as { startedAt: string }).startedAt;
+  const noCode = await pty([{ expect: UNDO, send: ENTER }], ['undo']);
+  assert.equal(noCode.exit, 4, noCode.transcript);
+  assert.ok(!noCode.transcript.includes('AFO 오류'), noCode.transcript);
+  assert.match(noCode.transcript, /코드를 입력하지 않아 되돌리지 않았어요\. 아무것도 바꾸지 않았어요\./u);
+  const u = await pty([{ expect: UNDO, send: `{1}${ENTER}` }], ['undo']);
+  assert.equal(u.exit, 0, u.transcript);
+  // Local time (TZ=Asia/Seoul = UTC+9, written out by hand); no operation IDs, ISO timestamps or full run IDs on screen.
+  const kst = new Date(Date.parse(started) + 9 * 3600_000);
+  const h = kst.getUTCHours(); const hour12 = h % 12 === 0 ? 12 : h % 12;
+  const when = `${kst.getUTCMonth() + 1}월 ${kst.getUTCDate()}일 ${h < 12 ? '오전' : '오후'} ${hour12}:${String(kst.getUTCMinutes()).padStart(2, '0')}`;
+  assert.ok(u.transcript.includes(`${when}에 정리한 파일 5개를 원래 자리로 되돌릴까요?`), `local time '${when}'\n${u.transcript}`);
+  assert.ok(!/\b[0-9a-f]{16}\b/u.test(u.transcript), 'no operation IDs');
+  assert.ok(!/\d{4}-\d{2}-\d{2}T/u.test(u.transcript), 'no ISO timestamps');
+  assert.ok(!u.transcript.includes(runId), 'no full run ID');
+  assert.match(u.stdout, /^되돌렸어요: 5개 · 건너뜀 0\n정리할 때 만든 빈 폴더 3개도 지웠어요\./u);
+  screens.push(ok.transcript, noCode.transcript, u.transcript);
+  // 해요체: no 합니다체 sentence endings left on these guided/undo screens.
+  const formal = screens.flatMap((sc) => sc.split('\n')).filter((l) => /니다([.)(:,]|$)/u.test(l));
+  assert.deepEqual(formal, [], `합니다체 left:\n${formal.join('\n')}`);
+  t.diagnostic(`undo screen:\n${u.transcript.split('\n').slice(0, 12).join('\n')}`);
 });

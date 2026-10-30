@@ -86,10 +86,10 @@ export const ProfileSchema = z.strictObject({
     ctx.addIssue({ code: 'custom', message: '참고 파일에 없는 규칙 근거입니다.' });
 });
 /** Classification rule set version. Changing default rules must change this value. */
-export const CLASSIFICATION_VERSION = 'default-2';
+export const CLASSIFICATION_VERSION = 'default-3';
 export const ClassificationReasonSchema = z.enum(['USER_OVERRIDE', 'PERSONAL_RULE', 'DEFAULT_EXTENSION', 'ALREADY_PLACED',
   'PROTECTED_REFERENCE', 'READ_FAILED', 'RULE_CONFLICT', 'COMPOUND_EXTENSION', 'NO_EXTENSION', 'UNKNOWN_EXTENSION',
-  'DEST_CONFLICT', 'DEST_COLLISION', 'PARENT_CONFLICT', 'SAVED_CORRECTION', 'DEST_INVALID']);
+  'DEST_CONFLICT', 'DEST_COLLISION', 'PARENT_CONFLICT', 'SAVED_CORRECTION', 'DEST_INVALID', 'INCOMPLETE_DOWNLOAD']);
 export type ClassificationReason = z.infer<typeof ClassificationReasonSchema>;
 export const PreviewItemSchema = z.strictObject({
   fileId: z.string(), source: RelativePathSchema, destination: RelativePathSchema.nullable(),

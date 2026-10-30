@@ -14,6 +14,7 @@ const defaultReasons = {
   NO_EXTENSION: "확장자가 없어요",
   COMPOUND_EXTENSION: "확장자가 여러 개라 확인이 필요해요",
   UNKNOWN_EXTENSION: "분류 기준이 없어요",
+  INCOMPLETE_DOWNLOAD: "다운로드 중일 수 있어 그대로 둬요",
   DEFAULT_EXTENSION: "확장자로 분류했어요",
 };
 export function matchingRules(name: string, rules: RuleSetInput | null) {

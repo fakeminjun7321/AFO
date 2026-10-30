@@ -163,6 +163,8 @@ const MENU = '번호를 입력하세요: ';
 const CODE = '계속하려면 아래 코드를 입력하세요: ([a-f0-9]{8})\\n코드\\(그냥 Enter는 취소\\): ';
 const UNDO = '계속하려면 아래 코드를 입력하세요: (\\S{8})\\n코드\\(그냥 Enter는 취소\\): ';
 const ENTER = '\r'; const CTRL_C = '\x03';
+// default-3: after menu 1 the unknown 'notes' (no extension) is asked about; Enter keeps it where it is.
+const KEEP_UNKNOWN: Step = { expect: '번호를 입력하세요\\(그냥 Enter는 3\\): ', send: ENTER };
 
 const BASE: Spec = { 'a.pdf': 'pdf-a', 'b.jpg': 'jpg-b', 'clip.mp4': 'video', 'notes': 'no extension', 'c.txt': 'same-text', 'c copy.txt': 'same-text' };
 // Default rules written out by hand: where each file must be after "1) 폴더별로 정리하기".
@@ -185,7 +187,7 @@ test('pty: five dragged-folder spellings (quotes, "\\ " + trailing space, ~/ wit
   const seen = new Set<string>();
   for (const [label, typed] of Object.entries(inputs)) {
     const r = await pty([{ expect: FOLDER, send: typed + ENTER }, { expect: '파일 6개를 살펴봤어요\\. \\(아직 아무것도 바꾸지 않았어요\\)' },
-      { expect: MENU, send: `1${ENTER}` }, { expect: CODE, send: ENTER }]);
+      { expect: MENU, send: `1${ENTER}` }, KEEP_UNKNOWN, { expect: CODE, send: ENTER }]);
     assert.equal(r.exit, 4, `${label}: empty code refuses with 4\n${r.transcript}`);
     assert.ok(!r.transcript.includes('이 폴더는 정리할 수 없어요'), `${label}: accepted at once`);
     assert.equal((await newPlanRoot(state, seen)).normalize('NFC'), work.normalize('NFC'), `${label}: plan bound to the same real folder`);
@@ -212,7 +214,7 @@ test('pty: wrong code and empty code (menu 1 and 2) run nothing: exit 4, files, 
   const { state, work, pty } = await setup(t, BASE);
   const before = await snap(work);
   for (const [menu, typed] of [['1', '00000000'], ['1', ''], ['2', 'ffffffff'], ['2', ''], ['1', 'abcdefgh-x']] as const) {
-    const r = await pty([{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: menu + ENTER }, { expect: CODE, send: typed + ENTER }]);
+    const r = await pty([{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: menu + ENTER }, ...(menu === '1' ? [KEEP_UNKNOWN] : []), { expect: CODE, send: typed + ENTER }]);
     assert.equal(r.exit, 4, `menu ${menu} code '${typed}'\n${r.transcript}`);
     assert.match(r.transcript, typed === '' ? /코드를 입력하지 않아 실행하지 않았어요\. 아무것도 바꾸지 않았어요\./u
       : /코드가 맞지 않아 실행하지 않았어요\. 아무것도 바꾸지 않았어요\./u);
@@ -225,7 +227,7 @@ test('pty: wrong code and empty code (menu 1 and 2) run nothing: exit 4, files, 
 test('pty: menu 1 + shown code really moves files; a new `afo undo` process (Ctrl+C first, then the code) restores the manifest', { skip: SKIP }, async (t) => {
   const { state, work, pty } = await setup(t, BASE);
   const before = await snap(work);
-  const r = await pty([{ expect: FOLDER, send: `${work.replace(/ /gu, '\\ ')} ${ENTER}` }, { expect: MENU, send: `1${ENTER}` },
+  const r = await pty([{ expect: FOLDER, send: `${work.replace(/ /gu, '\\ ')} ${ENTER}` }, { expect: MENU, send: `1${ENTER}` }, KEEP_UNKNOWN,
     { expect: '이렇게 정리할게요\\(파일 5개, 덮어쓰지 않아요\\):' }, { expect: CODE, send: `{1}${ENTER}` }]);
   assert.equal(r.exit, 0, r.transcript);
   // Result goes to stdout; questions and screens do not.
@@ -278,7 +280,7 @@ test('pty: menu 4, empty menu answer and empty first answer quit with 0; Ctrl+C 
     ['folder question after typing', [{ expect: FOLDER, send: `${work}${CTRL_C}` }]],
     ['menu question', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: CTRL_C }]],
     ['menu after 3)', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `3${ENTER}` }, { expect: MENU, send: CTRL_C }]],
-    ['code question (organize)', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `1${ENTER}` }, { expect: CODE, send: CTRL_C }]],
+    ['code question (organize)', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `1${ENTER}` }, KEEP_UNKNOWN, { expect: CODE, send: CTRL_C }]],
     ['code question (trash)', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `2${ENTER}` }, { expect: CODE, send: CTRL_C }]],
   ];
   for (const [label, steps] of cancels) {
@@ -301,7 +303,7 @@ test('pty: menu items without work show "할 일 없음" and cannot be chosen; t
   assert.match(r1.transcript, /같은 내용의 중복 파일: 0묶음/u);
 
   // Nothing to organize (already placed + needs review) and no duplicates: neither 1 nor 2 can be chosen.
-  const idle = await setup(t, { 'notes': 'no extension', '문서/a.pdf': 'already placed' });
+  const idle = await setup(t, { 'notes.pdf.exe': 'compound extension', '문서/a.pdf': 'already placed' });
   const before = await snap(idle.work);
   const r2 = await idle.pty([{ expect: FOLDER, send: `${idle.work}${ENTER}` },
     { expect: '1\\) 폴더별로 정리하기\\(되돌릴 수 있어요\\) — 할 일 없음\\n {2}2\\) 중복 파일을 휴지통으로 보내기 — 할 일 없음' },
@@ -665,7 +667,7 @@ test('R-U3 older run record (no createdDirectories): undo works, no folder remov
 test('R-W guided wording: no "AFO 오류" on user stops (codes kept), 해요체, trash note, copy hint, short IDs, short undo screen in local time', { skip: SKIP }, async (t) => {
   const { state, work, pty } = await setup(t, BASE);
   const stops: [string, Step[], number][] = [
-    ['wrong code', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `1${ENTER}` }, { expect: CODE, send: `00000000${ENTER}` }], 4],
+    ['wrong code', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `1${ENTER}` }, KEEP_UNKNOWN, { expect: CODE, send: `00000000${ENTER}` }], 4],
     ['empty code', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `2${ENTER}` }, { expect: CODE, send: ENTER }], 4],
     ['3 bad folders', [{ expect: FOLDER, send: `/없음1${ENTER}` }, { expect: FOLDER, send: `/없음2${ENTER}` }, { expect: FOLDER, send: `/없음3${ENTER}` }], 1],
     ['3 bad answers', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `9${ENTER}` }, { expect: MENU, send: `8${ENTER}` }, { expect: MENU, send: `7${ENTER}` }], 2],
@@ -686,7 +688,7 @@ test('R-W guided wording: no "AFO 오류" on user stops (codes kept), 해요체,
   assert.match(s, /휴지통으로 보낼 수 있는 사본 1개/u);
   assert.match(s, /직접 확인이 필요한 파일: 1개 — 확장자 없음 1\n/u);
 
-  const ok = await pty([{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `1${ENTER}` }, { expect: CODE, send: `{1}${ENTER}` }]);
+  const ok = await pty([{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `1${ENTER}` }, KEEP_UNKNOWN, { expect: CODE, send: `{1}${ENTER}` }]);
   assert.equal(ok.exit, 0, ok.transcript);
   assert.match(ok.stdout, /정리를 마쳤어요\. \(실행 ID [0-9a-f]{8}\)\n/u);
   assert.match(ok.stdout, /전체 실행 ID와 기록은 afo runs로 볼 수 있어요\./u);

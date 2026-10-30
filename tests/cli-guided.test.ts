@@ -102,7 +102,7 @@ test('guided: menu 1 → typed code really moves files (independent manifest), t
   const { dirs, session, invoke } = await setup(t);
   const before = await manifest(dirs.work);
   // Quoted with a trailing space, as some terminals paste a dropped folder.
-  const s = session(`'${dirs.work}' `, '1', approvalShown);
+  const s = session(`'${dirs.work}' `, '1', '', approvalShown);
   const result = await runCli([], undefined, s.io);
   assert.equal(result.exitCode, 0, result.output);
   // Folders most first, ties by name; review reasons as short names (the full sentence is only in 3) 자세히 보기).
@@ -147,14 +147,14 @@ test('guided: menu 1 → typed code really moves files (independent manifest), t
 test('guided: a wrong or empty code stops with 4 and changes nothing; no approval is recorded', async (t) => {
   const { dirs, session } = await setup(t);
   const before = await manifest(dirs.work);
-  const wrong = session(dirs.work, '1', '00000000');
+  const wrong = session(dirs.work, '1', '', '00000000');
   assert.deepEqual(await stopOf(runCli([], undefined, wrong.io)), { exit: 4, line: '코드가 맞지 않아 실행하지 않았어요. 아무것도 바꾸지 않았어요.' },
     'no "AFO 오류:" prefix for a stop the user chose');
   const wrongTrash = session(dirs.work, '2', '00000000');
   assert.equal(await exitOf(runCli([], undefined, wrongTrash.io)), 4);
   assert.match(wrongTrash.screen(), /이 사본들을 휴지통으로 보낼게요\(1개, 남길 파일은 그대로\)/u);
   assert.match(wrongTrash.screen(), /^  c copy\.txt \(같은 내용의 'c\.txt' 파일은 남겨요\)$/mu, 'the copy goes, the original stays');
-  const empty = session(dirs.work, '1', '');
+  const empty = session(dirs.work, '1', '', '');
   assert.deepEqual(await stopOf(runCli([], undefined, empty.io)), { exit: 4, line: '코드를 입력하지 않아 실행하지 않았어요. 아무것도 바꾸지 않았어요.' });
   assert.deepEqual(await manifest(dirs.work), before);
   assert.deepEqual(await readdir(path.join(dirs.state, 'approvals')).catch(() => []), [], 'no approval was issued');
@@ -162,7 +162,7 @@ test('guided: a wrong or empty code stops with 4 and changes nothing; no approva
 });
 
 test('guided: menu items without work are shown as "할 일 없음" and cannot be chosen; 3) lists the classification', async (t) => {
-  const { dirs, session } = await setup(t, { 'work/notes': 'no extension', 'work/문서/a.pdf': 'already placed', 'state/': '' });
+  const { dirs, session } = await setup(t, { 'work/notes.pdf.exe': 'compound extension', 'work/문서/a.pdf': 'already placed', 'state/': '' });
   const before = await manifest(dirs.work);
   const s = session(dirs.work, '1', '2', '3', '4');
   const r = await runCli([], undefined, s.io);
@@ -171,7 +171,7 @@ test('guided: menu items without work are shown as "할 일 없음" and cannot b
   assert.match(s.screen(), /2\) 중복 파일을 휴지통으로 보내기 — 할 일 없음/u);
   assert.equal((s.screen().match(/그 작업은 할 일이 없어요/gu) ?? []).length, 2);
   assert.match(s.screen(), /그대로 둘 파일: 1개 — 이미 정리된 위치 1\n/u);
-  assert.match(s.screen(), /^ {2}\[확인 필요\] notes — 확장자 없음$/mu);
+  assert.match(s.screen(), /^ {2}\[확인 필요\] notes\.pdf\.exe — 확장자가 여러 개$/mu);
   assert.match(s.screen(), /^ {2}\[그대로\] 문서\/a\.pdf — 이미 정리된 위치$/mu);
   assert.ok(!s.screen().includes('계속하려면 아래 코드를'), 'no code is offered');
   const stubborn = session(dirs.work, '1', '9', '1');
@@ -190,7 +190,7 @@ test('guided: Ctrl+C at a question cancels with 130 and changes nothing; no TTY 
   };
   assert.deepEqual(await stopOf(runCli([], undefined, { stateDir: dirs.state, isTTY: true, warn: () => {}, ask: abort })),
     { exit: 130, line: '그만뒀어요(Ctrl+C). 아무것도 바꾸지 않았어요.' }, 'before running, stated definitely');
-  assert.equal(asked, 3);
+  assert.equal(asked, 4, 'folder, menu, unknown files, code');
   // Cancel during the analysis (pre-aborted signal): the same message instead of AFO 오류[CANCELLED].
   const aborted = AbortSignal.abort();
   assert.deepEqual(await stopOf(runCli([], aborted, { stateDir: dirs.state, isTTY: true, warn: () => {},
@@ -213,7 +213,7 @@ test('undo without an ID: no TTY needs --confirm of the latest undoable run (els
   assert.equal(none.status, 0, none.stderr);
   assert.match(none.stdout, /되돌릴 수 있는 정리 기록이 없어요/u);
   const before = await manifest(dirs.work);
-  assert.equal((await runCli([], undefined, session(dirs.work, '1', approvalShown).io)).exitCode, 0);
+  assert.equal((await runCli([], undefined, session(dirs.work, '1', '', approvalShown).io)).exitCode, 0);
   const moved = await manifest(dirs.work);
   const refused = invoke(['undo']);
   assert.equal(refused.status, 4);

@@ -10,6 +10,7 @@
     "test": "npm run build && node --test dist/tests/*.test.js",
     "afo": "node dist/apps/cli/src/index.js",
     "preview": "node dist/apps/cli/src/index.js preview",
+    "gui": "node dist/apps/cli/src/index.js gui",
     "rules:suggest": "node dist/apps/cli/src/index.js suggest-rules",
     "rules:confirm": "node dist/apps/cli/src/index.js confirm-rules"
   },

@@ -36,6 +36,14 @@ npm run afo -- preview "/path/to/test-folder"
 node dist/apps/cli/src/index.js preview "/path/to/test-folder" --json
 ```
 
+### 화면으로 보기
+
+```sh
+npm run gui -- "/path/to/test-folder"
+```
+
+이 컴퓨터(127.0.0.1)에서만 열리는 브라우저 화면이 뜨고, 미리보기·정리 계획·개인 규칙·실행 기록·복구 점검을 보여 줍니다. 화면은 파일을 옮기거나 지우지 않으며 실행은 화면이 알려 주는 `apply` 명령으로 CLI에서 합니다. 자세한 내용은 [CLI 문서](docs/CLI.md#화면으로-보기-gui)를 봅니다.
+
 Windows에서는 예를 들어 `"C:\AFO-Test"`를 지정할 수 있습니다. 홈 전체·디스크 루트·시스템 폴더·개발 프로젝트는 거부하거나 제외합니다.
 숨김 경로·앱 번들·링크/junction·다중 하드링크도 제외하며 한도·읽기 실패는 불완전 상태로 표시합니다.
 같은 크기의 후보만 스트리밍 SHA-256으로 비교하고, 파일 크기·날짜만으로 불필요하다고 판정하지 않습니다. 대용량 표시의 초기 기준은 100 MiB이며 삭제나 확보량을 뜻하지 않습니다.

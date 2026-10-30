@@ -6,7 +6,7 @@ import { CLASSIFICATION_VERSION, LARGE_FILE_BYTES, buildPreview, chooseKeeper, c
   from '../packages/engine/src/index.js';
 import { scanFixture } from './helpers.js';
 
-/** Independent expected answers for default-2, written by hand (not derived from the engine tables). */
+/** Independent expected answers (written for default-2, unchanged in default-3), by hand (not derived from the engine tables). */
 const oracle: [string, 'move' | 'keep' | 'review', string | null, string][] = [
   ['보고서.PDF', 'move', '문서/보고서.PDF', 'DEFAULT_EXTENSION'],
   ['사진.JPEG', 'move', '이미지/사진.JPEG', 'DEFAULT_EXTENSION'],
@@ -125,7 +125,7 @@ test('partial scans cannot create reference rules; hash failures require review'
 });
 
 /* ---- #7 classification and duplicates ---- */
-test('default-2 classification matches an independent oracle with reasons and a rule version', () => {
+test('default-3 classification matches an independent oracle with reasons and a rule version', () => {
   const preview = buildPreview(scanFixture(oracle.map(([name]) => name)));
   assert.equal(preview.classificationVersion, CLASSIFICATION_VERSION);
   assert.equal(CLASSIFICATION_VERSION, 'default-3');

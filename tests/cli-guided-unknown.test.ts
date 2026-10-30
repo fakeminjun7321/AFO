@@ -6,6 +6,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { TestContext } from 'node:test';
 import { errorLine, exitCodeOf, runCli } from '../apps/cli/src/index.js';
+import { TargetDirectorySchema } from '../packages/contracts/src/index.js';
+import { makeCorrection } from '../packages/engine/src/index.js';
 import { loadProfile } from '../packages/filesystem/src/profiles.js';
 import { createFixture, manifest } from './helpers.js';
 import type { FixtureSpec, Manifest } from './helpers.js';
@@ -169,4 +171,92 @@ test('non-interactive plan is unchanged: unknown files stay review, the unfinish
   assert.deepEqual(out.plan.operations.map((o) => o.source), ['a.pdf']);
   assert.deepEqual(out.reviewItems.map((i) => i.source).sort(), ['b.qqq', 'data.xyz', 'movie.mp4.part', 'sub/more.xyz', '메모'].sort());
   assert.match(out.reviewItems.find((i) => i.source === 'movie.mp4.part')!.reason, /다운로드가 끝나지 않은 파일일 수 있어/u);
+});
+
+test('D1 TargetDirectorySchema: one folder name is at most 255 UTF-8 bytes (NFC); --move and saved corrections share the limit', async (t) => {
+  assert.ok(TargetDirectorySchema.safeParse('a'.repeat(255)).success);
+  assert.ok(!TargetDirectorySchema.safeParse('a'.repeat(256)).success);
+  assert.ok(TargetDirectorySchema.safeParse(`${'가'.repeat(85)}/${'b'.repeat(255)}`).success, '85 Hangul syllables = 255 bytes');
+  assert.ok(!TargetDirectorySchema.safeParse(`ok/${'가'.repeat(86)}`).success);
+  assert.ok(!TargetDirectorySchema.safeParse('가'.repeat(86)).success, 'NFD jamo are counted after NFC');
+  assert.throws(() => makeCorrection({ type: 'keyword', extension: '.xyz', keyword: null }, 'a'.repeat(256)));
+  const { dirs, invoke } = await setup(t, { 'work/d.xyz': 'x', 'state/': '' });
+  const r = invoke(['plan', dirs.work, '--move', `d.xyz=${'a'.repeat(256)}`]);
+  assert.equal(r.status, 2, r.stderr);
+});
+
+test('D1/O2/O3 guided: too long, reserved, trailing dot are refused with the reason and asked again; the 3rd says it once', async (t) => {
+  const { dirs, session } = await setup(t, { 'work/d.xyz': 'x', 'work/e.qqq': 'q', 'state/': '' });
+  const before = await manifest(dirs.work);
+  const s = session(dirs.work, '1', '2', 'CON', 'a'.repeat(256), 'abc.', '가'.repeat(86), '');
+  const r = await runCli([], undefined, s.io);
+  assert.equal(r.exitCode, 0);
+  const screen = s.screen();
+  assert.match(screen, /^그 이름은 폴더로 쓸 수 없어요\(이름이 너무 길어요\(한 단계 255바이트까지\)\)\. 이 폴더 안에 만들 폴더 이름을 다시 입력해 주세요\.$/mu);
+  assert.match(screen, /^그 이름은 폴더로 쓸 수 없어요\(CON·NUL·AUX 같은 Windows 예약 이름은 안 돼요\)\. 이 폴더 안에/mu);
+  assert.match(screen, /^그 이름은 폴더로 쓸 수 없어요\(이름 끝에 점이나 공백은 안 돼요\)\. '\.qqq' 파일 1개는 그대로 둘게요\.$/mu, '3rd: one line, no "다시 입력"');
+  assert.match(screen, /^그 이름은 폴더로 쓸 수 없어요\(이름이 너무 길어요[^\n]*다시 입력/mu);
+  assert.equal(r.output, '옮길 파일이 없어요. 아무것도 바꾸지 않았어요.');
+  assert.deepEqual(await manifest(dirs.work), before);
+  assert.equal(await loadProfile({ stateDir: dirs.state }), null);
+});
+
+test('D2 guided: files left out of the plan are named with the real reason (file named 기타, same names, existing destination)', async (t) => {
+  const a = await setup(t, { 'work/기타': 'a file', 'work/e.xyz': 'e', 'state/': '' });
+  const before = await manifest(a.dirs.work);
+  const s = a.session(a.dirs.work, '1', '1');
+  const r = await runCli([], undefined, s.io);
+  assert.equal(r.exitCode, 0);
+  // The file 기타 itself (no extension, so also unknown) cannot go into a folder of its own name either.
+  assert.match(s.screen(), /^옮기지 못하는 파일 2개\(그대로 둬요\):\n {2}e\.xyz, 기타 — '기타'라는 파일이 이미 있어 그 이름으로 폴더를 만들 수 없어요\(이름 충돌\)$/mu);
+  assert.equal(r.output, '옮길 수 있는 파일이 없어요. 아무것도 바꾸지 않았어요.', 'not "살펴보는 사이 파일이 바뀌어"');
+  assert.deepEqual(await manifest(a.dirs.work), before);
+
+  const b = await setup(t, { 'work/a/s.xyz': '1', 'work/b/s.xyz': '2', 'work/t.qqq': 'root t', 'work/기타/t.qqq': 'already', 'work/k.pdf': 'k',
+    'state/': '' });
+  const start = await manifest(b.dirs.work);
+  const s2 = b.session(b.dirs.work, '1', '1', code);
+  assert.equal((await runCli([], undefined, s2.io)).exitCode, 0);
+  const screen = s2.screen();
+  assert.match(screen, /종류를 모르는 파일 3개를 '기타' 폴더로 옮기는 계획을 만들게요\. \('기타' 폴더에 이미 있는 1개는 그대로 둬요\)/u, 'O6');
+  assert.match(screen, /^옮기지 못하는 파일 3개\(그대로 둬요\):$/mu);
+  assert.match(screen, /^ {2}a\/s\.xyz, b\/s\.xyz — 옮길 곳에서 다른 파일과 이름이 겹쳐요\(덮어쓰지 않아요\)$/mu);
+  assert.match(screen, /^ {2}t\.qqq — 옮길 곳에 같은 이름이 이미 있어요\(이름 충돌, 덮어쓰지 않아요\)$/mu);
+  assert.match(screen, /이렇게 정리할게요\(파일 1개, 덮어쓰지 않아요\):\n {2}k\.pdf → 문서\/k\.pdf/u);
+  assertMoved(start, await manifest(b.dirs.work), { 'k.pdf': '문서/k.pdf' });
+});
+
+test('D3/O4/O5 guided: "=" names are chosen by file ID; digits-only extensions go with "확장자 없음"; unsavable extensions say so', async (t) => {
+  const { dirs, session } = await setup(t, { 'work/x': 'plain', 'work/x=y.xyz': 'eq', 'work/2024.10.30': 'date', 'work/b.한글': 'h',
+    'work/c.xyz': 'c', 'state/': '' });
+  const before = await manifest(dirs.work);
+  const s = session(dirs.work, '1', '2', '데이터', 'n', '한글', '날짜', code);
+  const r = await runCli([], undefined, s.io);
+  assert.equal(r.exitCode, 0, r.output);
+  const screen = s.screen();
+  assert.match(screen, /^종류를 모르는 파일이 있어요: \.xyz 2개\(예: c\.xyz\), \.한글 1개\(예: b\.한글\), 확장자 없음 2개\(예: 2024\.10\.30\)$/mu);
+  assert.match(screen, /^'\.한글' 확장자는 기억할 수 없어 이번에만 옮겨요\.$/mu);
+  assert.match(screen, /^확장자가 없는\(또는 숫자로만 된\) 파일은 기억할 수 없어 이번에만 옮겨요\.$/mu);
+  assert.deepEqual(s.questions.filter((q) => q.includes('다음에도')), ["다음에도 '.xyz' 파일은 '데이터' 폴더로 정리할까요? (y/N): "]);
+  assertMoved(before, await manifest(dirs.work), { 'x=y.xyz': '데이터/x=y.xyz', 'c.xyz': '데이터/c.xyz', 'b.한글': '한글/b.한글',
+    'x': '날짜/x', '2024.10.30': '날짜/2024.10.30' });
+});
+
+test('O1 guided: after saving a rule, a stop says files are unchanged and the saved rule stays', async (t) => {
+  const { dirs, session } = await setup(t, { 'work/d.xyz': 'x', 'state/': '' });
+  const before = await manifest(dirs.work);
+  let line = '';
+  try { await runCli([], undefined, session(dirs.work, '1', '2', '자료', 'y', '').io); }
+  catch (error) { line = `${exitCodeOf(error)} ${errorLine(error)}`; }
+  assert.equal(line, '4 코드를 입력하지 않아 실행하지 않았어요. 파일은 바꾸지 않았어요(저장한 규칙은 남아 있어요).');
+  assert.deepEqual(await manifest(dirs.work), before);
+  // A second folder (the first one's .xyz is now a saved correction, so nothing there is unknown any more).
+  const other = await setup(t, { 'work/e.qqq': 'q', 'state/': '' });
+  const cancel = other.session(other.dirs.work, '1', '2', '자료2', 'y');
+  const ask = cancel.io.ask;
+  cancel.io.ask = (q: string) => q.startsWith('코드') ? Promise.reject(Object.assign(new Error('aborted'), { name: 'AbortError' })) : ask(q);
+  line = '';
+  try { await runCli([], undefined, cancel.io); } catch (error) { line = `${exitCodeOf(error)} ${errorLine(error)}`; }
+  assert.equal(line, '130 그만뒀어요(Ctrl+C). 파일은 바꾸지 않았어요(저장한 규칙은 남아 있어요).');
+  assert.deepEqual(await manifest(dirs.work), before);
 });

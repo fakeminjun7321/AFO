@@ -5,7 +5,7 @@
  *   Only NUL/very long folder names go through runCli's io (a pty line discipline would not deliver a NUL byte as typed).
  * - File results come from an independent manifest written here (lstat, no link following: type, size, mtimeNs, sha256).
  * - Synthetic data only: mkdtemp(os.tmpdir()) base with a fake HOME and a temp AFO_STATE_DIR. The real home is refused.
- * Known defects are `todo` tests (they run and report, but do not fail the suite): D1 long folder names, D2 silent conflicts, D3 "=" names.
+ * D1 long folder names, D2 silent conflicts and D3 "=" names were `todo` tests; fixed in the builder commit after eda7eb2, now plain tests.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -291,7 +291,7 @@ test('U3 pty 1) 기타: really moved (manifest), unfinished downloads/disguised/
     { expect: '1\\) 폴더별로 정리하기\\(되돌릴 수 있어요\\) — 파일 1개\\n {5}종류를 모르는 파일 4개는 어디로 옮길지 이어서 물어봐요\\.' },
     { expect: MENU, send: `1${ENTER}` },
     { expect: '다운로드 중일 수 있는 파일 3개\\(예: [^)]+\\)는 그대로 둬요\\.' },
-    { expect: '종류를 모르는 파일이 있어요: \\.xyz 2개\\(예: data\\.xyz\\), \\.30 1개\\(예: 2024\\.10\\.30\\), 확장자 없음 1개\\(예: 메모\\)' },
+    { expect: '종류를 모르는 파일이 있어요: \\.xyz 2개\\(예: data\\.xyz\\), 확장자 없음 2개\\(예: 2024\\.10\\.30\\)' }, // O4: digits-only ".30" goes with 확장자 없음
     { expect: UNKNOWN_Q, send: `1${ENTER}` },
     { expect: "종류를 모르는 파일 4개를 '기타' 폴더로 옮기는 계획을 만들게요\\." },
     { expect: '이렇게 정리할게요\\(파일 5개, 덮어쓰지 않아요\\):' },
@@ -372,8 +372,7 @@ test('U5 pty 2) folder = an existing file name, 1) with a file named "기타", a
   assert.deepEqual(await outside(), out0);
 });
 
-test('U5-D2 (todo) guided tells why unknown files it promised to move were left out (conflict), instead of silence / "파일이 바뀌어"', { skip: SKIP,
-  todo: 'D2: 충돌로 계획에서 빠진 파일을 안내형 화면이 설명하지 않음' }, async (t) => {
+test('U5-D2 guided tells why unknown files it promised to move were left out (conflict), instead of silence / "파일이 바뀌어"', { skip: SKIP }, async (t) => {
   const { work, pty } = await setup(t, { '기타': 'a file named gita', 'e.xyz': 'e' });
   const r = await pty([{ expect: FOLDER, send: work + ENTER }, { expect: MENU, send: `1${ENTER}` }, { expect: UNKNOWN_Q, send: `1${ENTER}` }]);
   assert.ok(!r.stdout.includes('살펴보는 사이 파일이 바뀌어'), `files did not change; the move conflicts with the file 기타:\n${r.stdout}`);
@@ -448,24 +447,23 @@ test('U7 io: a NUL byte in the folder name is refused; three refusals keep the f
   assert.deepEqual(await snap(work), before);
 });
 
-test('U7b io: a 300-character folder name never loses or overwrites the file (today it fails at run time, exit 3)', async (t) => {
+test('U7b io: a 300-character folder name never loses or overwrites the file (refused at the question since D1; Enter keeps it)', async (t) => {
   const { work, state } = await setup(t, { 'd.xyz': 'x', 'y.pdf': 'p' });
   const before = await snap(work);
-  const s = session(state, [work, '1', '2', 'a'.repeat(300), 'N', shownCode]);
+  const s = session(state, [work, '1', '2', 'a'.repeat(300), '', shownCode]);
   const r = await runCli([], undefined, s.io);
-  assert.equal(r.exitCode, 3, r.output);
-  assert.match(r.output, /d\.xyz — [^\n]*ENAMETOOLONG/u);
+  assert.equal(r.exitCode, 0, r.output);
   assertMoved(before, await snap(work), { 'y.pdf': '문서/y.pdf' });
 });
 
-test('U7b-D1 (todo) a folder name the OS cannot create (one segment > 255 bytes) is refused at the question', { todo: 'D1: 255바이트 넘는 폴더 이름을 질문 단계에서 거부하지 않음' }, async (t) => {
+test('U7b-D1 a folder name the OS cannot create (one segment > 255 bytes) is refused at the question', async (t) => {
   const { work, state } = await setup(t, { 'd.xyz': 'x' });
   const s = session(state, [work, '1', '2', 'a'.repeat(300), '', '']);
   try { await runCli([], undefined, s.io); } catch { /* reported below */ }
   assert.match(s.screen(), new RegExp(REFUSED, 'u'));
 });
 
-test('U7c-D3 (todo) file names with "=" that also prefix another file name do not crash 1) with an internal --move error', { todo: 'D3: --move 문자열 조립 때문에 이름에 =가 있으면 실패' }, async (t) => {
+test('U7c-D3 file names with "=" that also prefix another file name do not crash 1) with an internal --move error', async (t) => {
   const { work, state } = await setup(t, { 'x': 'plain', 'x=y.xyz': 'eq' });
   const before = await snap(work);
   const s = session(state, [work, '1', '1', shownCode]);

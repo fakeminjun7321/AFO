@@ -126,7 +126,9 @@ test('missing or blocked destinations and impossible paths are review items', ()
   const profile = subjects();
   // '수학' exists as a file in the work root: the folder cannot be created there.
   assert.deepEqual(rows(['수학', '수학_과제3.pdf'], { profile })[1], ['수학_과제3.pdf', 'review', null, 'DEST_CONFLICT']);
-  const long = withCorrection(profile, makeCorrection({ type: 'keyword', extension: '.pdf', keyword: null }, 'a'.repeat(4090), NOW), NOW);
+  // 17 segments of 240 bytes (each within the 255-byte segment limit) = 4096 chars: the destination with the name is too long.
+  const deep = Array.from({ length: 17 }, () => 'a'.repeat(240)).join('/');
+  const long = withCorrection(profile, makeCorrection({ type: 'keyword', extension: '.pdf', keyword: null }, deep, NOW), NOW);
   assert.deepEqual(rows(['long-name.pdf'], { profile: long }), [['long-name.pdf', 'review', null, 'DEST_INVALID']]);
 });
 

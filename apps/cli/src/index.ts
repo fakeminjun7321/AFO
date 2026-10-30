@@ -199,6 +199,7 @@ export function exitCodeOf(error: unknown): number {
   return 1;
 }
 export function errorLine(error: unknown): string {
+  if (error instanceof CliError && error.plain) return error.message;
   if (error instanceof Error && error.name === 'AbortError' && !(error instanceof AfoError)) return 'AFO: 취소했습니다(Ctrl+C). 실행 전이었다면 아무것도 바꾸지 않았습니다.';
   if (error instanceof AfoError) return `AFO 오류[${error.code}]: ${error.message}`;
   if (error instanceof z.ZodError) {

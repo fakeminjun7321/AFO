@@ -8,6 +8,7 @@ import type { RunRecord, UndoRecord } from '../../../packages/filesystem/src/exe
 import { issueRootGrant, revokeGrant } from '../../../packages/filesystem/src/grants.js';
 import { inspectRuns } from '../../../packages/filesystem/src/recovery.js';
 import { CliError, usage } from './rules.js';
+import { haeyo } from './words.js';
 
 /**
  * Execution commands (#10–#13): apply, undo, runs, recover. Only an adapter: approvals are issued and consumed by approvals.ts,
@@ -223,7 +224,9 @@ export async function undoCommand(runId: string, values: { confirm?: string | un
   if (!ctx.json || needs) for (const line of summary) ctx.warn(line);
   const typed = await prompt(ctx, values.confirm, simple ? '코드(그냥 Enter는 취소): ' : '확인 코드 8자를 입력하세요(빈 입력은 취소): ',
     '비대화형 되돌리기에는 --confirm <실행 ID 앞 8자>가 필요합니다. 아무것도 바꾸지 않았습니다.');
-  if (typed !== code) throw new CliError('확인 코드가 맞지 않아 되돌리지 않았습니다. 아무것도 바꾸지 않았습니다.', 4);
+  if (typed !== code) throw simple ? new CliError(`${typed === '' ? '코드를 입력하지 않아' : '코드가 맞지 않아'} 되돌리지 않았어요. ` +
+      '아무것도 바꾸지 않았어요.', 4, true)
+    : new CliError('확인 코드가 맞지 않아 되돌리지 않았습니다. 아무것도 바꾸지 않았습니다.', 4);
 
   const grant = await issueRootGrant(run.root.canonicalPath);
   let report: ExecutionReport;
@@ -263,10 +266,10 @@ function simpleUndoLines(report: ExecutionReport, ops: Map<string, PlanOperation
   const name = (opId: string): string => { const op = ops?.get(opId); return op?.destination ?? op?.source ?? '(이름 모름)'; };
   const dirs = report.directories;
   return [`되돌렸어요: ${back}개 · 건너뜀 ${report.results.length - back - unknown}${unknown ? ` · 결과 확인 못 함 ${unknown}` : ''}`,
-    ...notBack.slice(0, MAX_UNDO_LIST).map((r) => `  ${name(r.opId)} — ${r.detail}`),
+    ...notBack.slice(0, MAX_UNDO_LIST).map((r) => `  ${name(r.opId)} — ${haeyo(r.detail)}`),
     ...(notBack.length > MAX_UNDO_LIST ? [`  … 외 ${notBack.length - MAX_UNDO_LIST}개`] : []),
     ...(dirs?.removed.length ? [`정리할 때 만든 빈 폴더 ${dirs.removed.length}개도 지웠어요.`] : []),
-    ...(dirs?.kept.length ? [`정리할 때 만든 폴더 ${dirs.kept.length}개는 그대로 뒀어요:`, ...dirs.kept.map((k) => `  ${k.path} — ${k.reason}`)] : []),
+    ...(dirs?.kept.length ? [`정리할 때 만든 폴더 ${dirs.kept.length}개는 그대로 뒀어요:`, ...dirs.kept.map((k) => `  ${k.path} — ${haeyo(k.reason)}`)] : []),
     ...(unknown ? ['결과를 확인하지 못한 파일이 있어요. 다시 실행하지 말고 afo recover로 실제 상태를 확인하세요.'] : [])];
 }
 

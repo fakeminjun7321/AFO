@@ -156,10 +156,10 @@ async function setup(t: TestContext, spec: Spec) {
 }
 
 // Prompts as shown on screen.
-const FOLDER = '끌어다 놓고 Enter를 누르세요\\(그냥 Enter는 종료\\): ';
+const FOLDER = '끌어다 놓고 Enter를 누르세요\\(경로를 붙여 넣어도 돼요, 그냥 Enter는 종료\\): ';
 const MENU = '번호를 입력하세요: ';
 const CODE = '계속하려면 아래 코드를 입력하세요: ([a-f0-9]{8})\\n코드\\(그냥 Enter는 취소\\): ';
-const UNDO = '확인 코드: (\\S{8}) \\(실행 ID 앞 8자\\)\\n확인 코드 8자를 입력하세요\\(빈 입력은 취소\\): ';
+const UNDO = '계속하려면 아래 코드를 입력하세요: (\\S{8})\\n코드\\(그냥 Enter는 취소\\): ';
 const ENTER = '\r'; const CTRL_C = '\x03';
 
 const BASE: Spec = { 'a.pdf': 'pdf-a', 'b.jpg': 'jpg-b', 'clip.mp4': 'video', 'notes': 'no extension', 'c.txt': 'same-text', 'c copy.txt': 'same-text' };
@@ -196,9 +196,9 @@ test('pty: missing folder, the (fake) home itself and a file path are explained 
   const { state, work, pty } = await setup(t, BASE);
   const before = await snap(work);
   const r = await pty([
-    { expect: FOLDER, send: `${path.join(work, '없는 폴더')}${ENTER}` }, { expect: '이 폴더는 정리할 수 없어요: 선택한 폴더를 찾거나 읽을 수 없습니다' },
+    { expect: FOLDER, send: `${path.join(work, '없는 폴더')}${ENTER}` }, { expect: '이 폴더는 정리할 수 없어요: 선택한 폴더를 찾거나 읽을 수 없어요' },
     { expect: FOLDER, send: `~${ENTER}` }, { expect: '이 폴더는 정리할 수 없어요: 홈 전체' },
-    { expect: FOLDER, send: `'${path.join(work, 'a.pdf')}'${ENTER}` }, { expect: '이 폴더는 정리할 수 없어요: 일반 폴더를 직접 선택해야 합니다' },
+    { expect: FOLDER, send: `'${path.join(work, 'a.pdf')}'${ENTER}` }, { expect: '이 폴더는 정리할 수 없어요: 일반 폴더를 직접 선택해야 해요' },
     { expect: '폴더를 3번 열지 못해 그만둘게요\\. 아무것도 바꾸지 않았어요\\.' }]);
   assert.equal(r.exit, 1, r.transcript);
   assert.equal((r.transcript.match(/끌어다 놓고/gu) ?? []).length, 3, 'asked exactly three times');
@@ -227,7 +227,7 @@ test('pty: menu 1 + shown code really moves files; a new `afo undo` process (Ctr
     { expect: '이렇게 정리할게요\\(파일 5개, 덮어쓰지 않아요\\):' }, { expect: CODE, send: `{1}${ENTER}` }]);
   assert.equal(r.exit, 0, r.transcript);
   // Result goes to stdout; questions and screens do not.
-  assert.match(r.stdout, /정리를 마쳤어요\. \(실행 ID [0-9a-f-]+\)\n {2}옮김 5 · 건너뜀 0 · 실패 0\n되돌리려면: afo undo/u);
+  assert.match(r.stdout, /정리를 마쳤어요\. \(실행 ID [0-9a-f]{8}\)\n {2}옮김 5 · 건너뜀 0 · 실패 0\n되돌리려면: afo undo/u);
   assert.ok(!r.stdout.includes('번호를 입력하세요') && !r.stdout.includes('끌어다'), 'questions are not on stdout');
   const moved = await snap(work);
   for (const [source, destination] of Object.entries(MOVES)) {
@@ -239,7 +239,7 @@ test('pty: menu 1 + shown code really moves files; a new `afo undo` process (Ctr
   assert.equal(Object.keys(filesOf(moved)).length, Object.keys(filesOf(before)).length, 'no file added or lost');
   assert.equal((await readdir(path.join(state, 'runs'))).length > 0, true);
 
-  const cancelled = await pty([{ expect: '가장 최근에 정리한 기록을 되돌려요: ' }, { expect: UNDO, send: CTRL_C }], ['undo']);
+  const cancelled = await pty([{ expect: '정리한 파일 5개를 원래 자리로 되돌릴까요\\?' }, { expect: UNDO, send: CTRL_C }], ['undo']);
   assert.equal(cancelled.exit, 130, cancelled.transcript);
   assert.deepEqual(await snap(work), moved, 'Ctrl+C at the undo question changes nothing');
 
@@ -251,7 +251,7 @@ test('pty: menu 1 + shown code really moves files; a new `afo undo` process (Ctr
   assert.equal(undo.exit, 0, undo.transcript);
   const after = await snap(work);
   assert.deepEqual(filesOf(after), filesOf(before), 'same paths, sha256 and mtime as before');
-  for (const dir of ['문서', '이미지', '영상']) assert.deepEqual(await readdir(path.join(work, dir)), [], `${dir}/ is left empty (not deleted)`);
+  assert.deepEqual(after, before, 'files and folders as before: the empty folders the run created are removed (1cde928)');
 
   const again = await pty([], ['undo']);
   assert.equal(again.exit, 0);
@@ -282,7 +282,7 @@ test('pty: menu 4, empty menu answer and empty first answer quit with 0; Ctrl+C 
   for (const [label, steps] of cancels) {
     const r = await pty(steps);
     assert.equal(r.exit, 130, `${label}\n${r.transcript}`);
-    assert.match(r.transcript, /취소했습니다\(Ctrl\+C\)\. 실행 전이었다면 아무것도 바꾸지 않았습니다\./u, label);
+    assert.match(r.transcript, /그만뒀어요\(Ctrl\+C\)\. 아무것도 (바꾸지|되돌리지) 않았어요\./u, label);
     assert.deepEqual(await snap(work), before, label);
     assert.deepEqual(await writesOf(state), [], label);
   }
@@ -362,12 +362,9 @@ test('pty: saved personal rules — none/applied/disabled are stated; reference 
   assert.deepEqual(await snap(work), after, 'quitting changed nothing');
 });
 
-// OBS-DEFECT (todo, does not fail the run): the summary/detail never says that files are kept because they are reference files.
-// With the reference folder = the work folder, every file (also ones added after saving the rule) is kept as a reference file,
-// yet the summary reads "저장된 내 정리 규칙을 적용했어요" + "그대로 둘 파일: N개(이미 정리된 곳에 있는 파일 등)" and 1) shows "할 일 없음".
-test('pty: the guided summary says when files are kept because they are reference files', {
-  skip: SKIP, todo: '요약·자세히 보기에 참고 파일 보호 이유가 표시되지 않음(검증 기록 CLI_GUIDED.md D1)',
-}, async (t) => {
+// D1 (fixed): with the reference folder = the work folder, every file (also ones added after saving the rule) is kept as a reference
+// file; the summary and 3) now name that reason ("참고 폴더 보호").
+test('pty: the guided summary says when files are kept because they are reference files', { skip: SKIP }, async (t) => {
   const { state, work, pty, plain } = await setup(t, { '과제/물리/물리_1.pdf': 'r1', '과제/물리/물리_2.pdf': 'r2', '과제/수학/수학_1.pdf': 'r3' });
   await savePhysicsRule(plain, work, path.join(path.dirname(state), 'draft.json'));
   await writeFile(path.join(work, '물리_새보고서.pdf'), 'w1');
@@ -376,7 +373,8 @@ test('pty: the guided summary says when files are kept because they are referenc
   assert.equal(r.exit, 0, r.transcript);
   assert.deepEqual(await snap(work), before);
   assert.match(r.transcript, /그대로 둘 파일: 4개/u, 'observed: the new file is kept too (whole reference folder protected)');
-  assert.match(r.transcript, /참고/u, 'expected: the screen names reference protection as the reason');
+  assert.match(r.transcript, /그대로 둘 파일: 4개 — 참고 폴더 보호 4\n/u, 'the summary names reference protection as the reason');
+  assert.match(r.transcript, /\[그대로\] 물리_새보고서\.pdf — 참고 폴더 보호/u, '3) gives the reason per file');
 });
 
 test('pty: honest wording — "아직 아무것도 바꾸지 않았어요" before running, no permanent delete in the menu, trash is not shown as freed space', { skip: SKIP }, async (t) => {
@@ -386,7 +384,7 @@ test('pty: honest wording — "아직 아무것도 바꾸지 않았어요" befor
   assert.equal(r.exit, 4);
   assert.match(r.transcript, /파일 6개를 살펴봤어요\. \(아직 아무것도 바꾸지 않았어요\)/u);
   assert.match(r.transcript, /자세히 보기 — 분류 결과\(아직 아무것도 바꾸지 않았어요\):/u);
-  assert.match(r.transcript, /이 사본들을 휴지통으로 보낼게요\(1개, 남길 파일은 그대로\):\n {2}c\.txt \(같은 내용의 'c copy\.txt' 파일은 남겨요\)/u);
+  assert.match(r.transcript, /이 사본들을 휴지통으로 보낼게요\(1개, 남길 파일은 그대로\):\n {2}c copy\.txt \(같은 내용의 'c\.txt' 파일은 남겨요\)/u);
   assert.match(r.transcript, /AFO 파일 정리 도우미예요\. 파일을 실제로 옮기기 전에 꼭 확인 코드를 물어봐요\./u);
   for (const banned of ['영구', '확보', '공간', ' B ', 'bytes']) assert.ok(!r.transcript.includes(banned), `no '${banned}' in the guided screens`);
 });

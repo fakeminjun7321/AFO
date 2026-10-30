@@ -22,6 +22,14 @@
 
 Node.js 24와 npm이 필요합니다. 의존성 버전과 lockfile을 고정했습니다.
 
+가장 쉬운 사용법(설치 1회 → 안내 따르기 → 되돌리기). 자세한 내용은 [CLI 문서](docs/CLI.md#빠른-시작)를 봅니다.
+
+```sh
+npm ci --ignore-scripts && npm run build && npm link   # 설치 1회, 제거는 npm unlink -g afo
+afo                                                   # 폴더를 끌어다 놓고 안내를 따름(확인 코드를 입력해야 실행)
+afo undo                                              # 가장 최근 정리 되돌리기
+```
+
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund
 npm run build

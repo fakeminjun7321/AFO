@@ -250,7 +250,7 @@ function undoLines(report: ExecutionReport, ops: Map<string, PlanOperation> | nu
     ...(unknown ? ['결과 불명 항목은 recover로 실제 파일 상태를 확인하세요. AFO는 자동으로 다시 실행·원복하지 않습니다.'] : [])];
 }
 
-interface RunSummary {
+export interface RunSummary {
   runId: string; planId: string; mode: ApprovalMode; startedAt: string; finishedAt: string | null;
   results: Record<Status, number> | null; undos: number; undone: number; undoable: boolean;
 }
@@ -264,6 +264,19 @@ const summaryLine = (s: RunSummary): string => `${s.runId}  ${s.startedAt}  ${mo
   (s.results === null ? '끝나지 않음(결과 기록 없음 — recover로 확인)'
     : `성공 ${s.results.moved + s.results.trashed + s.results.deleted}·건너뜀 ${s.results.skipped}·실패 ${s.results.failed}·불명 ${s.results.unknown}`) +
   `  되돌리기 ${s.undos}회(되돌린 항목 ${s.undone})${s.undoable ? '  undo 가능' : ''}`;
+
+/** Every run record, oldest first; unreadable ones as { runId, error }. Shared by `runs` and `gui`. */
+export async function runSummaries(stateDir: string): Promise<(RunSummary | { runId: string; error: string })[]> {
+  const rows: (RunSummary | { runId: string; error: string })[] = [];
+  for (const id of await listRuns(stateDir)) {
+    try {
+      const found = await readRun(stateDir, id);
+      if (found) rows.push(summarize(found.run, found.undos));
+    } catch (error) { rows.push({ runId: id, error: error instanceof Error ? error.message : String(error) }); }
+  }
+  const key = (r: (typeof rows)[number]): string => 'startedAt' in r ? r.startedAt : '';
+  return rows.sort((a, b) => key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0);
+}
 
 /** runs [<runId>]: listRuns/readRun summary. Read only. */
 export async function runsCommand(runId: string | undefined, ctx: ExecContext): Promise<CliResult> {
@@ -282,26 +295,22 @@ export async function runsCommand(runId: string | undefined, ctx: ExecContext): 
       ...undos.flatMap((u) => [`되돌리기 ${u.undoIndex}회차 (${u.finishedAt}):`, ...(u.report.results.length ? resultLines(u.report, ops, true) : ['  되돌릴 항목이 없었습니다.'])]),
     ].join('\n'), 0);
   }
-  const rows: (RunSummary | { runId: string; error: string })[] = [];
-  for (const id of await listRuns(stateDir)) {
-    try {
-      const found = await readRun(stateDir, id);
-      if (found) rows.push(summarize(found.run, found.undos));
-    } catch (error) { rows.push({ runId: id, error: error instanceof Error ? error.message : String(error) }); }
-  }
-  const key = (r: (typeof rows)[number]): string => 'startedAt' in r ? r.startedAt : '';
-  rows.sort((a, b) => key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0);
+  const rows = await runSummaries(stateDir);
   if (ctx.json) return new CliResult(JSON.stringify({ runs: rows }, null, 2), 0);
   if (!rows.length) return new CliResult('실행 기록이 없습니다.', 0);
   return new CliResult([`실행 기록 ${rows.length}개 (오래된 순):`,
     ...rows.map((r) => 'error' in r ? `${r.runId}  [읽을 수 없음] ${r.error}` : summaryLine(r))].join('\n'), 0);
 }
 
+/** inspectRuns over every journal; `open` is the runs that are not clean. Report only. Shared by `recover` and `gui`. */
+export async function recoverReport(stateDir: string): Promise<{ all: Awaited<ReturnType<typeof inspectRuns>>; open: Awaited<ReturnType<typeof inspectRuns>> }> {
+  const all = await inspectRuns(stateDir, { loadPlan: (planId) => loadSavedPlan(stateDir, planId) });
+  return { all, open: all.filter((r) => r.status !== 'clean') };
+}
+
 /** recover: inspectRuns report only (no re-run, rollback or delete). Exit 3 when a run needs the user's attention. */
 export async function recoverCommand(ctx: ExecContext): Promise<CliResult> {
-  const stateDir = stateOf(ctx);
-  const all = await inspectRuns(stateDir, { loadPlan: (planId) => loadSavedPlan(stateDir, planId) });
-  const open = all.filter((r) => r.status !== 'clean');
+  const { all, open } = await recoverReport(stateOf(ctx));
   const exit = open.some((r) => r.status !== 'active') ? 3 : 0;
   if (ctx.json) return new CliResult(JSON.stringify({ checked: all.length, runs: open }, null, 2), exit);
   if (!open.length) return new CliResult(`끝나지 않은 실행이 없습니다(저널 ${all.length}개 확인). 아무것도 바꾸지 않았습니다.`, 0);

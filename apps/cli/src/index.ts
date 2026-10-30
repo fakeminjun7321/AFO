@@ -1,7 +1,9 @@
+#!/usr/bin/env node
+import { realpathSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { AfoError, ProfileSchema } from '../../../packages/contracts/src/index.js';
 import type { CorrectionMatch, RuleProfile } from '../../../packages/contracts/src/index.js';
@@ -15,8 +17,18 @@ import { CliResult, applyCommand, recoverCommand, runsCommand, undoCommand } fro
 import type { ExecContext } from './apply.js';
 import { planCommand } from './plan.js';
 import { CliError, draftLines, expected, isCorrupt, rulesCommand, usage } from './rules.js';
+import { guidedCommand, undoLatestCommand } from './guided.js';
 
-const help = `AFO 미리보기·개인 규칙·정리 계획·실행
+const help = `AFO 파일 정리 도우미
+
+가장 쉬운 사용법: afo 를 입력하고 안내를 따르세요.
+  afo          폴더를 끌어다 놓기 → 분석 요약 → 정리 방법 고르기 → 확인 코드 입력 → 정리
+  afo undo     가장 최근 정리를 원래대로 되돌리기(확인 코드 입력)
+  afo runs     지금까지 정리한 기록 보기
+대화형 afo도 아래 apply와 같은 승인·실행 경로만 쓰며, 확인 코드를 직접 입력해야 파일을 옮깁니다(영구 삭제는 메뉴에 없음).
+설치 1회: npm ci --ignore-scripts && npm run build && npm link (설치 없이: node dist/apps/cli/src/index.js)
+
+세부 명령(미리보기·개인 규칙·정리 계획·실행):
 
 preview <폴더> [--reference <참고 폴더>] [--profile <JSON>] [--no-saved-rules]
         [--move <상대 경로>=<목적지 폴더>]... [--remember] [--json]
@@ -26,7 +38,7 @@ plan <폴더> [preview와 같은 분석 옵션, --remember 제외] [--delete-mod
 apply <계획 ID> --mode organize|trash|permanent-delete [--only <작업ID,...>]
       [--confirm <승인 코드>] [--phrase <확인 문구>] [--json]
      저장된 계획의 한 방식 작업을 보여 주고 승인 코드(영구 삭제는 문구 "영구 삭제"도)를 확인한 뒤 실제로 실행
-undo <실행 ID> [--confirm <실행 ID 앞 8자>] [--json]   이동(organize) 실행만 원래 위치로 되돌림
+undo [<실행 ID>] [--confirm <실행 ID 앞 8자>] [--json]   이동(organize) 실행만 원래 위치로 되돌림(ID를 빼면 가장 최근의 되돌릴 수 있는 실행)
 runs [<실행 ID>] [--json]                실행 기록 요약 또는 한 실행의 항목별 결과
 recover [--json]                         끝나지 않은 실행·결과 불명 항목 보고(자동 재실행·원복·삭제 없음)
 suggest-rules <참고 폴더> [--json]       규칙 후보(초안) JSON을 stdout에, 요약을 stderr에 출력
@@ -80,6 +92,10 @@ export async function runCli(args: string[], signal?: AbortSignal, io: CliIo = {
 }
 
 async function dispatch(args: string[], signal: AbortSignal | undefined, io: CliIo): Promise<string | CliResult> {
+  // No arguments on a TTY: the guided flow (guided.ts). Without a TTY (pipes, scripts, tests) it stays the help text.
+  if (args.length === 0 && io.isTTY === true && io.ask !== undefined)
+    return guidedCommand({ json: false, warn: io.warn ?? ((line: string) => { console.error(line); }), signal, isTTY: true, ask: io.ask,
+      stateDir: () => io.stateDir ?? resolveStateDir() });
   if (args.length === 0 || args[0] === '--help') return help;
   let parsed;
   try {
@@ -110,6 +126,7 @@ async function dispatch(args: string[], signal: AbortSignal | undefined, io: Cli
   }
   const exec: ExecContext = { json, warn, stateDir, signal, isTTY: io.isTTY ?? false,
     ask: io.ask ?? (() => Promise.reject(new Error('대화형 입력을 사용할 수 없습니다.'))) };
+  if (command === 'undo' && positionals.length === 1) return undoLatestCommand(values, exec);
   if (command === 'runs' || command === 'recover') {
     if (positionals.length > (command === 'runs' ? 2 : 1)) throw usage(`${command} 명령의 인수가 너무 많습니다.`);
     return command === 'runs' ? runsCommand(target, exec) : recoverCommand(exec);
@@ -182,6 +199,7 @@ export function exitCodeOf(error: unknown): number {
   return 1;
 }
 export function errorLine(error: unknown): string {
+  if (error instanceof Error && error.name === 'AbortError' && !(error instanceof AfoError)) return 'AFO: 취소했습니다(Ctrl+C). 실행 전이었다면 아무것도 바꾸지 않았습니다.';
   if (error instanceof AfoError) return `AFO 오류[${error.code}]: ${error.message}`;
   if (error instanceof z.ZodError) {
     const first = error.issues[0];
@@ -191,11 +209,19 @@ export function errorLine(error: unknown): string {
   return `AFO 오류: ${error instanceof Error ? error.message : '알 수 없는 오류'}`;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+/** Real paths on both sides: `npm link` runs this file through a symlink (process.argv[1]) while Node resolves import.meta.url. */
+function isEntryPoint(): boolean {
+  if (!process.argv[1]) return false;
+  try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; }
+}
+
+if (isEntryPoint()) {
   const controller = new AbortController();
   process.once('SIGINT', () => controller.abort());
   const ask = async (question: string): Promise<string> => {
     const rl = createInterface({ input: process.stdin, output: process.stderr });
+    // In a TTY, readline reads Ctrl+C as a key instead of a signal: cancel the same way (exit 130, nothing changed).
+    rl.on('SIGINT', () => controller.abort());
     try { return await rl.question(question, { signal: controller.signal }); } finally { rl.close(); }
   };
   try {

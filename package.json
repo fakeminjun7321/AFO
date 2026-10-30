@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": { "afo": "dist/apps/cli/src/index.js" },
   "engines": { "node": ">=24 <25" },
   "scripts": {
     "build": "tsc -p tsconfig.json",

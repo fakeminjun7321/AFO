@@ -14,6 +14,12 @@ npm unlink -g afo                                     # 제거
   - 폴더 입력은 앞뒤 공백, 감싼 따옴표, macOS 터미널 드래그의 `\ ` 같은 백슬래시 이스케이프(Windows 제외), 앞의 `~/`(홈)를 정리합니다. 빈 입력은 종료(0). 거부된 폴더는 이유를 한 줄로 보여 주고 다시 묻고, 3번 실패하면 1입니다.
   - 할 일이 없는 메뉴는 "할 일 없음"으로 표시하고 고를 수 없습니다. 알아듣지 못한 번호가 3번 이어지면 2. 빈 입력·`4`는 그만두기(0, 아무것도 바꾸지 않음).
   - 1·2를 고르면 `plan`과 같은 함수(`createPlan`)로 계획을 다시 만들어 상태 폴더에 저장하고(1은 기본 옵션, 2는 `--delete-duplicates all`·휴지통), 코드는 그 방식 작업 전체의 승인 코드입니다. 입력한 코드는 `apply`와 같은 경로(`applyCommand`: `issueApproval` → `consumeApproval` → `executeBatch`)로만 실행합니다. 빈 입력·틀린 코드는 실행하지 않고 4(승인 기록 없음, 파일 변경 없음).
+  - **종류를 모르는 파일**(기본 분류표에 없는 확장자 `UNKNOWN_EXTENSION`, 확장자 없음 `NO_EXTENSION`)이 있으면 1을 고른 뒤 계획 전에 한 번 묻습니다: "종류를 모르는 파일이 있어요: .xyz 2개(예: data.xyz), 확장자 없음 1개(예: 메모)" → `1) 모두 '기타' 폴더로 옮기기` / `2) 확장자마다 폴더 정하기` / `3) 그대로 두기(기본)`(빈 입력 = 3, 알아듣지 못한 번호 3번이면 2). 정리할 다른 파일이 없어도 종류를 모르는 파일이 있으면 1을 고를 수 있습니다(메뉴에 "종류를 모르는 파일 N개(옮길 곳을 물어봐요)"). 숫자로만 된 확장자(`2024.10.30`의 `.30`, `.001`)는 날짜·분할 번호로 보고 "확장자 없음"과 함께 묻습니다(엔진 분류는 그대로 `UNKNOWN_EXTENSION`). 1은 이미 `기타/` 안에 있는 파일을 옮길 개수에서 뺍니다.
+    - 2는 확장자마다(그리고 "확장자 없음"에 한 번) "'.xyz' 파일 2개를 어느 폴더로 옮길까요?"를 묻습니다. 빈 입력은 그대로 두기, 폴더 이름은 `TargetDirectorySchema`로 검사해 숨김·`..`·절대 경로·특수 문자·Windows 예약 이름(`CON`·`NUL` 등)·끝의 점이나 공백·한 단계 255바이트(UTF-8, NFC) 초과·옮긴 뒤 전체 경로 1023바이트 초과를 이유와 함께 거부하고 다시 묻습니다(3번째에는 이유와 "그대로 둘게요"를 한 줄로, 그 확장자는 그대로). 이미 그 폴더 안에 있는 파일은 옮기지 않습니다. 이어서 "다음에도 '.xyz' 파일은 '<폴더>' 폴더로 정리할까요? (y/N)"에 `y`면 저장 수정(확장자 조건, 키워드 없음)으로 저장해 이후 `preview`·`plan`·`afo`에 적용합니다(`rules list`로 보고 `rules forget <수정ID>`로 지움). 확장자 없음(숫자로만 된 확장자 포함)과 조건으로 쓸 수 없는 확장자(영문 소문자·숫자 16자 밖, 예: `.한글`)는 묻지 않고 "…기억할 수 없어 이번에만 옮겨요."로 알립니다. 저장은 계획을 만들기 전에 하므로 뒤에서 코드를 입력하지 않거나 Ctrl+C로 멈추면 "파일은 바꾸지 않았어요(저장한 규칙은 남아 있어요)."라고 알립니다.
+    - 이번 정리에는 `--move`와 같은 일회성 수정으로 넣어 같은 계획·승인 코드·실행 경로를 탑니다. 안내형은 `<경로>=<폴더>` 문자열을 만들지 않고 파일 ID로 넘깁니다(`analyzeTarget`의 `overrides`; 이름에 `=`가 있어도 됨, 그 사이 파일이 바뀌면 `FILE_CHANGED`). 참고 폴더 보호 파일·읽기 실패 파일·확장자가 여러 개인 파일은 묻지 않습니다.
+    - 옮기려던 파일(기본 분류로 옮길 파일과 방금 고른 파일)이 계획에서 빠지면 계획의 분석 이유로 알립니다: "옮기지 못하는 파일 N개(그대로 둬요):" 아래 이유별로 `e.xyz — '기타'라는 파일이 이미 있어 그 이름으로 폴더를 만들 수 없어요(이름 충돌)`, "옮길 곳에 같은 이름이 이미 있어요(이름 충돌, 덮어쓰지 않아요)", "옮길 곳에서 다른 파일과 이름이 겹쳐요(덮어쓰지 않아요)" 등(최대 3개 + "외 N개"). 남는 작업이 없으면 "옮길 수 있는 파일이 없어요."이고, "살펴보는 사이 파일이 바뀌어"는 계획의 분석에서 그 파일이 실제로 없어졌을 때만 씁니다.
+    - 다운로드 중일 수 있는 파일(`.part`·`.crdownload`·`.download`, 이유 코드 `INCOMPLETE_DOWNLOAD`)은 묻지 않고 "다운로드 중일 수 있는 파일 N개(예: …)는 그대로 둬요."로만 알립니다.
+    - 비대화형 명령(`preview`·`plan`)의 동작은 그대로입니다(종류를 모르는 파일은 검토 항목).
   - **영구 삭제는 메뉴에 없습니다.** `plan --delete-mode permanent` + `apply --mode permanent-delete`(확인 문구 포함)로만 합니다.
   - 질문·요약·메뉴는 stderr, 마지막 결과 요약(옮김/휴지통/건너뜀/실패 수, 옮기지 않은 파일과 이유, 이동이면 "되돌리려면: afo undo")은 stdout입니다. 종료 코드는 apply와 같습니다(0, 일부 실패 3, 취소 130).
   - 사용자가 고른 멈춤은 "AFO 오류:" 없이 한 줄입니다: 코드 없음·틀림(4) "코드를 입력하지 않아 / 코드가 맞지 않아 실행하지 않았어요. 아무것도 바꾸지 않았어요.", 폴더 3회 실패(1), 번호 3회 실패(2). 실행 전(질문·분석·계획 중) Ctrl+C는 "그만뒀어요(Ctrl+C). 아무것도 바꾸지 않았어요."(130), 실행 중 Ctrl+C는 "정리를 중간에 멈췄어요" + 남은 파일 수·이미 옮긴 파일 수(130).
@@ -21,6 +27,28 @@ npm unlink -g afo                                     # 제거
   - 터미널(TTY)이 아니면(파이프·스크립트) 인수 없는 `afo`는 지금처럼 도움말만 출력합니다(0).
 - `afo undo`(실행 ID 생략): 가장 최근의 되돌릴 수 있는 실행(이동이 있고 아직 되돌리지 않은 organize 실행)을 찾아 `undo <실행 ID>`와 같은 검사·확인 코드(실행 ID 앞 8자)로 되돌립니다. 화면은 짧습니다: "10월 30일 오후 1:11에 정리한 파일 5개를 원래 자리로 되돌릴까요?"(로컬 시각) + 파일 목록(최대 20줄, `문서/보고서.pdf → 보고서.pdf`, 작업 ID 없음) + "계속하려면 아래 코드를 입력하세요: <코드>", 결과는 "되돌렸어요: 5개 · 건너뜀 0"(되돌리지 않은 항목만 이유 표시)과 지운·남긴 폴더. `--json` 출력과 종료 코드는 `undo <실행 ID>`와 같습니다. 되돌릴 실행이 없으면 안내 후 0. 터미널이 아니면 `--confirm <그 실행 ID 앞 8자>`가 필요하고 없으면 4입니다.
 - 중복 묶음의 기본 남길 파일(keeper)은 보호 파일 → 이름에 사본 표시가 없는 파일(확장자 앞의 ` (1)`~` (99)`, ` copy`, ` copy 2`, `_copy`, `-copy`, ` 사본`, ` 복사본`, `복사본`, ` - 복사본`, ` - 복사본 (2)` 등, 대소문자·NFC 무시) → 더 얕은 경로 → 더 짧은 이름 → 경로 순서로 정합니다(`packages/engine/src/duplicates.ts`, 같은 파일이면 항상 같은 결과). 예: `보고서.pdf`와 `보고서 (1).pdf`는 `보고서.pdf`를 남깁니다. 웹사이트(`apps/website`)의 미리보기 규칙과는 별개입니다.
+
+## 기본 분류표(default-3)
+
+`packages/engine/src/defaults.ts` 하나를 CLI와 웹사이트 `/preview`가 함께 씁니다(분류표를 바꾸면 `CLASSIFICATION_VERSION`도 바꿉니다. 이전 버전으로 만든 계획은 다시 만들어야 합니다). 확장자는 대소문자를 구분하지 않고, 한 확장자는 한 분류에만 속합니다. 파일 이름만 보며 내용은 읽지 않습니다.
+
+| 분류(목적지 폴더) | 확장자 |
+| --- | --- |
+| 문서 | pdf hwp hwpx hwt show cell doc docx docm txt md rtf tex odt odp ods ppt pptx pptm xls xlsx xlsm csv key keynote pages numbers one xps |
+| 이미지 | png jpg jpeg jfif gif webp avif heic heif jxl svg tif tiff bmp ico raw cr2 cr3 nef arw dng orf rw2 |
+| 영상 | mp4 m4v mov mkv avi webm wmv flv 3gp mpg mpeg vob mts m2ts, 자막 srt smi ass vtt |
+| 음악 | mp3 wav flac m4a ogg aac wma aiff aif opus mid midi amr alac ape |
+| 압축 | zip 7z rar tar gz tgz bz2 xz zst lz lzma cab alz egg tbz txz. 바깥 확장자가 순수 압축 형식(gz bz2 xz zst lz lzma 7z zip rar)이면 안쪽 확장자와 상관없이 압축(`dump.sql.gz`, `table.csv.bz2`, `photos.jpg.zip`, `.tar.gz`·`.tar.xz` 등) |
+| 설치 | dmg pkg exe msi apk xapk deb rpm appimage iso msix appx |
+| 디자인 | psd ai sketch fig xd indd afdesign afphoto procreate blend obj fbx stl |
+| 글꼴 | ttf otf ttc woff woff2 |
+| 전자책 | epub mobi azw azw3 |
+| 코드 | py ipynb js mjs jsx tsx java c h cpp hpp cs swift kt go rs rb php html htm css scss sh bat ps1 r |
+| 데이터 | json xml yaml yml toml sql db sqlite sqlite3 parquet tsv log |
+
+- 일부러 넣지 않은 확장자(계속 "확인 필요"): `ts`(TypeScript·MPEG-TS 영상), `m`(Objective-C·MATLAB), `bin`, `dat`, `tmp`, `lnk`, `url`, `webloc`, `alias`.
+- `.part`·`.crdownload`·`.download`는 다운로드가 끝나지 않았을 수 있어 옮기지 않습니다(`INCOMPLETE_DOWNLOAD`, `movie.mp4.part`처럼 안쪽 확장자가 알려져 있어도). 참고 폴더에서 배운 개인 규칙도 적용하지 않고, 사용자가 명시한 `--move`·저장 수정만 적용합니다.
+- 바깥 확장자가 순수 압축 형식이 아닌데 안쪽에 알려진 확장자가 있으면(`report.pdf.exe`, `invoice.pdf.scr`, `photo.jpg.exe`, `a.tar.tgz`) 바깥 확장자를 알든 모르든 위장일 수 있어 확인 필요(`COMPOUND_EXTENSION`)입니다.
 
 이 문서는 `apps/cli/src/`(`index.ts`·`analyze.ts`·`rules.ts`·`plan.ts`·`apply.ts`·`guided.ts`)에 **구현된** 동작만 적습니다.
 사용자 파일을 옮기거나 지우는 명령은 `apply`와 `undo`뿐입니다(인수 없는 대화형 `afo`도 내부적으로 같은 `applyCommand`를 부릅니다). 둘 다 확인 코드를 직접 입력해야 하고, 실제 파일 변경은 공용 실행 서비스(`packages/filesystem/src/approvals.ts`·`executor.ts`)만 합니다. 나머지 명령은 사용자 파일을 읽기만 합니다.
@@ -55,7 +83,7 @@ npm unlink -g afo                                     # 제거
 | `--reference <참고 폴더>` | 참고 폴더를 읽어 그 안의 기존 파일을 보호하고 규칙 후보를 함께 보여 줌(저장·적용하지 않음) |
 | `--profile <JSON>` | 저장 프로필 대신 v1/v2 프로필 파일을 적용 |
 | `--no-saved-rules` | 저장 프로필을 쓰지 않고 기본 분류 |
-| `--move <상대 경로>=<목적지 폴더>` | 이번 미리보기에만 적용하는 사용자 수정(여러 번 가능). 목적지는 작업 폴더 기준 상대 폴더(숨김·`..`·절대 경로 불가) |
+| `--move <상대 경로>=<목적지 폴더>` | 이번 미리보기에만 적용하는 사용자 수정(여러 번 가능). 목적지는 작업 폴더 기준 상대 폴더(숨김·`..`·절대 경로 불가, 한 단계 255바이트 이하) |
 | `--remember` | `--move`의 수정을 파일 이름 조건으로 "이후에도 적용" 저장하고 그 사실과 수정 ID를 출력. 미리보기가 성공한 뒤에만 저장 |
 | `--json` | stdout에 JSON만: `{ preview, suggestedProfile, profile: { source, id, revision, status, warning? }, remembered? }` |
 

@@ -86,10 +86,10 @@ export const ProfileSchema = z.strictObject({
     ctx.addIssue({ code: 'custom', message: '참고 파일에 없는 규칙 근거입니다.' });
 });
 /** Classification rule set version. Changing default rules must change this value. */
-export const CLASSIFICATION_VERSION = 'default-2';
+export const CLASSIFICATION_VERSION = 'default-3';
 export const ClassificationReasonSchema = z.enum(['USER_OVERRIDE', 'PERSONAL_RULE', 'DEFAULT_EXTENSION', 'ALREADY_PLACED',
   'PROTECTED_REFERENCE', 'READ_FAILED', 'RULE_CONFLICT', 'COMPOUND_EXTENSION', 'NO_EXTENSION', 'UNKNOWN_EXTENSION',
-  'DEST_CONFLICT', 'DEST_COLLISION', 'PARENT_CONFLICT', 'SAVED_CORRECTION', 'DEST_INVALID']);
+  'DEST_CONFLICT', 'DEST_COLLISION', 'PARENT_CONFLICT', 'SAVED_CORRECTION', 'DEST_INVALID', 'INCOMPLETE_DOWNLOAD']);
 export type ClassificationReason = z.infer<typeof ClassificationReasonSchema>;
 export const PreviewItemSchema = z.strictObject({
   fileId: z.string(), source: RelativePathSchema, destination: RelativePathSchema.nullable(),
@@ -325,9 +325,16 @@ export type ScanProgress = z.infer<typeof ScanProgressSchema>;
 /* ---- Saved personal rules (#18). ProfileSchema (v1) stays readable; only a confirmed v1 converts to v2. ---- */
 /** Stored evidence examples per rule. More would copy the reference folder's file list into app data. */
 export const PROFILE_EVIDENCE_LIMIT = 3;
-/** Relative folder under the work root. Hidden segments are refused: the scanner skips them, so moved files would vanish from view. */
+/** Longest folder name (one path segment, NFC UTF-8 bytes) AFO creates: the common limit of APFS, ext4 and NTFS for ASCII/Hangul. */
+export const TARGET_SEGMENT_MAX_BYTES = 255;
+const utf8Bytes = (value: string): number => new TextEncoder().encode(value.normalize('NFC')).length;
+/**
+ * Relative folder under the work root. Hidden segments are refused: the scanner skips them, so moved files would vanish from view.
+ * A segment longer than TARGET_SEGMENT_MAX_BYTES is refused: the OS could not create it (ENAMETOOLONG at run time).
+ */
 export const TargetDirectorySchema = RelativePathSchema.refine((value) => value.split('/').every((part) => !part.startsWith('.')),
-  '숨김 폴더는 목적지가 될 수 없습니다.');
+  '숨김 폴더는 목적지가 될 수 없습니다.').refine((value) => value.split('/').every((part) => utf8Bytes(part) <= TARGET_SEGMENT_MAX_BYTES),
+  `폴더 이름 한 단계는 ${TARGET_SEGMENT_MAX_BYTES}바이트 이하여야 합니다.`);
 const FileNameSchema = z.string().min(1).max(255).refine((value) => !value.includes('/') && RelativePathSchema.safeParse(value).success,
   '파일 이름 하나가 필요합니다.');
 const ExtensionSchema = z.string().regex(/^\.[a-z0-9]{1,16}$/u);

@@ -1,14 +1,20 @@
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { AfoError, approvalModeKind, isAfoError } from '../../../packages/contracts/src/index.js';
-import type { ApprovalMode, ClassificationReason, ExecutionReport, PlanOperation, Preview } from '../../../packages/contracts/src/index.js';
+import { AfoError, CorrectionMatchSchema, TARGET_SEGMENT_MAX_BYTES, TargetDirectorySchema, approvalModeKind, isAfoError }
+  from '../../../packages/contracts/src/index.js';
+import type { ApprovalMode, ClassificationReason, CorrectionMatch, ExecutionReport, PlanOperation, Preview }
+  from '../../../packages/contracts/src/index.js';
+import { extensionOfName } from '../../../packages/engine/src/defaults.js';
+import { pathKey } from '../../../packages/engine/src/index.js';
+import { addCorrection } from '../../../packages/filesystem/src/profiles.js';
 import { analyzeTarget } from './analyze.js';
 import type { ProfileInfo, Target } from './analyze.js';
 import { CliResult, applyCommand, runSummaries, undoCommand } from './apply.js';
 import type { ExecContext, RunSummary } from './apply.js';
 import { createPlan } from './plan.js';
 import type { PlanValues } from './plan.js';
-import { CliError } from './rules.js';
+import { CliError, expected, isCorrupt } from './rules.js';
+import type { Stored } from './rules.js';
 import { haeyo } from './words.js';
 
 /**
@@ -23,7 +29,6 @@ const MAX_LIST = 20;
 const nothing = '아무것도 바꾸지 않았어요.';
 /** A stop the user chose (no code, wrong code, gave up, Ctrl+C before running): no "AFO 오류:" prefix, exit code kept. */
 const stop = (message: string, exitCode: 1 | 2 | 4 | 130): CliError => new CliError(message, exitCode, true);
-const CANCELLED_BEFORE = `그만뒀어요(Ctrl+C). ${nothing}`;
 
 /** Cleans a folder dragged into a terminal: spaces, surrounding quotes, macOS `\ ` escapes (not on Windows), and a leading `~/`. */
 export function cleanDroppedPath(input: string, home: string = homedir(), platform: NodeJS.Platform = process.platform): string {
@@ -54,7 +59,7 @@ const folderOf = (item: Preview['items'][number]): string => item.category ?? pa
 const reviewLabel: Partial<Record<ClassificationReason, string>> = { NO_EXTENSION: '확장자 없음', UNKNOWN_EXTENSION: '종류를 모르는 확장자',
   COMPOUND_EXTENSION: '확장자가 여러 개', DEST_CONFLICT: '목적지 충돌', DEST_COLLISION: '같은 이름이 겹침', PARENT_CONFLICT: '목적지 폴더 충돌',
   DEST_INVALID: '목적지가 올바르지 않음', RULE_CONFLICT: '개인 규칙 충돌', READ_FAILED: '읽지 못함', PROTECTED_REFERENCE: '참고 폴더 보호',
-  ALREADY_PLACED: '이미 정리된 위치' };
+  ALREADY_PLACED: '이미 정리된 위치', INCOMPLETE_DOWNLOAD: '다운로드 중일 수 있음' };
 const labelOf = (item: Preview['items'][number]): string => (item.reasonCode && reviewLabel[item.reasonCode]) ?? '기타';
 /** Most first, ties by name: deterministic. */
 const ranked = (counts: Map<string, number>): [string, number][] =>
@@ -96,10 +101,13 @@ function detailLines(preview: Preview): string[] {
 
 type Choice = 'organize' | 'trash' | 'quit';
 
-async function menu(ctx: ExecContext, counts: { organize: number; trash: number; movedCopies: number }, show: () => void): Promise<Choice> {
+async function menu(ctx: ExecContext, counts: { organize: number; unknown: number; trash: number; movedCopies: number },
+  show: () => void): Promise<Choice> {
   const lines = () => ['무엇을 할까요?',
-    `  1) 폴더별로 정리하기(되돌릴 수 있어요)${counts.organize ? ` — 파일 ${counts.organize}개` : ' — 할 일 없음'}`,
+    `  1) 폴더별로 정리하기(되돌릴 수 있어요)${counts.organize ? ` — 파일 ${counts.organize}개`
+      : counts.unknown ? ` — 종류를 모르는 파일 ${counts.unknown}개(옮길 곳을 물어봐요)` : ' — 할 일 없음'}`,
     ...(counts.organize && counts.movedCopies ? [`     같은 내용의 사본 ${counts.movedCopies}개도 함께 옮겨요. 먼저 2)로 정리할 수도 있어요.`] : []),
+    ...(counts.organize && counts.unknown ? [`     종류를 모르는 파일 ${counts.unknown}개는 어디로 옮길지 이어서 물어봐요.`] : []),
     `  2) 중복 파일을 휴지통으로 보내기${counts.trash ? `(휴지통에서 다시 꺼낼 수 있어요. afo undo로는 되돌리지 않아요) — 사본 ${counts.trash}개`
       : ' — 할 일 없음'}`,
     '  3) 자세히 보기', '  4) 그만두기'];
@@ -108,7 +116,7 @@ async function menu(ctx: ExecContext, counts: { organize: number; trash: number;
     const answer = (await ctx.ask('번호를 입력하세요: ')).trim();
     if (answer === '' || answer === '4') return 'quit';
     if (answer === '3') { show(); for (const l of lines()) ctx.warn(l); tries = 0; continue; }
-    if (answer === '1' && counts.organize) return 'organize';
+    if (answer === '1' && (counts.organize || counts.unknown)) return 'organize';
     if (answer === '2' && counts.trash) return 'trash';
     ctx.warn(answer === '1' || answer === '2' ? '그 작업은 할 일이 없어요. 다른 번호를 골라 주세요.' : '1, 2, 3, 4 중에서 골라 주세요.');
     if (tries >= MAX_MENU_TRIES) throw stop(`번호를 알아듣지 못해 그만둘게요. ${nothing}`, 2);
@@ -138,18 +146,183 @@ function resultText(report: ExecutionReport, mode: ApprovalMode, ops: Map<string
   ].join('\n');
 }
 
+/**
+ * Files the default table does not know (unknown or no extension), grouped by lower-case extension. '' = no extension, and also
+ * digits-only "extensions" (`2024.10.30`, `part.001`): dates or split parts, not a file type, so never saved as a rule.
+ */
+const UNKNOWN_REASONS: ReadonlySet<ClassificationReason | undefined> = new Set(['UNKNOWN_EXTENSION', 'NO_EXTENSION']);
+interface UnknownFile { fileId: string; source: string }
+interface UnknownGroup { ext: string; files: UnknownFile[] }
+const byText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+function unknownGroups(preview: Preview): UnknownGroup[] {
+  const byExt = new Map<string, UnknownFile[]>();
+  for (const i of preview.items) if (i.action === 'review' && UNKNOWN_REASONS.has(i.reasonCode)) {
+    const raw = i.reasonCode === 'NO_EXTENSION' ? '' : extensionOfName(path.posix.basename(i.source));
+    const ext = /^\.\d*$/u.test(raw) ? '' : raw;
+    byExt.set(ext, [...byExt.get(ext) ?? [], { fileId: i.fileId, source: i.source }]);
+  }
+  // Most first, ties by extension; "no extension" last. Deterministic.
+  return [...byExt].map(([ext, files]) => ({ ext, files: files.sort((a, b) => byText(a.source, b.source)) }))
+    .sort((a, b) => Number(a.ext === '') - Number(b.ext === '') || b.files.length - a.files.length || byText(a.ext, b.ext));
+}
+const groupName = (g: UnknownGroup): string => g.ext === '' ? '확장자 없음' : g.ext;
+const example = (g: UnknownGroup): string => path.posix.basename(g.files[0]!.source);
+const YES = new Set(['y', 'yes', '예', '네', 'ㅛ', 'ㅇ']);
+const MAX_GROUPS_SHOWN = 6;
+/** macOS PATH_MAX is 1024 bytes including the terminating NUL. */
+const MAX_PATH_BYTES = 1023;
+const bytes = (s: string): number => Buffer.byteLength(s.normalize('NFC'), 'utf8');
+/** A saved "다음에도" correction: extension only (keyword null), the same kind `rules` lists and `rules forget` removes. */
+const matchOf = (ext: string): CorrectionMatch | null => {
+  const m = CorrectionMatchSchema.safeParse({ type: 'keyword', extension: ext, keyword: null });
+  return ext !== '' && m.success ? m.data : null;
+};
+/** Already in that folder (the plan would keep it where it is): not counted as a file to move. */
+const inFolder = (source: string, folder: string): boolean => pathKey(path.posix.dirname(source)) === pathKey(folder);
+const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu;
+/** Why a typed folder name cannot be used, or null when it can. TargetDirectorySchema decides; this only names the reason. */
+function folderProblem(answer: string, root: string, files: UnknownFile[]): string | null {
+  const parts = answer.split('/');
+  if (!TargetDirectorySchema.safeParse(answer).success) {
+    if (parts.some((p) => bytes(p) > TARGET_SEGMENT_MAX_BYTES)) return `이름이 너무 길어요(한 단계 ${TARGET_SEGMENT_MAX_BYTES}바이트까지)`;
+    if (answer.startsWith('/') || /^[A-Za-z]:/u.test(answer)) return '절대 경로는 안 돼요';
+    if (parts.some((p) => p === '..' || p === '.')) return "'..'·'.'은 쓸 수 없어요";
+    if (parts.some((p) => p === '')) return '빈 폴더 이름(//)은 안 돼요';
+    if (parts.some((p) => p.startsWith('.'))) return '점(.)으로 시작하는 숨김 폴더는 안 돼요';
+    if (parts.some((p) => RESERVED.test(p))) return 'CON·NUL·AUX 같은 Windows 예약 이름은 안 돼요';
+    if (parts.some((p) => /[. ]$/u.test(p))) return '이름 끝에 점이나 공백은 안 돼요';
+    return '\\ < > : " | ? * 같은 특수 문자나 제어 문자는 안 돼요';
+  }
+  const longest = files.reduce((n, f) => Math.max(n, bytes(path.posix.basename(f.source))), 0);
+  if (bytes(root) + 1 + bytes(answer) + 1 + longest > MAX_PATH_BYTES) return '옮긴 뒤의 전체 경로가 너무 길어요';
+  return null;
+}
+
+/** What changed so far in this guided run, for the stop messages. */
+interface RunState { savedRule: boolean }
+const unchanged = (run: RunState): string => run.savedRule ? '파일은 바꾸지 않았어요(저장한 규칙은 남아 있어요).' : nothing;
+
+/**
+ * Asks where the unknown files go, once per extension. Returns one-off overrides by file ID for this run only (the same override path
+ * as `preview/plan --move`, without building "<path>=<folder>" text) and saves the corrections the user asked to keep.
+ * Nothing in the work folder changes here.
+ */
+async function askUnknown(ctx: ExecContext, groups: UnknownGroup[], saved: Stored, root: string, run: RunState):
+  Promise<{ fileId: string; target: string }[]> {
+  const say = ctx.warn;
+  const total = groups.reduce((n, g) => n + g.files.length, 0);
+  say(`종류를 모르는 파일이 있어요: ${groups.slice(0, MAX_GROUPS_SHOWN).map((g) => `${groupName(g)} ${g.files.length}개(예: ${example(g)})`).join(', ')}` +
+    `${groups.length > MAX_GROUPS_SHOWN ? ` 외 ${groups.length - MAX_GROUPS_SHOWN}종류` : ''}`);
+  say(`  1) 모두 '기타' 폴더로 옮기기`); say('  2) 확장자마다 폴더 정하기'); say('  3) 그대로 두기(기본)');
+  let pick = '';
+  for (let tries = 1; ; tries++) {
+    pick = (await ctx.ask('번호를 입력하세요(그냥 Enter는 3): ')).trim();
+    if (pick === '' || pick === '1' || pick === '2' || pick === '3') break;
+    say('1, 2, 3 중에서 골라 주세요.');
+    if (tries >= MAX_MENU_TRIES) throw stop(`번호를 알아듣지 못해 그만둘게요. ${nothing}`, 2);
+  }
+  if (pick === '1') {
+    const all = groups.flatMap((g) => g.files);
+    const moving = all.filter((f) => !inFolder(f.source, '기타'));
+    const already = all.length - moving.length;
+    say(moving.length ? `종류를 모르는 파일 ${moving.length}개를 '기타' 폴더로 옮기는 계획을 만들게요.` +
+      `${already ? ` ('기타' 폴더에 이미 있는 ${already}개는 그대로 둬요)` : ''}` : `종류를 모르는 파일 ${all.length}개는 이미 '기타' 폴더에 있어요.`);
+    return moving.map((f) => ({ fileId: f.fileId, target: '기타' }));
+  }
+  if (pick !== '2') { say(`종류를 모르는 파일 ${total}개는 그대로 둬요.`); return []; }
+
+  const chosen: { fileId: string; target: string }[] = [];
+  const keep: { match: CorrectionMatch; ext: string; folder: string }[] = [];
+  const canSave = !isCorrupt(saved);
+  if (!canSave) say('저장된 내 정리 규칙 파일이 손상돼 이번 정리에만 적용해요.');
+  for (const g of groups) {
+    const what = g.ext === '' ? `확장자 없는 파일 ${g.files.length}개` : `'${g.ext}' 파일 ${g.files.length}개`;
+    let folder: string | null = null;
+    for (let tries = 1; folder === null; tries++) {
+      const answer = (await ctx.ask(`${what}를 어느 폴더로 옮길까요? (예: 데이터, 그냥 Enter는 그대로 두기): `)).trim().replace(/\/+$/u, '');
+      if (answer === '') break;
+      const problem = folderProblem(answer, root, g.files);
+      if (problem === null) { folder = TargetDirectorySchema.parse(answer); break; }
+      if (tries >= MAX_MENU_TRIES) { say(`그 이름은 폴더로 쓸 수 없어요(${problem}). ${what}는 그대로 둘게요.`); break; }
+      say(`그 이름은 폴더로 쓸 수 없어요(${problem}). 이 폴더 안에 만들 폴더 이름을 다시 입력해 주세요.`);
+    }
+    if (folder === null) continue;
+    const target = folder;
+    const moving = g.files.filter((f) => !inFolder(f.source, target));
+    if (moving.length < g.files.length) say(`'${target}' 폴더에 이미 있는 ${g.files.length - moving.length}개는 그대로 둬요.`);
+    chosen.push(...moving.map((f) => ({ fileId: f.fileId, target })));
+    const match = matchOf(g.ext);
+    if (match === null) {
+      say(g.ext === '' ? '확장자가 없는(또는 숫자로만 된) 파일은 기억할 수 없어 이번에만 옮겨요.' : `'${g.ext}' 확장자는 기억할 수 없어 이번에만 옮겨요.`);
+      continue;
+    }
+    if (!canSave) continue;
+    const again = (await ctx.ask(`다음에도 '${g.ext}' 파일은 '${target}' 폴더로 정리할까요? (y/N): `)).trim().toLowerCase();
+    if (YES.has(again)) keep.push({ match, ext: g.ext, folder: target });
+  }
+  // Saved now, before the plan is built: the plan then binds to the new profile revision. Guarded by the revision this run read.
+  let guard = expected(saved);
+  for (const k of keep) {
+    try {
+      const after = await addCorrection(k.match, k.folder, { stateDir: ctx.stateDir(), ...guard });
+      guard = { expectedRevision: after.revision };
+      run.savedRule = true;
+      say(`저장했어요: 다음에도 '${k.ext}' 파일은 '${k.folder}' 폴더로 정리해요. (afo rules list로 보고 afo rules forget으로 지울 수 있어요)`);
+      if (after.status === 'disabled') say('참고: 내 정리 규칙이 꺼져 있어 저장한 내용은 afo rules enable-all 뒤에 적용돼요(이번 정리에는 반영해요).');
+    } catch (error) {
+      if (isCancel(error)) throw error;
+      say(`'${k.ext}' 규칙은 저장하지 못했어요(${reasonOf(error)}). 이번 정리에만 적용해요.`);
+    }
+  }
+  return chosen;
+}
+
+/** Why a file the user expected to move is not in the plan, from the plan's own analysis (reasonCode), in short 해요체. */
+function leftOutReason(item: Preview['items'][number] | undefined, target: string | undefined, files: Set<string>): string {
+  if (item === undefined) return '살펴보는 사이 파일이 바뀌었어요';
+  switch (item.reasonCode) {
+    case 'DEST_CONFLICT': {
+      const parents = (target ?? '').split('/').map((_, i, a) => a.slice(0, i + 1).join('/')).filter((p) => p !== '');
+      const blocker = parents.find((p) => files.has(pathKey(p)));
+      return blocker !== undefined ? `'${blocker}'라는 파일이 이미 있어 그 이름으로 폴더를 만들 수 없어요(이름 충돌)`
+        : '옮길 곳에 같은 이름이 이미 있어요(이름 충돌, 덮어쓰지 않아요)';
+    }
+    case 'DEST_COLLISION': return '옮길 곳에서 다른 파일과 이름이 겹쳐요(덮어쓰지 않아요)';
+    case 'PARENT_CONFLICT': return '다른 파일의 위치와 폴더 위치가 겹쳐요';
+    case 'DEST_INVALID': return '옮길 경로가 너무 길거나 쓸 수 없는 이름이에요';
+    default: return haeyo(item.reason);
+  }
+}
+/** Expected moves the plan left out, grouped by reason; `changed` only when a file is really gone from the plan's analysis. */
+function leftOut(wanted: Map<string, { source: string; target: string | undefined }>, planned: Set<string>, preview: Preview):
+  { lines: string[]; changed: boolean } {
+  const now = new Map(preview.items.map((i) => [i.fileId, i]));
+  const files = new Set(preview.items.map((i) => pathKey(i.source)));
+  const why = new Map<string, string[]>();
+  let changed = false; let n = 0;
+  for (const [fileId, w] of wanted) if (!planned.has(fileId)) {
+    const item = now.get(fileId);
+    if (item === undefined) changed = true;
+    const reason = leftOutReason(item, w.target, files);
+    why.set(reason, [...why.get(reason) ?? [], w.source]); n += 1;
+  }
+  return { changed, lines: n ? [`옮기지 못하는 파일 ${n}개(그대로 둬요):`, ...[...why].map(([reason, s]) =>
+    `  ${s.slice(0, 3).join(', ')}${s.length > 3 ? ` 외 ${s.length - 3}개` : ''} — ${reason}`)] : [] };
+}
+
 export async function guidedCommand(ctx: ExecContext): Promise<CliResult> {
   // Everything before applyCommand only reads files (and saves a plan in the state folder): a cancel there changed nothing.
   let prepared: Prepared | CliResult;
-  try { prepared = await prepare(ctx); }
-  catch (error) { if (isCancel(error)) throw stop(CANCELLED_BEFORE, 130); throw error; }
+  const run: RunState = { savedRule: false };
+  try { prepared = await prepare(ctx, run); }
+  catch (error) { if (isCancel(error)) throw stop(`그만뒀어요(Ctrl+C). ${unchanged(run)}`, 130); throw error; }
   if (prepared instanceof CliResult) return prepared;
   const { mode, ops, planId, typed } = prepared;
 
   let result: CliResult;
   try { result = await applyCommand(planId, { mode, confirm: typed }, { ...ctx, json: true }); }
   catch (error) {
-    if (isAfoError(error, 'APPROVAL_INVALID')) throw stop(`코드가 맞지 않아 실행하지 않았어요. ${nothing}`, 4);
+    if (isAfoError(error, 'APPROVAL_INVALID')) throw stop(`코드가 맞지 않아 실행하지 않았어요. ${unchanged(run)}`, 4);
     throw error;
   }
   const { report } = JSON.parse(result.output) as { report: ExecutionReport };
@@ -157,7 +330,7 @@ export async function guidedCommand(ctx: ExecContext): Promise<CliResult> {
 }
 
 interface Prepared { mode: ApprovalMode; ops: PlanOperation[]; planId: string; typed: string }
-async function prepare(ctx: ExecContext): Promise<Prepared | CliResult> {
+async function prepare(ctx: ExecContext, run: RunState): Promise<Prepared | CliResult> {
   const say = ctx.warn;
   const options = ctx.signal ? { signal: ctx.signal } : {};
   const quit = (): CliResult => new CliResult(`그만뒀어요. ${nothing}`, 0);
@@ -182,7 +355,9 @@ async function prepare(ctx: ExecContext): Promise<Prepared | CliResult> {
   const { preview } = target.analysis;
   for (const l of summaryLines(preview, target.info)) say(l);
   const moving = new Set(preview.items.filter((i) => i.action === 'move').map((i) => i.source));
-  const counts = { organize: moving.size, trash: preview.duplicates.reduce((n, g) => n + g.candidates.length, 0),
+  const groups = unknownGroups(preview);
+  const counts = { organize: moving.size, unknown: groups.reduce((n, g) => n + g.files.length, 0),
+    trash: preview.duplicates.reduce((n, g) => n + g.candidates.length, 0),
     movedCopies: preview.duplicates.reduce((n, g) => n + g.candidates.filter((c) => moving.has(c)).length, 0) };
   const choice = await menu(ctx, counts, () => { for (const l of detailLines(preview)) say(l); });
   if (choice === 'quit') return quit();
@@ -190,18 +365,37 @@ async function prepare(ctx: ExecContext): Promise<Prepared | CliResult> {
   // The plan is built (and saved in the state folder only) from a fresh analysis, exactly as `plan` does; files may have changed since.
   const mode: ApprovalMode = choice;
   const values: PlanValues = mode === 'trash' ? { 'delete-duplicates': 'all' } : {};
+  if (mode === 'organize') {
+    const incomplete = preview.items.filter((i) => i.reasonCode === 'INCOMPLETE_DOWNLOAD');
+    if (incomplete.length) say(`다운로드 중일 수 있는 파일 ${incomplete.length}개(예: ${path.posix.basename(incomplete[0]!.source)})는 그대로 둬요.`);
+    const chosen = groups.length ? await askUnknown(ctx, groups, target.saved, target.grant.canonicalPath, run) : [];
+    if (!chosen.length && !counts.organize) return new CliResult(`옮길 파일이 없어요. ${unchanged(run)}`, 0);
+    if (chosen.length) values.overrides = chosen;
+  }
   const created = await createPlan(folder, values, { warn: say, stateDir: ctx.stateDir, options });
   const kind = approvalModeKind[mode];
   const ops = created.plan.operations.filter((op) => op.kind === kind);
   const approval = created.choices.find((c) => c.mode === mode);
-  if (!ops.length || !approval) return new CliResult(`살펴보는 사이 파일이 바뀌어 할 일이 없어졌어요. ${nothing}`, 0);
+
+  // Files the user expected to move (default moves and the unknown files just placed) but the plan left out: say exactly why.
+  const wanted = new Map<string, { source: string; target: string | undefined }>();
+  if (mode === 'organize') {
+    for (const i of preview.items) if (i.action === 'move')
+      wanted.set(i.fileId, { source: i.source, target: i.destination ? path.posix.dirname(i.destination) : undefined });
+    const sourceOf = new Map(preview.items.map((i) => [i.fileId, i.source]));
+    for (const o of values.overrides ?? []) wanted.set(o.fileId, { source: sourceOf.get(o.fileId) ?? o.fileId, target: o.target });
+  }
+  const left = leftOut(wanted, new Set(ops.map((op) => op.fileId)), created.preview);
+  for (const l of left.lines) say(l);
+  if (!ops.length || !approval)
+    return new CliResult(left.changed ? `살펴보는 사이 파일이 바뀌어 할 일이 없어졌어요. ${unchanged(run)}` : `옮길 수 있는 파일이 없어요. ${unchanged(run)}`, 0);
 
   say(mode === 'organize' ? `이렇게 정리할게요(파일 ${ops.length}개, 덮어쓰지 않아요):` : `이 사본들을 휴지통으로 보낼게요(${ops.length}개, 남길 파일은 그대로):`);
   for (const op of ops.slice(0, MAX_LIST)) say(opLine(op));
   for (const l of more(ops.length - MAX_LIST)) say(l);
   say(`계속하려면 아래 코드를 입력하세요: ${approval.code}`);
   const typed = (await ctx.ask('코드(그냥 Enter는 취소): ')).trim();
-  if (typed === '') throw stop(`코드를 입력하지 않아 실행하지 않았어요. ${nothing}`, 4);
+  if (typed === '') throw stop(`코드를 입력하지 않아 실행하지 않았어요. ${unchanged(run)}`, 4);
   return { mode, ops, planId: created.plan.id, typed };
 }
 

@@ -37,7 +37,7 @@ npm unlink -g afo                                     # 제거
 | 이미지 | png jpg jpeg jfif gif webp avif heic heif jxl svg tif tiff bmp ico raw cr2 cr3 nef arw dng orf rw2 |
 | 영상 | mp4 m4v mov mkv avi webm wmv flv 3gp mpg mpeg vob mts m2ts, 자막 srt smi ass vtt |
 | 음악 | mp3 wav flac m4a ogg aac wma aiff aif opus mid midi amr alac ape |
-| 압축 | zip 7z rar tar gz tgz bz2 xz zst lz lzma cab alz egg tbz txz, `.tar.gz`·`.tar.bz2`·`.tar.xz`·`.tar.zst`·`.tar.lz`·`.tar.lzma`는 하나의 압축 형식 |
+| 압축 | zip 7z rar tar gz tgz bz2 xz zst lz lzma cab alz egg tbz txz. 바깥 확장자가 순수 압축 형식(gz bz2 xz zst lz lzma 7z zip rar)이면 안쪽 확장자와 상관없이 압축(`dump.sql.gz`, `table.csv.bz2`, `photos.jpg.zip`, `.tar.gz`·`.tar.xz` 등) |
 | 설치 | dmg pkg exe msi apk xapk deb rpm appimage iso msix appx |
 | 디자인 | psd ai sketch fig xd indd afdesign afphoto procreate blend obj fbx stl |
 | 글꼴 | ttf otf ttc woff woff2 |
@@ -47,7 +47,7 @@ npm unlink -g afo                                     # 제거
 
 - 일부러 넣지 않은 확장자(계속 "확인 필요"): `ts`(TypeScript·MPEG-TS 영상), `m`(Objective-C·MATLAB), `bin`, `dat`, `tmp`, `lnk`, `url`, `webloc`, `alias`.
 - `.part`·`.crdownload`·`.download`는 다운로드가 끝나지 않았을 수 있어 옮기지 않습니다(`INCOMPLETE_DOWNLOAD`, `movie.mp4.part`처럼 안쪽 확장자가 알려져 있어도). 참고 폴더에서 배운 개인 규칙도 적용하지 않고, 사용자가 명시한 `--move`·저장 수정만 적용합니다.
-- 알려진 확장자가 두 개 겹치면(`report.pdf.exe`, `dump.sql.gz`) 종류가 애매해 확인 필요(`COMPOUND_EXTENSION`)입니다.
+- 바깥 확장자가 순수 압축 형식이 아닌데 안쪽에 알려진 확장자가 있으면(`report.pdf.exe`, `invoice.pdf.scr`, `photo.jpg.exe`, `a.tar.tgz`) 바깥 확장자를 알든 모르든 위장일 수 있어 확인 필요(`COMPOUND_EXTENSION`)입니다.
 
 이 문서는 `apps/cli/src/`(`index.ts`·`analyze.ts`·`rules.ts`·`plan.ts`·`apply.ts`·`guided.ts`)에 **구현된** 동작만 적습니다.
 사용자 파일을 옮기거나 지우는 명령은 `apply`와 `undo`뿐입니다(인수 없는 대화형 `afo`도 내부적으로 같은 `applyCommand`를 부릅니다). 둘 다 확인 코드를 직접 입력해야 하고, 실제 파일 변경은 공용 실행 서비스(`packages/filesystem/src/approvals.ts`·`executor.ts`)만 합니다. 나머지 명령은 사용자 파일을 읽기만 합니다.

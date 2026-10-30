@@ -42,12 +42,18 @@ const oracle: [string, string | null, string][] = [
   ['game.dat', null, 'UNKNOWN_EXTENSION'], ['cache.tmp', null, 'UNKNOWN_EXTENSION'], ['바로가기.lnk', null, 'UNKNOWN_EXTENSION'],
   ['site.url', null, 'UNKNOWN_EXTENSION'], ['page.webloc', null, 'UNKNOWN_EXTENSION'], ['폴더.alias', null, 'UNKNOWN_EXTENSION'],
   ['data.xyz', null, 'UNKNOWN_EXTENSION'], ['Makefile', null, 'NO_EXTENSION'], ['메모', null, 'NO_EXTENSION'],
-  // Two known extensions: ambiguous, as before (and now more names are known on the inside)
-  ['report.pdf.exe', null, 'COMPOUND_EXTENSION'], ['photo.jpg.zip', null, 'COMPOUND_EXTENSION'], ['a.tar.zip', null, 'COMPOUND_EXTENSION'],
-  ['dump.sql.gz', null, 'COMPOUND_EXTENSION'],
+  // A pure archive outer extension (gz bz2 xz zst lz lzma 7z zip rar) is an archive whatever the inner extension is
+  ['dump.sql.gz', '압축', 'DEFAULT_EXTENSION'], ['data.json.gz', '압축', 'DEFAULT_EXTENSION'], ['server.log.gz', '압축', 'DEFAULT_EXTENSION'],
+  ['table.csv.bz2', '압축', 'DEFAULT_EXTENSION'], ['photos.jpg.zip', '압축', 'DEFAULT_EXTENSION'], ['a.tar.zip', '압축', 'DEFAULT_EXTENSION'],
+  ['notes.txt.xz', '압축', 'DEFAULT_EXTENSION'], ['raw.csv.ZST', '압축', 'DEFAULT_EXTENSION'], ['set.psd.7z', '압축', 'DEFAULT_EXTENSION'],
+  ['scans.pdf.rar', '압축', 'DEFAULT_EXTENSION'], ['x.tar.lzma', '압축', 'DEFAULT_EXTENSION'],
+  // Disguised double extensions (outer is not a pure archive): still ambiguous
+  ['report.pdf.exe', null, 'COMPOUND_EXTENSION'], ['photo.jpg.exe', null, 'COMPOUND_EXTENSION'], ['song.mp3.apk', null, 'COMPOUND_EXTENSION'],
+  ['a.tar.tgz', null, 'COMPOUND_EXTENSION'], ['archive.tar.gz.exe', null, 'COMPOUND_EXTENSION'], ['doc.pdf.html', null, 'COMPOUND_EXTENSION'],
+  ['invoice.pdf.scr', null, 'COMPOUND_EXTENSION'],
   // Unfinished downloads, even with a known extension inside
   ['movie.mp4.part', null, 'INCOMPLETE_DOWNLOAD'], ['setup.exe.crdownload', null, 'INCOMPLETE_DOWNLOAD'], ['big.CRDOWNLOAD', null, 'INCOMPLETE_DOWNLOAD'],
-  ['file.part', null, 'INCOMPLETE_DOWNLOAD'], ['archive.zip.download', null, 'INCOMPLETE_DOWNLOAD'],
+  ['file.part', null, 'INCOMPLETE_DOWNLOAD'], ['archive.zip.download', null, 'INCOMPLETE_DOWNLOAD'], ['backup.sql.gz.part', null, 'INCOMPLETE_DOWNLOAD'],
 ];
 
 test('default-3: hand-written extension table for every category, ambiguous exclusions, .tar.<x>, compound and unfinished downloads', () => {

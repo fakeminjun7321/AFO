@@ -21,8 +21,12 @@ export const categoryExtensions: Readonly<Record<string, readonly string[]>> = {
 };
 /** Browser download in progress (or left unfinished): never moved by default, whatever the inner extension says. */
 export const incompleteDownloadExtensions: readonly string[] = ['part', 'crdownload', 'download'];
-/** ".tar.<x>" is one archive format, not an ambiguous double extension. */
-const tarCompressions = new Set(['gz', 'bz2', 'xz', 'zst', 'lz', 'lzma']);
+/**
+ * Pure compression/archive formats: "dump.sql.gz", "photos.jpg.zip" and ".tar.<x>" are archives whatever is inside.
+ * Only these outer extensions override an inner known one; "report.pdf.exe" stays ambiguous.
+ */
+export const archiveOuterExtensions: readonly string[] = ['gz', 'bz2', 'xz', 'zst', 'lz', 'lzma', '7z', 'zip', 'rar'];
+const archiveOuter = new Set(archiveOuterExtensions);
 const known = new Map(Object.entries(categoryExtensions).flatMap(([category, exts]) => exts.map((ext) => [ext, category] as const)));
 const incomplete = new Set(incompleteDownloadExtensions);
 /** Extension of a file name (not a path), matching Node's posix.extname. */
@@ -35,9 +39,10 @@ export function defaultCategory(name: string): { category: string | null; reason
   const ext = extensionOfName(name);
   if (!ext) return { category: null, reason: 'NO_EXTENSION' };
   if (incomplete.has(ext.slice(1))) return { category: null, reason: 'INCOMPLETE_DOWNLOAD' };
+  if (archiveOuter.has(ext.slice(1))) return { category: known.get(ext.slice(1))!, reason: 'DEFAULT_EXTENSION' };
   const inner = extensionOfName(name.slice(0, -ext.length)).slice(1);
-  // "report.pdf.exe": two known type extensions make the real type ambiguous.
-  if (inner && known.has(inner) && !(inner === 'tar' && tarCompressions.has(ext.slice(1)))) return { category: null, reason: 'COMPOUND_EXTENSION' };
+  // "report.pdf.exe": a known type hidden before a non-archive extension makes the real type ambiguous.
+  if (inner && known.has(inner)) return { category: null, reason: 'COMPOUND_EXTENSION' };
   const category = known.get(ext.slice(1));
   return category ? { category, reason: 'DEFAULT_EXTENSION' } : { category: null, reason: 'UNKNOWN_EXTENSION' };
 }

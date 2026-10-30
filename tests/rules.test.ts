@@ -134,7 +134,9 @@ test('.tar.gz and .tgz are archives; other double extensions stay review even wh
   assert.equal(classifyFile('backup.tar.gz').targetDirectory, '압축');
   assert.equal(classifyFile('backup.TAR.GZ').targetDirectory, '압축');
   assert.equal(classifyFile('backup.tgz').targetDirectory, '압축');
-  for (const name of ['invoice.pdf.exe', 'photo.jpg.zip', 'a.tar.zip']) assert.equal(classifyFile(name).reasonCode, 'COMPOUND_EXTENSION', name);
+  assert.equal(classifyFile('invoice.pdf.exe').reasonCode, 'COMPOUND_EXTENSION');
+  // default-3: a pure archive outer extension is an archive whatever is inside.
+  for (const name of ['photo.jpg.zip', 'a.tar.zip']) assert.equal(classifyFile(name).targetDirectory, '압축', name);
   let profile = saved(['설치파일/a.exe', '설치파일/b.exe']);
   assert.equal(classifyFile('setup.exe', { profile }).targetDirectory, '설치파일');
   assert.equal(classifyFile('invoice.pdf.exe', { profile }).reasonCode, 'COMPOUND_EXTENSION');

@@ -1,7 +1,7 @@
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { AfoError, approvalModeKind, isAfoError } from '../../../packages/contracts/src/index.js';
-import type { ApprovalMode, ExecutionReport, PlanOperation, Preview } from '../../../packages/contracts/src/index.js';
+import type { ApprovalMode, ClassificationReason, ExecutionReport, PlanOperation, Preview } from '../../../packages/contracts/src/index.js';
 import { analyzeTarget } from './analyze.js';
 import type { ProfileInfo, Target } from './analyze.js';
 import { CliResult, applyCommand, runSummaries, undoCommand } from './apply.js';
@@ -46,6 +46,14 @@ function profileNote(info: ProfileInfo): string {
 }
 
 const folderOf = (item: Preview['items'][number]): string => item.category ?? path.posix.dirname(item.destination ?? '.');
+/** Short names for why a file needs a look (reasonCode); the full sentence stays in 3) 자세히 보기. */
+const reviewLabel: Partial<Record<ClassificationReason, string>> = { NO_EXTENSION: '확장자 없음', UNKNOWN_EXTENSION: '종류를 모르는 확장자',
+  COMPOUND_EXTENSION: '확장자가 여러 개', DEST_CONFLICT: '목적지 충돌', DEST_COLLISION: '같은 이름이 겹침', PARENT_CONFLICT: '목적지 폴더 충돌',
+  DEST_INVALID: '목적지가 올바르지 않음', RULE_CONFLICT: '개인 규칙 충돌', READ_FAILED: '읽지 못함', PROTECTED_REFERENCE: '참고 파일(보호)' };
+const labelOf = (item: Preview['items'][number]): string => (item.reasonCode && reviewLabel[item.reasonCode]) ?? '기타';
+/** Most first, ties by name: deterministic. */
+const ranked = (counts: Map<string, number>): [string, number][] =>
+  [...counts].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
 
 function summaryLines(preview: Preview, info: ProfileInfo): string[] {
   const moves = preview.items.filter((i) => i.action === 'move');
@@ -54,15 +62,15 @@ function summaryLines(preview: Preview, info: ProfileInfo): string[] {
   const byFolder = new Map<string, number>();
   for (const i of moves) byFolder.set(folderOf(i), (byFolder.get(folderOf(i)) ?? 0) + 1);
   const byReason = new Map<string, number>();
-  for (const i of reviews) byReason.set(i.reason, (byReason.get(i.reason) ?? 0) + 1);
-  const reasons = [...byReason].sort((a, b) => b[1] - a[1]);
+  for (const i of reviews) byReason.set(labelOf(i), (byReason.get(labelOf(i)) ?? 0) + 1);
+  const reasons = ranked(byReason);
   const dupFiles = preview.duplicates.reduce((n, g) => n + g.candidates.length, 0);
   const example = preview.duplicates.find((g) => g.candidates.length);
   return [`파일 ${preview.items.length}개를 살펴봤어요. (아직 아무것도 바꾸지 않았어요)`,
-    `  폴더별로 정리할 수 있는 파일: ${moves.length}개${byFolder.size ? ` — ${[...byFolder].map(([f, n]) => `${f} ${n}`).join(' · ')}` : ''}`,
+    `  폴더별로 정리할 수 있는 파일: ${moves.length}개${byFolder.size ? ` — ${ranked(byFolder).map(([f, n]) => `${f} ${n}`).join(' · ')}` : ''}`,
     ...(keeps.length ? [`  그대로 둘 파일: ${keeps.length}개(이미 정리된 곳에 있는 파일 등)`] : []),
-    `  직접 확인이 필요한 파일: ${reviews.length}개${reasons.length ? ` — ${reasons.slice(0, 3).map(([r, n]) => `${r} ${n}개`).join(' / ')}` +
-      `${reasons.length > 3 ? ' / …' : ''}` : ''}`,
+    `  직접 확인이 필요한 파일: ${reviews.length}개${reasons.length ? ` — ${reasons.slice(0, 4).map(([r, n]) => `${r} ${n}`).join(' · ')}` +
+      `${reasons.length > 4 ? ' · …' : ''}` : ''}`,
     `  같은 내용의 중복 파일: ${preview.duplicates.length}묶음${example ? `(지울 수 있는 사본 ${dupFiles}개) — 예: 남길 파일 '${example.suggestedKeep}', 휴지통 후보 ` +
       `'${example.candidates[0]}'${example.candidates.length > 1 ? ` 외 ${example.candidates.length - 1}개` : ''}` : ''}`,
     `  ${profileNote(info)}`,
@@ -183,6 +191,5 @@ export async function undoLatestCommand(values: { confirm?: string | undefined }
     const text = `되돌릴 수 있는 정리 기록이 없어요. ${nothing}`;
     return new CliResult(ctx.json ? JSON.stringify({ runId: null, report: null, message: text }, null, 2) : text, 0);
   }
-  ctx.warn(`가장 최근에 정리한 기록을 되돌려요: ${latest.startedAt} (실행 ID ${latest.runId})`);
-  return undoCommand(latest.runId, values, ctx);
+  return undoCommand(latest.runId, values, ctx, true);
 }

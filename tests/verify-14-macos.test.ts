@@ -102,7 +102,8 @@ async function write(root: string, spec: Spec): Promise<void> {
 interface Op { id: string; kind: 'move' | 'trash' | 'delete'; source: string; destination: string | null; keeper: string | null }
 interface PlanOut { planId: string; plan: { operations: Op[]; profileId: string | null }; approvalChoices: { mode: string; operationIds: string[]; code: string }[] }
 interface Report { runId: string; results: { opId: string; status: string; errorCode: string | null }[];
-  space: { logicalBytesSelected: number; freeBytesBefore: number | null; freeBytesAfter: number | null; note: string } }
+  space: { logicalBytesSelected: number; freeBytesBefore: number | null; freeBytesAfter: number | null; note: string };
+  directories?: { removed: string[]; kept: { path: string; reason: string }[] } }
 const planOf = (r: Res): PlanOut => JSON.parse(r.stdout) as PlanOut;
 const codeOf = (pl: PlanOut, mode: string): string => {
   const c = pl.approvalChoices.find((x) => x.mode === mode); assert.ok(c, `plan has ${mode}`); return c.code;
@@ -192,13 +193,11 @@ test('S1 reference → suggest → save → new-process preview/plan → apply o
   assert.ok(reportOf(u).results.every((x) => x.status === 'moved'));
   const work2 = await snap(p('work'));
   assert.deepEqual(filesOf(work2), filesOf(work0), 'files back: same paths, bytes, mtime, dev/ino');
-  // Known difference: folders created by the move stay (empty). Recorded, not a failure.
-  const created = dirsOf(work2).filter((d) => !dirsOf(work0).includes(d));
-  assert.deepEqual(created, ['과제', '과제/물리', '과제/수학', '문서', '이미지']);
-  for (const d of created) assert.ok(!Object.keys(work2).some((k) => k.startsWith(`${d}/`) && work2[k]!.type === 'file'), `${d} is empty`);
+  // Folders the run created are removed again once empty: the folder list equals the original one.
+  assert.deepEqual(dirsOf(work2), dirsOf(work0), 'no folder created by the move is left behind');
+  assert.deepEqual([...(reportOf(u).directories?.removed ?? [])].sort(), ['과제', '과제/물리', '과제/수학', '문서', '이미지']);
   assert.deepEqual(await snap(p('ref')), ref0);
   assert.deepEqual(JSON.parse(ok(cli(['recover', '--json']), 'recover after undo').stdout), { checked: 1, runs: [] });
-  t.diagnostic(`S1 empty folders left after undo: ${created.join(', ')}`);
 });
 
 // ---------- S2 restart: saved rules on new synthetic files in separate processes ----------

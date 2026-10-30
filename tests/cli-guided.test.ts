@@ -54,7 +54,7 @@ const approvalShown = (screen: string): string => {
   return m[1]!;
 };
 const undoShown = (screen: string): string => {
-  const m = /확인 코드: (\S{8}) \(실행 ID 앞 8자\)/u.exec(screen);
+  const m = /계속하려면 아래 코드를 입력하세요: (\S{8})/u.exec(screen);
   assert.ok(m, 'the undo code is shown before asking');
   return m[1]!;
 };
@@ -102,9 +102,10 @@ test('guided: menu 1 → typed code really moves files (independent manifest), t
   const s = session(`'${dirs.work}' `, '1', approvalShown);
   const result = await runCli([], undefined, s.io);
   assert.equal(result.exitCode, 0, result.output);
-  assert.match(s.screen(), /폴더별로 정리할 수 있는 파일: 5개/u);
-  assert.match(s.screen(), /직접 확인이 필요한 파일: 1개/u);
-  assert.match(s.screen(), /같은 내용의 중복 파일: 1묶음/u);
+  // Folders most first, ties by name; review reasons as short names (the full sentence is only in 3) 자세히 보기).
+  assert.match(s.screen(), /폴더별로 정리할 수 있는 파일: 5개 — 문서 3 · 영상 1 · 이미지 1\n/u);
+  assert.match(s.screen(), /직접 확인이 필요한 파일: 1개 — 확장자 없음 1\n/u);
+  assert.match(s.screen(), /같은 내용의 중복 파일: 1묶음\(지울 수 있는 사본 1개\) — 예: 남길 파일 'c\.txt', 휴지통 후보 'c copy\.txt'/u);
   assert.match(s.screen(), /저장된 내 정리 규칙이 없어/u);
   assert.match(s.screen(), /1\) 폴더별로 정리하기\(되돌릴 수 있어요\) — 파일 5개/u);
   assert.match(result.output, /옮김 5 · 건너뜀 0 · 실패 0/u);
@@ -123,8 +124,13 @@ test('guided: menu 1 → typed code really moves files (independent manifest), t
   const undo = session(undoShown);
   const undone = await runCli(['undo'], undefined, undo.io);
   assert.equal(undone.exitCode, 0, undone.output);
-  assert.match(undo.screen(), /가장 최근에 정리한 기록을 되돌려요/u);
-  assert.deepEqual(files(await manifest(dirs.work)), files(before), 'same paths, hashes and modification times as before');
+  // Short screen: local time, file list without operation IDs, no ISO timestamps.
+  assert.match(undo.screen(), /^\d{1,2}월 \d{1,2}일 (오전|오후) \d{1,2}:\d{2}에 정리한 파일 5개를 원래 자리로 되돌릴까요\?$/mu);
+  assert.match(undo.screen(), /^  문서\/a\.pdf → a\.pdf$/mu);
+  assert.doesNotMatch(undo.screen(), /[0-9a-f]{16}|\d{4}-\d{2}-\d{2}T/u);
+  assert.match(undone.output, /^되돌렸어요: 5개 · 건너뜀 0$/mu);
+  assert.match(undone.output, /정리할 때 만든 빈 폴더 3개도 지웠어요/u);
+  assert.deepEqual(await manifest(dirs.work), before, 'files and folders exactly as before (paths, hashes, mtimes; no leftover folders)');
   const again = await runCli(['undo'], undefined, session().io);
   assert.equal(again.exitCode, 0);
   assert.match(again.output, /되돌릴 수 있는 정리 기록이 없어요/u);
@@ -138,6 +144,7 @@ test('guided: a wrong or empty code stops with 4 and changes nothing; no approva
   const wrongTrash = session(dirs.work, '2', '00000000');
   assert.equal(await exitOf(runCli([], undefined, wrongTrash.io)), 4);
   assert.match(wrongTrash.screen(), /이 사본들을 휴지통으로 보낼게요\(1개, 남길 파일은 그대로\)/u);
+  assert.match(wrongTrash.screen(), /^  c copy\.txt \(같은 내용의 'c\.txt' 파일은 남겨요\)$/mu, 'the copy goes, the original stays');
   const empty = session(dirs.work, '1', '');
   assert.equal(await exitOf(runCli([], undefined, empty.io)), 4);
   assert.deepEqual(await manifest(dirs.work), before);

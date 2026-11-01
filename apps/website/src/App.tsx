@@ -24,6 +24,7 @@ const LocalPreview = lazy(() =>
 );
 import { AdminPage } from "./pages/AdminPage";
 import { AuthProvider } from "./auth/AuthProvider";
+import { PreviewSessionProvider } from "./features/local-preview/session";
 
 const titles: Record<string, string> = {
   "/": "파일은 제자리에. 당신은 다음 일에.",
@@ -119,7 +120,7 @@ export function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Shell />
+        <PreviewSessionProvider><Shell /></PreviewSessionProvider>
       </AuthProvider>
     </BrowserRouter>
   );

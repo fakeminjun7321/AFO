@@ -2,6 +2,7 @@ import type { RuleSetInput } from "@afo/firebase-foundation";
 import { defaultCategory, extensionOfName } from "../../../../../packages/engine/src/defaults";
 
 export type SelectedFile = { path: string; name: string; size: number; file: File };
+export type PreviewOverride = { mode: "keep" } | { mode: "move"; directory: string };
 export type PreviewItem = SelectedFile & {
   category: string | null;
   destination: string | null;
@@ -15,22 +16,29 @@ const defaultReasons = {
   UNKNOWN_EXTENSION: "분류 기준이 없어요",
   DEFAULT_EXTENSION: "확장자로 분류했어요",
 };
+export function matchingRules(name: string, rules: RuleSetInput | null) {
+  return rules?.rules.filter((rule) => rule.enabled && rule.extension === extensionOfName(name) &&
+    (rule.keyword === null || key(name).includes(key(rule.keyword)))) ?? [];
+}
 
 /** Read-only suggestions. File input cannot reveal empty directories or excluded files. */
-export function makePreview(files: SelectedFile[], rules: RuleSetInput | null): PreviewItem[] {
-  const knownFiles = new Set(files.map((file) => key(file.path)));
+export function makePreview(files: SelectedFile[], rules: RuleSetInput | null,
+  overrides: Record<string, PreviewOverride> = {}, inventory: SelectedFile[] = files): PreviewItem[] {
+  const knownFiles = new Set(inventory.map((file) => key(file.path)));
   const knownDirectories = new Set<string>();
-  for (const file of files) {
+  for (const file of inventory) {
     const parts = file.path.split("/");
     for (let i = 1; i < parts.length; i++) knownDirectories.add(key(parts.slice(0, i).join("/")));
   }
   const items = files.map((file): PreviewItem => {
-    const matches = rules?.rules.filter((rule) => rule.enabled && rule.extension === extensionOfName(file.name) &&
-      (rule.keyword === null || key(file.name).includes(key(rule.keyword)))) ?? [];
+    const manual = Object.hasOwn(overrides, file.path) ? overrides[file.path] : undefined;
+    if (manual?.mode === "keep") return { ...file, category: "현재 위치", destination: file.path,
+      status: "already", reason: "이번 미리보기에서 그대로 두기로 선택했어요" };
+    const matches = matchingRules(file.name, rules);
     const targets = new Set(matches.map((rule) => key(rule.targetDirectory)));
-    if (targets.size > 1) return { ...file, category: null, destination: null, status: "review", reason: "개인 규칙의 목적지가 서로 달라요" };
+    if (!manual && targets.size > 1) return { ...file, category: null, destination: null, status: "review", reason: "개인 규칙의 목적지가 서로 달라요" };
     const fallback = defaultCategory(file.name);
-    const directory = matches[0]?.targetDirectory ?? fallback.category;
+    const directory = manual?.mode === "move" ? manual.directory : matches[0]?.targetDirectory ?? fallback.category;
     if (!directory) return { ...file, category: null, destination: null, status: "review", reason: defaultReasons[fallback.reason] };
     const destination = `${directory}/${file.name}`;
     if (directory.split("/").some((part) => part.startsWith(".")))
@@ -39,7 +47,7 @@ export function makePreview(files: SelectedFile[], rules: RuleSetInput | null): 
     const parents = directory.split("/").map((_, i, parts) => key(parts.slice(0, i + 1).join("/")));
     if (knownFiles.has(key(destination)) || knownDirectories.has(key(destination)) || parents.some((part) => knownFiles.has(part)))
       return { ...file, category: directory, destination, status: "review", reason: "선택된 목록의 파일 또는 폴더와 위치가 겹쳐요" };
-    return { ...file, category: directory, destination, status: "proposed", reason: matches.length ? "저장한 개인 규칙을 적용했어요" : defaultReasons[fallback.reason] };
+    return { ...file, category: directory, destination, status: "proposed", reason: manual ? "이번 미리보기에서 직접 지정했어요" : matches.length ? "저장한 개인 규칙을 적용했어요" : defaultReasons[fallback.reason] };
   });
   const planned = new Map<string, PreviewItem[]>();
   for (const item of items) if (item.status === "proposed" && item.destination) {

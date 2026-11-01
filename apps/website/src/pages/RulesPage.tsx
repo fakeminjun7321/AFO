@@ -21,6 +21,7 @@ import {
   writeLocal,
 } from "../features/rules/local";
 import "../features/rules/rules.css";
+import { RuleTrial } from "../features/rules/RuleTrial";
 
 export function RulesPage() {
   const { user, ready } = useAuth();
@@ -371,6 +372,7 @@ function RulesEditor({ uid }: { uid?: string }) {
           </details>
         </fieldset>
       </form>
+      <RuleTrial draft={draft} />
       <div className="rules-cloud">
         <h2>클라우드 보관</h2>
         {!cloudRulesEnabled ? (

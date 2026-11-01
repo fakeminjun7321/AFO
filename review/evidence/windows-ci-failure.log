@@ -1,0 +1,221 @@
+engine (windows-latest)	npm test (node --test)	﻿2026-10-26T11:36:21.1095969Z ##[group]Run node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination=test-results.tap dist/tests/*.test.js
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:21.1098260Z ^[[36;1mnode --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination=test-results.tap dist/tests/*.test.js^[[0m
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:21.1128162Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:21.1128876Z env:
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:21.1129183Z   AFO_REAL_TRASH_TEST: 1
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:21.1129535Z ##[endgroup]
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:23.5769767Z ✔ real CLI process suggests, confirms and reloads rules without changing source files (1574.7211ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:25.1530562Z ✔ CLI default output clearly identifies recommendations rather than executed operations (337.9086ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:25.1532044Z ✔ unknown commands and flags fail instead of enabling execution (471.0242ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:25.1533161Z ✔ corrupt profiles and directory inputs are rejected (526.2361ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:25.1534145Z ✔ help needs no implicit filesystem target (0.4698ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:25.9247097Z ✔ documented exit codes: 0 for help and success, 1 for any refused input (docs/CLI.md) (1020.9356ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.1431337Z ✔ portable relative paths reject traversal, absolute paths and Windows aliases (2.7598ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.1477789Z ✔ file contracts require complete, correctly typed evidence (4.1702ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.1479795Z ✔ scans reject duplicate records and spoofed boolean state (4.5636ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.1522197Z ✔ error codes are a closed set and AfoError carries one (0.4483ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.1524224Z ✔ root and reference grants require full identity and the right scope (3.2514ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.1531592Z ✔ plan operations allow destinations only on moves and validate keepers (3.5019ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.1536254Z ✔ operation plans keep summary, ids, destinations, keepers and delete mode consistent (7.6176ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.1600264Z ✔ approvals are sorted, bounded in time and bound to one profile revision (5.9016ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.1604812Z ✔ journal entries and reports tie error codes and identities to phases (4.7949ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.4180497Z ✔ basic classification is explainable, deterministic and preview only (12.7737ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.4182636Z ✔ existing destinations and parent files are never overwritten (1.1671ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.4186756Z ✔ case and Unicode destination collisions affect every proposed source (0.9127ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.4189161Z ✔ a proposed file cannot also become another proposed file parent folder (0.518ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.4250387Z ✔ equal names are not duplicates without matching content hashes (1.215ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.4262395Z ✔ duplicate candidates preserve protected references and label logical bytes (2.345ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.4284442Z ✔ reference metadata proposes only draft rules with independent examples (3.8189ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.4309335Z ✔ ambiguous extension-only references need supporting filename keywords (3.2322ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.4313819Z ✔ unconfirmed or disabled rules never replace default classification (1.662ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.4318774Z ✔ confirmation is explicit; unknown, repeated or empty selection is rejected (2.2979ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.4322418Z ✔ explicit one-off edits override personal rules without modifying the profile (2.7279ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.4324547Z ✔ conflicting confirmed rules require review rather than arbitrary selection (0.8459ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.4350148Z ✔ profile revisions change the plan identity and corrupt evidence is rejected (1.0622ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.4355860Z ✔ partial scans cannot create reference rules; hash failures require review (0.8473ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.4358696Z ✔ default-1 classification matches an independent oracle with reasons and a rule version (0.8705ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.4462804Z ✔ identical input gives identical output and id; changed input changes the id (1.3642ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.4468872Z ✔ classifyFile is the shared interface: explicit override > confirmed personal rule > default; drafts ignored (0.9337ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.4474107Z ✔ large files are informational only: never duplicate candidates without equal content (0.6562ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.4481172Z ✔ empty files are never duplicate candidates and the reason is shown (1.1852ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.4488056Z ✔ logical, allocated and reclaimable estimates are kept apart and protected files never count (1.2629ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.4494767Z ✔ chooseKeeper returns a new preview with the chosen original kept and totals recomputed (2.7361ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.4504714Z ✔ chooseKeeper refuses paths outside the group, protected candidates and unknown groups (4.0139ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.5861373Z ✔ fixtures are created only under a fresh temp folder and cleaned up (36.5739ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.5940091Z ✔ fixture specs cannot escape the temp root (8.7199ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.6111784Z ✔ manifest treats prototype-like file names as ordinary entries (16.5633ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.6374047Z ✔ manifest diff detects added, removed, content, size and timestamp changes (27.22ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.8580808Z ✔ work and reference grants carry the real path, dev/inode, session and scope (34.0082ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.8794954Z ✔ scopes are not interchangeable: a reference grant cannot scan as a work root and vice versa (21.3775ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.8897782Z ✔ grants not issued by this process, tampered or revoked grants are refused (10.303ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.9032258Z ✔ a root replaced by another folder or a link after issue is refused (dev/inode check) (12.9471ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.9457284Z ✔ grant issue refuses files, links, missing paths, OS folders, bundles and development projects (43.062ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.9583764Z ✔ "." and ".." components are refused; identity always comes from the real path the grant names (12.7179ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:26.9707087Z ✔ scan APIs accept an optional session and refuse grants from another session (12.4849ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:27.7304722Z ✔ two real processes on one root: the second is LOCKED_BY_OTHER, a third acquires after release (580.2879ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:28.1258947Z ✔ different roots do not block each other (396.2035ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:28.1547405Z ✔ same process: the lock is not re-entrant and a concurrent second call never runs its fn (28.9434ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:28.3494890Z ✔ a SIGKILLed holder leaves a stale lock that the next acquirer takes over (194.641ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:28.7111990Z ✔ two processes racing for one stale lock: exactly one acquires (360.6252ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:28.7767737Z ✔ a hand-written lock of a live process blocks and is left byte-for-byte untouched (66.2359ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:28.8681611Z ✔ foreign-host and corrupt locks are never auto-removed (91.0999ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:28.8801594Z ✔ a symlink or folder at the lock path is never followed or removed (11.9824ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:28.9123245Z ✔ fn errors propagate unchanged, results are returned, and the lock is removed either way (31.4691ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:28.9411930Z (node:4264) [AFO_LOCK_RELEASE_FAILED] Warning: 작업 실패 뒤 잠금 해제도 실패: 실행 중 잠금 파일이 다른 내용으로 바뀌어 지우지 않았습니다. 저널을 확인하고, 실행 중인 AFO가 없으면 직접 지우세요: C:\Users\runneradmin\AppData\Local\Temp\afo-test-teh2Rj\state\locks\aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.lock
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:28.9422707Z (Use `node --trace-warnings ...` to show where the warning was created)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:28.9448581Z ✔ release never deletes a lock whose token changed while fn ran (32.9187ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:28.9531401Z ✔ invalid root grant IDs are rejected before touching disk (8.9067ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:29.1670361Z ✔ link+unlink move keeps content and identity and leaves no source (19.3315ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:29.1793940Z ✔ existing destination is never overwritten and both files are preserved (12.4224ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:29.2157574Z ✔ move rejects links, hard links, changed files, missing or linked destination folders (36.095ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:29.2211312Z ﹣ a different mounted volume is detected by device id and refused before any write (4.3022ms) # no second volume visible to compare
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:29.2352525Z ✔ interrupted move (link done, unlink not done) is classified, not repaired (15.0222ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:29.2397149Z ✔ the same directory entry under two spellings is never reported as two names (review finding B) (4.5606ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:29.2705808Z ✔ permanent delete removes only one regular file and records observed free space (30.2163ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:29.2708909Z ℹ statfs bavail*bsize before=33479794688 after=33480843264 delta=1048576 (other processes affect this)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:29.2727684Z ✔ free space is null when not observable (2.5272ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:33.7231009Z ✔ OS trash moves one synthetic file and touches nothing else (4449.7312ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:33.7233223Z ℹ trashed afo-test-trash-38de83177ff0.txt via PowerShell SendToRecycleBin
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:34.9503957Z ✔ measurement: scanFolder over 1,000 small synthetic files (one run, this machine only) (1227.5649ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:34.9505838Z ℹ scanFolder 1000 files: 437.3 ms, rss 75.0 MiB, node v24.22.1 win32/x64
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:35.1934961Z ✔ empty or missing state folders report no runs; relative or linked journal folders are refused (46.2728ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:35.3261313Z ✔ interrupted moves are classified against the real files without touching them (132.6961ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:35.4617087Z ✔ finished ops (done, failed, skipped, undone) are never reported as unfinished (135.2561ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:35.5689546Z ✔ interrupted undo is classified in the reverse direction (107.0518ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:35.6995686Z ✔ interrupted trash and permanent delete report not-started, missing or conflict only (130.4125ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:35.7849817Z ✔ a damaged middle line or torn last line makes every open op unknown and is reported (85.3548ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:36.0434873Z ✔ missing, mismatched or invalid plans leave open ops unknown (257.9303ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:36.1210299Z ✔ links among parent folders under the root are not followed (77.7729ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.2808291Z ✔ inconsistent journals are reported as unknown instead of guessed (203.7658ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.2811635Z ✔ odd names in the journal folder are ignored or reported unreadable, never followed; order is deterministic (109.9991ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.2813732Z ✔ a root lock held by a running process makes the run active and every open op unknown (84.0426ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.2816349Z ✔ a stale lock from a dead process is reported but left in place; the journal decides the status (109.8455ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.2818679Z ✖ a lock from another host makes the run active; unreadable or damaged locks never throw (174.182ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.2820177Z ✔ without a plan loader nothing is resolved; a replaced or renamed root is ROOT_CHANGED (119.8297ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.2822276Z ✔ real scan and content duplicate analysis preserve every original (81.1176ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.2823475Z ✔ empty folders produce a valid empty preview (7.7994ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.2825243Z ✔ scanner skips bundles and development projects, including nested projects (24.6474ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.2826657Z ✔ links and hardlinks are excluded without reading the external tree (18.6362ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.2828513Z ✔ file and depth limits visibly return incomplete scans (23.4555ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.2829532Z ✔ cancellation stops analysis and makes no changes (6.4686ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.2831838Z ﹣ a nested unreadable folder reports an error instead of false completeness (0.6602ms) # POSIX chmod is not a Windows ACL test.
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.3050304Z ✔ overlapping reference folders preserve their files and only propose unconfirmed rules (34.5202ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.3155846Z ✔ non-folder roots and missing paths fail without creating anything (10.874ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.3586316Z ✔ every exclusion carries a machine code with a Korean explanation; deliberate exclusions keep the scan complete (41.9749ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.3590228Z ﹣ special files, unsupported names and sparse (cloud-only-like) files are excluded with codes (0.324ms) # mkfifo, ":" names and APFS blocks are POSIX/macOS cases.
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.4170101Z ✔ Korean NFC/NFD, spaces, emoji and empty folders match an independent manifest before and after (58.1908ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.4346046Z ✔ depth and count limits are reported with codes and an incomplete result (17.2562ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.4348077Z ﹣ access-denied folders and files give an accurate partial result instead of stopping (0.3492ms) # POSIX chmod is not a Windows ACL test.
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.4466600Z ✔ a file deleted during the scan is reported alone; the rest of the folder is still read (12.4073ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.4669002Z ✔ progress reports scan and hash phases with monotonic counters (20.0795ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.5019507Z ✔ cancellation mid-scan rejects or returns a marked partial result; nothing changes on disk (34.5971ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.5649157Z ✔ cancellation during hashing stops every worker and leaves unhashed files without a hash (62.097ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.6060053Z ✔ a file modified while being hashed is excluded alone and the result is marked incomplete (42.4634ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.7736588Z ✔ 32 MiB files are hashed by streaming without loading them into memory (166.85ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.7738590Z ℹ arrayBuffers growth during hashing: 0.13 MiB (2 x 32 MiB files)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.8142316Z ✔ same name with different content is not a duplicate; different names with the same content are (40.0747ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.8898270Z ✔ analysis is deterministic regardless of hash concurrency (75.9487ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.9115455Z ✔ reference reading returns names and extensions only and never opens files (21.687ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.9503591Z ✔ overlapping roots: reference files inside the work root are protected, never hashed or candidates (39.1184ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:37.9620157Z ✔ a root swapped during the scan is detected and the result refused (11.5921ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:38.1497123Z ✔ state folder comes from AFO_STATE_DIR or the OS app-data default, never a relative or empty value (4.7202ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:38.1649070Z ✔ state folders overlapping the work root are rejected by real path (18.4789ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:38.2444713Z ✔ atomic JSON writes replace whole files, validate first and leave no temp files (80.1471ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:38.2755625Z ✔ readJson reports missing as null and every damaged or unusual file as STATE_CORRUPT (30.9076ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:38.3690765Z ✔ journal appends validated lines and reports torn, invalid and out-of-order lines (88.9872ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:38.4851474Z ✔ V3-01 relative or empty paths are rejected by every adapter entry point and nothing is created (28.4686ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:38.5047610Z ✔ V3-02 existing destination file, folder, same path and dangling link are never overwritten (20.5756ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:38.5185193Z ✔ V3-03a case-only collisions are refused on a case-insensitive filesystem (13.5874ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:38.5304928Z ✔ V3-03b Unicode-normalization-only collisions are refused where the filesystem treats them as one name (12.0472ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:38.5307650Z ℹ normalization-sensitive filesystem: NFC and NFD names coexist; no overwrite
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:38.5553656Z ✔ V3-04 destination parent that is a symlink (inside or outside) or a file is refused (24.6889ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:38.5772931Z ✔ V3-05 source symlink, dir symlink, hard link, folder and FIFO are refused; nothing changes (22.0594ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:38.5958845Z ✔ V3-06 expected mismatch after size, mtime or inode change gives FILE_CHANGED for move and delete (trash not invoked outside V3-12) (18.0156ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:38.6091122Z ✔ V3-07 successful move preserves dev/ino/size/mtime/sha256, removes source, nlink 1, nothing else changes (13.2533ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:38.6280242Z ✔ V3-08 Korean/space/emoji names in NFC and NFD move with content intact (18.6876ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:38.6282427Z ℹ readdir preserved form: a=NFC b=NFD
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:38.6650770Z ✔ V3-09 deleteFilePermanently refuses folders and links and keeps link targets; deletes only the named file (37.2028ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:38.6697862Z ✔ V3-10 freeSpace is a non-negative safe integer or null (4.1586ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:38.6841529Z ✔ V3-11 documented limit: a link in a grandparent of the destination is not caught by the adapter (14.3839ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:38.6844770Z ℹ grandparent-link destination outcome: moved-through-link
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:39.4220217Z ✔ V3-12 real OS trash: one synthetic file only; siblings kept; missing path and folder are refused (738.1546ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:39.4230913Z ℹ trashed 1 synthetic file afo-test-verify3-3b23fb5b9444.txt; ~/.Trash/<name>: not observable (ENOENT)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:39.6838353Z ✔ V4-C1 every new schema accepts its valid example and rejects each removed key, wrong type and extra approved key (39.5694ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:39.6924475Z ✔ V4-C2 grants: hex, path, digits, scope and readOnly boundaries; work and reference grants are not interchangeable (1.7007ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:39.6926528Z ✔ V4-C3 PlanOperation boundaries: sizes, ids, hashes, destination and keeper rules (3.8565ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:39.6928267Z ✔ V4-C4 OperationPlan consistency: summary, uniqueness, collisions, keeper, delete mode and profile binding (4.0669ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:39.6968775Z ✔ V4-C5 Approval: non-empty sorted ids, at most 10 minutes, one known mode, profile binding, used time order (1.1475ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:39.6971340Z ✔ V4-C6 JournalEntry and ExecutionReport internal consistency (2.2268ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:39.6980557Z ✔ V4-C7 ErrorCode covers the design list; unknown codes are rejected, including through AfoError (1.959ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:39.6984860Z ✔ V4-C8 existing read-only contracts still accept their shape and reject approval-like extras (4.5844ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:39.6987541Z ✔ V4-S1 AFO_STATE_DIR resolution on this OS: empty, blank, relative and tilde values are rejected; absolute is normalized (1.1397ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:39.7175360Z ✔ V4-S2 state folder overlapping the work root is rejected by real path, including case, NFD and symlink aliases (44.8282ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:39.7563971Z ✔ V4-S3 writeJsonAtomic failures keep the previous file intact and leave no temp files (38.7316ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:39.8073770Z ✔ V4-S4 readJson: missing is null; size limit, symlink, directory, FIFO, bad UTF-8, bad JSON and schema mismatch are STATE_CORRUPT (50.6221ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:40.0054916Z ✔ V4-S5 journal: appended lines parse independently; torn tail, seq regression, foreign runId and links are handled (197.229ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:40.0111866Z ✔ V4-S6 runId cannot escape the journal folder (6.0637ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:40.0246547Z ✔ V4-S7 uppercase or case-variant runIds are rejected by journalFile and appendJournal and create no file (14.2717ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:40.0483093Z ✔ V4-F1 fixtures are always created under os.tmpdir() and reject escaping names (23.3228ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:40.0832675Z ✔ V4-F2 diffManifest detects add, remove, content-only, mtime-only, type swaps, links and NFC/NFD names (35.0542ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:40.1055826Z ✔ V4-F3 manifest and diff handle file names that collide with Object.prototype members (fixed in 61c737d/bfd5970) (21.653ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:40.1096872Z ✔ V4-Z default app-data state folder was not created by this run (0.4881ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:40.4304450Z ✔ V67-R1 refused roots: fake home, its Library and projects, disk root, OS folders, bundles, projects, links, files, Win32 device paths (136.5494ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:40.4364187Z ✔ V67-R2 non-normalized input "<root>/a/../b" is refused at grant issue (CARRYOVER #6) (6.1802ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:40.4444935Z ✔ V67-R3 an issued grant always describes the folder at its canonicalPath (".." after a link component) (7.8013ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:40.4446956Z ℹ refused at issue: ROOT_FORBIDDEN
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:40.4510049Z ✔ V67-R3b the same ".." trick never yields a grant whose canonicalPath is a file (6.7151ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:40.4836483Z ✔ V67-R4 dev/inode replacement, link replacement and swap during a scan are refused (32.0184ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:40.6912710Z ✔ V67-R5 scope, session, cross-process and forged grants (including a recomputed id) are refused (207.4502ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:40.6915313Z ℹ scanRoot accepts an in-process grant issued with another sessionId: true
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:40.7760299Z ✔ V67-S1 exclusion table (hand-written) with codes and Korean explanations; the external tree is not read (84.7296ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:40.8091851Z ✔ V67-S2 Korean NFC/NFD, spaces, emoji, empty folder and empty file: exact listing, spelling kept (33.1053ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:40.8460343Z ✔ V67-S3 depth and count limits: exact partial results, incomplete, coded (35.5755ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:40.8466223Z ﹣ V67-S4 access denied (chmod 000 folder and file) and a locked (uchg) file: accurate partial result (0.4349ms) # SKIP
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:40.8632103Z ✔ V67-S5 files and a folder deleted during the scan: only those are reported; the rest is exact (16.4375ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:40.9367665Z ✔ V67-P1 progress: valid events, scan before hash, monotonic counters, streaming intermediates, totals match (74.4995ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.0840238Z ✔ V67-P2 cancellation mid-scan: throw by default, exact partial on request, nothing runs afterwards (138.0987ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.2964101Z ✔ V67-P3 cancellation while hashing: partial keeps only fully hashed files with correct hashes; workers stop (221.2226ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.3873765Z ✔ V67-P4 baseline manifest identical after scan, hash, reference read and full analysis (atime excluded) (90.7281ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.3880343Z ﹣ V67-F1 reference read returns names/extensions only; unreadable files and folders still listed by name (0.1812ms) # SKIP
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.4769122Z ✔ V67-F2 overlap both ways (and same folder, and via a saved profile): reference files never move or become candidates (89.2984ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.6807490Z ✔ V67-C1 default classification matches a hand-written table on real files; deterministic for concurrency 1 and 8 (198.2026ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.6813792Z ✔ V67-C2 destination conflicts: existing file, same name, case-only difference → review, never overwrite (2.1426ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.6819454Z ✔ V67-C3 personal-rule interface: override > confirmed personal rule > default; draft/disabled ignored; no deletion inference (0.7297ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.7375783Z ✔ V67-D1 duplicates on real files: name vs content, same size different content, empty files, 3-way group (59.5908ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8065493Z ✔ V67-D2 a file changed between scan and hash is excluded alone; the result is incomplete and it is never grouped (63.8483ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8083510Z ✔ V67-D3 chooseKeeper: change succeeds immutably; outside-group, keeper-as-candidate, protected and case variants are refused (5.0397ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8237672Z ✔ V67-D4 hard links and protected files are outside reclaim estimates on real files; allocation is reported separately (16.3554ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8374353Z ℹ tests 169
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8375048Z ℹ suites 0
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8375734Z ℹ pass 162
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8376372Z ℹ fail 1
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8376969Z ℹ cancelled 0
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8377631Z ℹ skipped 6
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8378208Z ℹ todo 0
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8378928Z ℹ duration_ms 20176.5195
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8390445Z 
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8391676Z ✖ failing tests:
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8392170Z 
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8392659Z test at dist\tests\recovery.test.js:347:1
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8394076Z ✖ a lock from another host makes the run active; unreadable or damaged locks never throw (174.182ms)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8395473Z   AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8396442Z   + actual - expected
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8397018Z   
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8397515Z   + {
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8398024Z   +   pid: null,
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8398566Z   +   startedAt: null,
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8399228Z   +   state: 'free'
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8400195Z   + }
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8400689Z   - null
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8401202Z   
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8402079Z       at TestContext.<anonymous> (file:///D:/a/AFO/AFO/dist/tests/recovery.test.js:362:12)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8403268Z       at async Test.run (node:internal/test_runner/test:1409:7)
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8404479Z       at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8405557Z     generatedMessage: true,
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8406191Z     code: 'ERR_ASSERTION',
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8407450Z     actual: { state: 'free', pid: null, startedAt: null },
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8408365Z     expected: null,
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8408987Z     operator: 'strictEqual',
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8409562Z     diff: 'simple'
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8410030Z   }
+engine (windows-latest)	npm test (node --test)	2026-10-26T11:36:41.8590510Z ##[error]Process completed with exit code 1.

@@ -1,0 +1,21 @@
+
+> @afo/firebase-foundation@0.1.0 test
+> npm run build && node --test dist/tests/schema.test.js
+
+
+> @afo/firebase-foundation@0.1.0 build
+> tsc -p tsconfig.json
+
+✔ portable rule data is accepted without filesystem authority (2.102042ms)
+✔ local profiles, reference filenames, content and approval tokens are rejected (0.268833ms)
+✔ unsafe destinations cannot enter the cloud contract (0.714875ms)
+✔ wrong types, repeated IDs and excessive rule counts fail closed (0.174791ms)
+✔ document identifiers cannot introduce another path (0.07575ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 93.44475

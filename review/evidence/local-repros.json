@@ -1,0 +1,25 @@
+{
+  "lock": {
+    "sameCanonicalPath": true,
+    "grantsDiffer": true,
+    "childExitCode": 0,
+    "childWhileParentHeldLock": "{\"entered\":true,\"grant\":\"bfd4934718ade186c290f1ce5a32f037748f0186ab6e03f062c8bd322f2e9c90\"}",
+    "stderr": ""
+  },
+  "recovery": {
+    "sameInode": true,
+    "oldSize": 8,
+    "newSize": 37,
+    "reported": {
+      "opId": "12345678",
+      "kind": "trash",
+      "phase": "intent",
+      "source": "a.txt",
+      "destination": null,
+      "state": "not-started",
+      "observed": "not-started",
+      "detail": null,
+      "action": "휴지통 이동이 시작되지 않아 파일이 원래 경로에 그대로 있습니다. 필요하면 새 승인으로 다시 요청하세요. AFO는 자동으로 다시 실행·원복·삭제하지 않습니다."
+    }
+  }
+}

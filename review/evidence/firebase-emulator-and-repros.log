@@ -1,0 +1,79 @@
+i  emulators: Starting emulators: auth, firestore, hosting
+i  emulators: Detected demo project ID "demo-afo-tests", emulated services will use a demo configuration and attempts to access non-emulated services for this project will fail.
+i  firestore: Firestore Emulator logging to firestore-debug.log
+✔  firestore: Firestore Emulator was started in standard edition.
+✔  firestore: Firestore Emulator UI websocket is running on 9150.
+i  hosting[demo-afo-tests]: Serving hosting files from: hosting
+✔  hosting[demo-afo-tests]: Local server: http://127.0.0.1:15010
+i  Running script: node --test dist/tests/firestore.test.js review/firestore-repro.test.mjs
+✔ Auth login → owner save → read/list/update → stale version rejection → metadata delete (745.788833ms)
+[2026-10-26T11:39:14.435Z]  @firebase/firestore: Firestore (13.1.0): GrpcConnection RPC 'Write' stream 0x4254a5e8 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L65, false for 'create' @ L76, false for 'update' @ L67, false for 'update' @ L76
+[2026-10-26T11:39:14.441Z]  @firebase/firestore: Firestore (13.1.0): GrpcConnection RPC 'Write' stream 0x4254a5e9 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'delete' @ L69, false for 'delete' @ L76
+[2026-10-26T11:39:14.460Z]  @firebase/firestore: Firestore (13.1.0): GrpcConnection RPC 'Write' stream 0x4254a5eb error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L65, false for 'create' @ L76, false for 'update' @ L67, false for 'update' @ L76
+[2026-10-26T11:39:14.464Z]  @firebase/firestore: Firestore (13.1.0): GrpcConnection RPC 'Write' stream 0x4254a5ec error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'delete' @ L69, false for 'delete' @ L76
+✔ real Security Rules reject unauthenticated and cross-user reads/writes/deletes (122.3195ms)
+[2026-10-26T11:39:14.498Z]  @firebase/firestore: Firestore (13.1.0): GrpcConnection RPC 'Write' stream 0x4254a5f0 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+evaluation error at L65:24 for 'create' @ L65, false for 'create' @ L76, evaluation error at L67:24 for 'update' @ L67, false for 'update' @ L76, false for 'create' @ L65, false for 'create' @ L76
+[2026-10-26T11:39:14.505Z]  @firebase/firestore: Firestore (13.1.0): GrpcConnection RPC 'Write' stream 0x4254a5f1 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+evaluation error at L65:24 for 'create' @ L65, false for 'create' @ L76, evaluation error at L67:24 for 'update' @ L67, false for 'update' @ L76, false for 'create' @ L65, false for 'create' @ L76
+[2026-10-26T11:39:14.512Z]  @firebase/firestore: Firestore (13.1.0): GrpcConnection RPC 'Write' stream 0x4254a5f2 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+evaluation error at L65:24 for 'create' @ L65, false for 'create' @ L76, evaluation error at L67:24 for 'update' @ L67, false for 'update' @ L76, false for 'create' @ L65, false for 'create' @ L76
+[2026-10-26T11:39:14.522Z]  @firebase/firestore: Firestore (13.1.0): GrpcConnection RPC 'Write' stream 0x4254a5f3 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+evaluation error at L65:24 for 'create' @ L65, false for 'create' @ L76, evaluation error at L67:24 for 'update' @ L67, false for 'update' @ L76, evaluation error at L72:34 for 'create' @ L72, false for 'create' @ L76, evaluation error at L72:34 for 'update' @ L72, false for 'update' @ L76, false for 'create' @ L65, false for 'create' @ L76, false for 'create' @ L72, false for 'create' @ L76
+[2026-10-26T11:39:14.532Z]  @firebase/firestore: Firestore (13.1.0): GrpcConnection RPC 'Write' stream 0x4254a5f4 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+evaluation error at L65:24 for 'create' @ L65, false for 'create' @ L76, evaluation error at L67:24 for 'update' @ L67, false for 'update' @ L76, evaluation error at L72:34 for 'create' @ L72, false for 'create' @ L76, evaluation error at L72:34 for 'update' @ L72, false for 'update' @ L76, false for 'create' @ L65, false for 'create' @ L76, false for 'create' @ L72, false for 'create' @ L76
+[2026-10-26T11:39:14.542Z]  @firebase/firestore: Firestore (13.1.0): GrpcConnection RPC 'Write' stream 0x4254a5f5 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+evaluation error at L65:24 for 'create' @ L65, false for 'create' @ L76, evaluation error at L67:24 for 'update' @ L67, false for 'update' @ L76, evaluation error at L72:34 for 'create' @ L72, false for 'create' @ L76, evaluation error at L72:34 for 'update' @ L72, false for 'update' @ L76, false for 'create' @ L65, false for 'create' @ L76, false for 'create' @ L72, false for 'create' @ L76
+[2026-10-26T11:39:14.551Z]  @firebase/firestore: Firestore (13.1.0): GrpcConnection RPC 'Write' stream 0x4254a5f6 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+evaluation error at L65:24 for 'create' @ L65, false for 'create' @ L76, evaluation error at L67:24 for 'update' @ L67, false for 'update' @ L76, evaluation error at L72:34 for 'create' @ L72, false for 'create' @ L76, evaluation error at L72:34 for 'update' @ L72, false for 'update' @ L76, false for 'create' @ L65, false for 'create' @ L76, false for 'create' @ L72, false for 'create' @ L76
+[2026-10-26T11:39:14.562Z]  @firebase/firestore: Firestore (13.1.0): GrpcConnection RPC 'Write' stream 0x4254a5f7 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+evaluation error at L65:24 for 'create' @ L65, false for 'create' @ L76, evaluation error at L67:24 for 'update' @ L67, false for 'update' @ L76, evaluation error at L72:34 for 'create' @ L72, false for 'create' @ L76, evaluation error at L72:34 for 'update' @ L72, false for 'update' @ L76, false for 'create' @ L65, false for 'create' @ L76, false for 'create' @ L72, false for 'create' @ L76
+[2026-10-26T11:39:14.571Z]  @firebase/firestore: Firestore (13.1.0): GrpcConnection RPC 'Write' stream 0x4254a5f8 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+evaluation error at L65:24 for 'create' @ L65, false for 'create' @ L76, evaluation error at L67:24 for 'update' @ L67, false for 'update' @ L76, evaluation error at L72:34 for 'create' @ L72, false for 'create' @ L76, evaluation error at L72:34 for 'update' @ L72, false for 'update' @ L76, false for 'create' @ L65, false for 'create' @ L76, false for 'create' @ L72, false for 'create' @ L76
+[2026-10-26T11:39:14.578Z]  @firebase/firestore: Firestore (13.1.0): GrpcConnection RPC 'Write' stream 0x4254a5f9 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+evaluation error at L65:24 for 'create' @ L65, false for 'create' @ L76, evaluation error at L67:24 for 'update' @ L67, false for 'update' @ L76, evaluation error at L72:34 for 'create' @ L72, false for 'create' @ L76, evaluation error at L72:34 for 'update' @ L72, false for 'update' @ L76, false for 'create' @ L65, false for 'create' @ L76, false for 'create' @ L72, false for 'create' @ L76
+[2026-10-26T11:39:14.586Z]  @firebase/firestore: Firestore (13.1.0): GrpcConnection RPC 'Write' stream 0x4254a5fa error. Code: 7 Message: 7 PERMISSION_DENIED: 
+evaluation error at L65:24 for 'create' @ L65, false for 'create' @ L76, evaluation error at L67:24 for 'update' @ L67, false for 'update' @ L76, evaluation error at L72:34 for 'create' @ L72, false for 'create' @ L76, evaluation error at L72:34 for 'update' @ L72, false for 'update' @ L76, false for 'create' @ L65, false for 'create' @ L76, false for 'create' @ L72, false for 'create' @ L76
+[2026-10-26T11:39:14.595Z]  @firebase/firestore: Firestore (13.1.0): GrpcConnection RPC 'Write' stream 0x4254a5fb error. Code: 7 Message: 7 PERMISSION_DENIED: 
+evaluation error at L65:24 for 'create' @ L65, false for 'create' @ L76, evaluation error at L67:24 for 'update' @ L67, false for 'update' @ L76, evaluation error at L72:34 for 'create' @ L72, false for 'create' @ L76, evaluation error at L72:34 for 'update' @ L72, false for 'update' @ L76, false for 'create' @ L65, false for 'create' @ L76, false for 'create' @ L72, false for 'create' @ L76
+[2026-10-26T11:39:14.603Z]  @firebase/firestore: Firestore (13.1.0): GrpcConnection RPC 'Write' stream 0x4254a5fc error. Code: 7 Message: 7 PERMISSION_DENIED: 
+evaluation error at L65:24 for 'create' @ L65, false for 'create' @ L76, evaluation error at L67:24 for 'update' @ L67, false for 'update' @ L76, evaluation error at L72:34 for 'create' @ L72, false for 'create' @ L76, evaluation error at L72:34 for 'update' @ L72, false for 'update' @ L76, false for 'create' @ L65, false for 'create' @ L76, false for 'create' @ L72, false for 'create' @ L76
+[2026-10-26T11:39:14.610Z]  @firebase/firestore: Firestore (13.1.0): GrpcConnection RPC 'Write' stream 0x4254a5fd error. Code: 7 Message: 7 PERMISSION_DENIED: 
+evaluation error at L65:24 for 'create' @ L65, false for 'create' @ L76, evaluation error at L67:24 for 'update' @ L67, false for 'update' @ L76, evaluation error at L72:34 for 'create' @ L72, false for 'create' @ L76, evaluation error at L72:34 for 'update' @ L72, false for 'update' @ L76, false for 'create' @ L65, false for 'create' @ L76, false for 'create' @ L72, false for 'create' @ L76
+[2026-10-26T11:39:14.616Z]  @firebase/firestore: Firestore (13.1.0): GrpcConnection RPC 'Write' stream 0x4254a5fe error. Code: 7 Message: 7 PERMISSION_DENIED: 
+evaluation error at L65:24 for 'create' @ L65, false for 'create' @ L76, evaluation error at L67:24 for 'update' @ L67, false for 'update' @ L76, false for 'create' @ L65, false for 'create' @ L76
+[2026-10-26T11:39:14.621Z]  @firebase/firestore: Firestore (13.1.0): GrpcConnection RPC 'Write' stream 0x4254a5ff error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L65, false for 'create' @ L76, false for 'update' @ L67, false for 'update' @ L76
+[2026-10-26T11:39:14.627Z]  @firebase/firestore: Firestore (13.1.0): GrpcConnection RPC 'Write' stream 0x4254a600 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+evaluation error at L65:24 for 'create' @ L65, false for 'create' @ L76, evaluation error at L67:24 for 'update' @ L67, false for 'update' @ L76, false for 'create' @ L65, false for 'create' @ L76
+[2026-10-26T11:39:14.660Z]  @firebase/firestore: Firestore (13.1.0): GrpcConnection RPC 'Write' stream 0x4254a605 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+evaluation error at L65:24 for 'create' @ L65, false for 'create' @ L76, evaluation error at L67:24 for 'update' @ L67, false for 'update' @ L76, false for 'update' @ L67, false for 'update' @ L76
+✔ direct SDK writes cannot bypass schema, relative path, timestamp or revision policy (190.954333ms)
+✔ maximum-size rulesets and atomic shrink preserve a consistent readable version (120.871458ms)
+i  hosting: 127.0.0.1 - - [26/Oct/2026:11:39:14 +0000] "GET / HTTP/1.1" 200 836 "-" "node"
+✔ Hosting emulator serves the explicitly labeled setup page (6.69575ms)
+REPRO metadata write accepted without child; read/list both failed
+✔ REPRO: a metadata-only create is accepted and makes repository read/list throw (670.753583ms)
+REPRO direct child delete accepted without revision; repository read failed
+✔ REPRO: child delete bypasses revision and leaves a broken rule set (54.185833ms)
+REPRO stale revision 1 overwrote a recreated ruleset
+✔ REPRO: deleting/recreating an ID makes an old revision overwrite new content (94.843ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1364.320583
+✔  Script exited successfully (code 0)
+i  emulators: Shutting down emulators.
+i  hosting: Stopping Hosting Emulator
+i  firestore: Stopping Firestore Emulator
+i  auth: Stopping Authentication Emulator
+i  hub: Stopping emulator hub
+i  logging: Stopping Logging Emulator

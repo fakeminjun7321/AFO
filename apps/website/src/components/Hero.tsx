@@ -23,15 +23,21 @@ export function Hero() {
           <span>파일은 제자리에.</span>
           <span>당신은 다음 일에.</span>
         </h1>
-        <p>선택한 폴더부터, 나다운 정리의 시작.</p>
-        <Link className="button button--orange hero-cta" to="/preview">
-          내 폴더 미리보기 <Arrow />
-        </Link>
+        <p>폴더를 끌어다 놓으면, 종류별로 정리해 드려요.</p>
+        <p className="hero-platforms">macOS · Windows용 명령줄 프로그램 · 로그인 없이 내 컴퓨터에서</p>
+        <div className="hero-actions">
+          <a className="button button--orange hero-cta" href="#install">
+            설치하기 <Arrow />
+          </a>
+          <Link className="hero-secondary" to="/preview">
+            설치 전에 웹에서 미리보기
+          </Link>
+        </div>
       </div>
       <ul className="principles" id="features" aria-label="AFO의 정리 원칙">
-        <li>분류는 자동으로</li>
-        <li>규칙은 나답게</li>
-        <li>변경 전 미리보기</li>
+        <li>종류별로 자동 정리</li>
+        <li>확인 코드로만 실행</li>
+        <li>afo undo로 되돌리기</li>
       </ul>
     </section>
   );

@@ -1,0 +1,21 @@
+.install-panel { display: grid; gap: 14px; width: 100%; max-width: 900px; }
+.install-tabs { display: inline-flex; gap: 6px; padding: 5px; border: 1px solid var(--line); border-radius: 100px; width: max-content; }
+.install-tabs button { background: transparent; color: var(--muted); font: inherit; font-size: 15px; font-weight: 650; padding: 10px 22px; border-radius: 100px; cursor: pointer; }
+.install-tabs button.is-active { background: var(--text); color: var(--bg); }
+.install-tabs button:not(.is-active):hover { color: var(--text); }
+.install-command { background: #141414; border: 1px solid #2a2a27; border-radius: 18px; padding: 18px 18px 18px 24px; }
+.install-command--next { background: transparent; border-style: dashed; }
+.install-shell { display: block; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+.install-line { display: flex; align-items: center; gap: 16px; }
+.install-line code { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 16px; line-height: 1.6; color: #fff; overflow-wrap: anywhere; user-select: all; }
+.install-line code::before { content: "$ "; color: var(--orange); }
+.copy-button { flex-shrink: 0; min-width: 96px; min-height: 44px; padding: 10px 18px; border-radius: 100px; border: 1px solid var(--orange); background: var(--orange); color: #fff; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; transition: background .2s; }
+.copy-button:hover { background: #ff6540; }
+.install-command--next .copy-button { background: transparent; color: #ff8a69; }
+.install-command--next .copy-button:hover { background: var(--orange); color: #fff; }
+@media (max-width: 700px) {
+  .install-command { padding: 16px; }
+  .install-line { flex-direction: column; align-items: stretch; gap: 12px; }
+  .install-line code { font-size: 14px; }
+  .copy-button { width: 100%; }
+}

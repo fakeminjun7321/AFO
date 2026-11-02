@@ -6,7 +6,7 @@ export function DownloadsPage() {
     <section className="downloads-page section-wrap">
       <div className="page-heading">
         <h1>테스트 파일</h1>
-        <p>개인 파일을 넣기 전에, 준비된 합성 자료로 확인하세요.</p>
+        <p>개인 파일을 넣기 전에, 준비된 합성 자료로 웹 미리보기와 afo를 확인하세요.</p>
       </div>
       <div className="download-main">
         <div>
@@ -42,6 +42,10 @@ export function DownloadsPage() {
           <li>
             <Link to="/preview">내 폴더 분석</Link>에서 압축을 푼 폴더 안의{" "}
             <code>정리할파일</code> 폴더를 선택해 분류와 중복 후보를 확인하세요.
+          </li>
+          <li>
+            <Link to="/install">AFO를 설치</Link>했다면 터미널에 <code>afo</code>를 입력하고 같은 <code>정리할파일</code> 폴더를
+            끌어다 놓아 실제 정리와 <code>afo undo</code>를 시험해 보세요. 개인 파일 대신 이 합성 자료로 먼저 확인하는 걸 권해요.
           </li>
         </ol>
         <p>

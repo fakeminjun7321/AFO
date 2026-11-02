@@ -1,35 +1,90 @@
 import { Link } from "react-router-dom";
-import { Arrow, FileIcon } from "./Icons";
+import { Arrow } from "./Icons";
+import { InstallPanel } from "./InstallPanel";
+import { notes } from "../data/notes";
+import { links } from "../data/project";
 import "./home-content.css";
 
-const examples = [
-  { name: "물리_실험보고서.pdf", kind: "pdf" as const, target: "문서" },
-  { name: "여행_사진.jpg", kind: "image" as const, target: "이미지" },
-  { name: "발표자료.pptx", kind: "slides" as const, target: "문서" },
-];
 const steps = [
-  { number: "01", title: "폴더 선택", body: "분석할 폴더를 직접 고릅니다. 설치나 로그인 없이 시작할 수 있어요." },
-  { number: "02", title: "분류 살펴보기", body: "파일의 확장자를 기준으로 어떤 종류에 속하는지 확인합니다." },
-  { number: "03", title: "기준 정리하기", body: "나의 규칙 화면에서 원하는 분류 기준을 따로 만들고 보관해요." },
+  { number: "01", title: "폴더를 끌어다 놓기", body: "터미널에 afo를 입력하고, 정리할 폴더를 창으로 끌어다 놓은 뒤 Enter를 누릅니다. 경로를 붙여 넣어도 돼요." },
+  { number: "02", title: "요약 보기", body: "분류별 파일 수, 확인이 필요한 파일과 그대로 둘 파일, 같은 내용의 사본을 짧게 보여 줍니다. 아직 아무것도 바꾸지 않아요." },
+  { number: "03", title: "정리 방법 고르기", body: "폴더별로 정리할지, 중복 사본을 휴지통으로 보낼지 번호로 고릅니다. 자세히 보기나 그만두기도 있어요." },
+  { number: "04", title: "확인 코드 입력", body: "화면에 나온 코드를 직접 입력해야 파일이 움직입니다. 코드를 넣지 않으면 아무것도 바뀌지 않아요." },
+];
+
+const features = [
+  { title: "종류별 폴더 정리", body: "문서·이미지·영상·음악·압축·설치·디자인·글꼴·전자책·코드·데이터로 나눠 폴더를 만들고 옮깁니다. 모르는 확장자는 어디로 보낼지 물어봐요." },
+  { title: "확인한 중복만 지우기", body: "이름이 아니라 내용(SHA-256)이 같은 파일만 중복으로 봅니다. 기본은 OS 휴지통이고, 영구 삭제는 따로 고르고 \"영구 삭제\"를 입력해야 하며 되돌릴 수 없어요." },
+  { title: "afo undo로 되돌리기", body: "가장 최근 폴더 정리를 원래 자리로 되돌립니다. 원래 자리가 비어 있고 내용이 그대로일 때만 옮겨요. 휴지통으로 보낸 파일은 OS 휴지통에서 꺼냅니다." },
+  { title: "내 정리 방식 기억하기", body: "이미 정리해 둔 폴더를 참고해 규칙을 제안받고, 확인한 규칙만 저장해 다음 정리에 씁니다. 참고한 폴더의 파일은 옮기지 않아요." },
+  { title: "내 컴퓨터에서만, 로그인 없이", body: "파일은 서버로 보내지 않고 계정도 필요 없습니다. 고른 폴더 안의 파일만 다루고, 이름이 겹치면 덮어쓰지 않고 검토 대상으로 남겨요." },
+];
+
+const terminal = [
+  "$ afo",
+  "AFO 파일 정리 도우미예요. 파일을 실제로 옮기기 전에 꼭 확인 코드를 물어봐요. (Ctrl+C로 언제든 그만둘 수 있어요)",
+  "정리할 폴더를 이 창으로 끌어다 놓고 Enter를 누르세요(경로를 붙여 넣어도 돼요, 그냥 Enter는 종료):",
+  "…",
+  "  1) 폴더별로 정리하기(되돌릴 수 있어요)",
+  "  2) 중복 파일을 휴지통으로 보내기",
+  "  3) 자세히 보기",
+  "  4) 그만두기",
+  "번호를 입력하세요:",
 ];
 
 export function HomeContent() {
   return <div className="home-content">
-    <section className="home-intro" aria-labelledby="home-intro-title">
+    <section className="home-install section-wrap" id="install" aria-labelledby="home-install-title">
+      <div className="home-install-copy">
+        <p className="home-overline">설치</p>
+        <h2 id="home-install-title">한 줄이면<br />설치 끝.</h2>
+        <p>명령을 복사해 터미널(Windows는 PowerShell)에 붙여 넣으세요. Node.js 같은 다른 프로그램은 필요 없습니다. 설치 스크립트가 GitHub Releases에서 내 OS용 실행 파일을 받아 SHA256SUMS와 대조한 뒤 설치해요.</p>
+        <Link className="home-light-link" to="/install">설치 위치·업데이트·제거 <Arrow /></Link>
+      </div>
+      <InstallPanel />
+    </section>
+
+    <section className="home-intro" aria-labelledby="home-flow-title">
       <div className="section-wrap">
-        <div className="home-intro-heading"><p className="home-overline">AFO와 함께하는 파일 정리</p><h2 id="home-intro-title">쌓인 파일 정리,<br /><span>어디서부터 시작할까요?</span></h2><p className="home-intro-description">무작정 폴더를 옮기기 전에 먼저 살펴보세요. AFO는 선택한 파일을 분류해 보여 주고, 나만의 정리 기준을 만들어 둘 수 있도록 돕습니다.</p></div>
-        <div className="home-preview-feature">
-          <div className="home-feature-copy"><span className="home-index">01 / 내 폴더 분석</span><h3>내 폴더를<br />한눈에 살펴보기.</h3><p>폴더를 선택하면 파일 이름과 크기를 읽어 기본 분류와 저장한 개인 규칙에 따른 위치를 보여 드립니다. 분류가 어려운 파일은 확인 대상으로 남겨요.</p><Link className="home-text-link" to="/preview">내 폴더 분석하기 <Arrow /></Link><small>분류와 중복 검사는 읽기 전용입니다.</small></div>
-          <div className="home-example" aria-label="확장자 분류 예시"><div className="home-example-top"><div><span>분류 미리보기</span><strong>내 폴더</strong></div><span className="home-example-label">예시</span></div><div className="home-example-head"><span>파일 이름</span><span>분류</span></div>{examples.map((item) => <div className="home-example-row" key={item.name}><span><FileIcon kind={item.kind} />{item.name}</span><b>{item.target}</b></div>)}<p>이 화면은 이해를 돕기 위한 예시입니다.</p></div>
+        <div className="home-intro-heading"><p className="home-overline">사용 방법</p><h2 id="home-flow-title">afo 하나로,<br /><span>네 단계면 정리 끝.</span></h2><p className="home-intro-description">명령어를 외울 필요가 없어요. afo가 묻는 대로 답하면 되고, 마지막 확인 코드를 넣기 전까지 파일은 그대로입니다.</p></div>
+        <div className="home-flow">
+          <ol className="home-steps">{steps.map((step) => <li key={step.number}><span>{step.number}</span><div><h3>{step.title}</h3><p>{step.body}</p></div></li>)}</ol>
+          <figure className="home-terminal" aria-label="afo 실행 화면의 안내 문구 일부">
+            <div className="home-terminal-bar" aria-hidden="true"><i /><i /><i /></div>
+            <pre>{terminal.join("\n")}</pre>
+            <figcaption>실제 안내 문구 일부입니다. 폴더를 넣으면 요약 뒤에 메뉴가 나와요.</figcaption>
+          </figure>
         </div>
-        <div className="home-other-features">
-          <article><span className="home-index">02 / 나의 정리 기준</span><h3>자주 쓰는 기준을<br />내 방식으로.</h3><p>확장자와 파일 이름에 맞춰 원하는 폴더를 정해 보세요. 브라우저에 저장한 활성 규칙은 웹 미리보기에 적용되고, JSON으로 옮기거나 로그인 후 클라우드에도 보관할 수 있습니다.</p><Link className="home-text-link" to="/rules">나의 규칙 살펴보기 <Arrow /></Link><small>클라우드에만 있는 규칙은 불러온 뒤 브라우저에 저장해 주세요.</small></article>
-          <article><span className="home-index">03 / CLI</span><h3>실제 정리는<br />로컬 CLI에서.</h3><p>명령어로 중복 후보와 분류를 확인하고 정리 계획을 만듭니다. 승인 코드를 입력한 항목만 옮기거나 휴지통으로 보내고, 옮긴 파일은 되돌릴 수 있어요. 참고 폴더에서 만든 개인 규칙도 저장해 다시 씁니다.</p><Link className="home-text-link" to="/guide">사용 방법 알아보기 <Arrow /></Link><small>CLI의 실행과 설치는 웹과 별도입니다.</small></article>
+        <div className="home-commands">
+          <div><code>afo undo</code><span>가장 최근 정리 되돌리기</span></div>
+          <div><code>afo runs</code><span>정리 기록 보기</span></div>
+          <div><code>afo --help</code><span>모든 명령 보기</span></div>
+        </div>
+        <Link className="home-text-link" to="/help">사용 방법 자세히 보기 <Arrow /></Link>
+      </div>
+    </section>
+
+    <section className="home-process section-wrap" aria-labelledby="home-features-title">
+      <div className="home-process-header"><div><p className="home-overline">할 수 있는 일</p><h2 id="home-features-title">정리는 자동으로,<br />결정은 내가.</h2></div><p>AFO는 크기나 날짜만 보고 지울 파일을 정하지 않습니다. 실행 직전에 파일을 다시 확인해, 그사이 바뀐 파일은 건너뛰어요.</p></div>
+      <ul className="home-features">{features.map((f, i) => <li key={f.title}><span>0{i + 1}</span><h3>{f.title}</h3><p>{f.body}</p></li>)}</ul>
+    </section>
+
+    <section className="home-intro home-web" aria-labelledby="home-web-title">
+      <div className="section-wrap">
+        <div className="home-intro-heading"><p className="home-overline">웹 도구</p><h2 id="home-web-title">설치 전에,<br /><span>웹에서 먼저 살펴보기.</span></h2><p className="home-intro-description">웹은 읽기 전용입니다. 폴더를 골라 분류를 미리 보거나 규칙을 연습할 수 있지만, 파일을 옮기거나 지우지 않아요.</p></div>
+        <div className="home-other-features home-other-features--three">
+          <article><span className="home-index">웹 미리보기</span><h3>내 폴더의<br />분류 미리 보기.</h3><p>브라우저에서 폴더를 고르면 기본 분류와 중복 후보를 이 기기 안에서 보여 줍니다. 파일은 업로드하지 않아요.</p><Link className="home-text-link" to="/preview">내 폴더 분석하기 <Arrow /></Link></article>
+          <article><span className="home-index">나의 규칙</span><h3>분류 기준<br />연습하기.</h3><p>확장자와 이름으로 규칙을 만들어 브라우저·JSON·계정에 보관합니다. 웹 규칙은 CLI와 자동으로 연결되지 않아요.</p><Link className="home-text-link" to="/rules">나의 규칙 살펴보기 <Arrow /></Link></article>
+          <article><span className="home-index">테스트 파일</span><h3>개인 파일 대신<br />합성 자료로.</h3><p>문서·이미지·중복 사본이 든 작은 ZIP을 받아 웹 미리보기나 afo로 먼저 시험해 보세요.</p><Link className="home-text-link" to="/downloads">테스트 파일 받기 <Arrow /></Link></article>
         </div>
       </div>
     </section>
-    <section className="home-process section-wrap" aria-labelledby="home-process-title"><div className="home-process-header"><div><p className="home-overline">HOW IT WORKS</p><h2 id="home-process-title">복잡한 준비 없이,<br />차근차근.</h2></div><p>처음이라면 내 폴더 미리보기부터 시작해 보세요. 실제 파일은 그대로 두고 결과를 확인할 수 있어요.</p></div><ol>{steps.map((step) => <li key={step.number}><span>{step.number}</span><h3>{step.title}</h3><p>{step.body}</p></li>)}</ol><Link className="home-light-link" to="/guide">사용 방법 자세히 보기 <Arrow /></Link></section>
-    <section className="home-trust"><div className="section-wrap home-trust-layout"><div><p className="home-overline">당신이 선택한 범위에서</p><h2>파일은 그대로.<br />결과부터 확인하세요.</h2><p className="home-trust-intro">기본 미리보기는 파일 이름과 크기를 사용합니다. 중복 검사 버튼을 누르면 내용을 이 기기에서 비교하며, 파일은 서버로 보내거나 변경하지 않습니다.</p><Link className="home-light-link" to="/faq">자주 묻는 질문 <Arrow /></Link></div><div className="home-trust-details"><article><strong>브라우저에서 분석</strong><p>선택한 폴더 목록과 중복 검사 결과는 현재 브라우저에서 처리합니다.</p></article><article><strong>보관할 때만 저장</strong><p>규칙은 직접 저장을 선택할 때 브라우저나 계정에 보관합니다. 파일 자체를 저장하는 기능은 아닙니다.</p></article><article><strong>현재 제공 범위</strong><p>웹에서는 실제 이동·삭제를 제공하지 않습니다. 승인 후 실행과 복구는 앞으로 개발할 기능입니다.</p><Link className="home-light-link" to="/status">개발 현황 보기 <Arrow /></Link></article></div></div></section>
-    <section className="home-start"><div className="section-wrap home-start-layout"><div><p className="home-overline">지금 시작하기</p><h2>정리의 첫 단계,<br />가볍게 시작해요.</h2><p>설치 없이 내 폴더의 분류 결과를 확인해 보세요. 사용 방법과 샘플 예시는 도움말에서 볼 수 있습니다.</p></div><div className="home-start-links"><Link className="button button--black" to="/preview">내 폴더 미리보기 <Arrow /></Link><Link className="home-sample-link" to="/help">사용 방법과 샘플 예시 <Arrow /></Link></div></div></section>
+
+    <section className="home-trust"><div className="section-wrap home-trust-layout">
+      <div><p className="home-overline">오픈소스 · Apache-2.0</p><h2>함께 고치고,<br />함께 만들어요.</h2><p className="home-trust-intro">코드와 진행 기록은 모두 GitHub에 공개돼 있어요. 버그나 불편한 점은 Issues에 남겨 주세요.</p><div className="home-trust-links"><a className="home-light-link" href={links.repo} target="_blank" rel="noreferrer">GitHub 저장소 <Arrow diagonal /></a><Link className="home-light-link" to="/community">참여 방법 <Arrow /></Link></div></div>
+      <div className="home-trust-details" aria-label="최근 개발 노트">{notes.slice(0, 3).map((n) => <article key={n.title}><time>{n.date}</time><strong>{n.title}</strong></article>)}<Link className="home-light-link" to="/notes">개발 노트 전체 보기 <Arrow /></Link></div>
+    </div></section>
+
+    <section className="home-start"><div className="section-wrap home-start-layout"><div><p className="home-overline">지금 시작하기</p><h2>복잡한 폴더에,<br />간단한 시작을.</h2><p>설치하고 터미널에 afo를 입력하세요. 처음에는 테스트 파일이나 새로 만든 폴더로 시작해 보는 걸 권해요.</p></div><div className="home-start-links"><a className="button button--black" href="#install">설치 명령 보기 <Arrow /></a><a className="home-sample-link" href={links.latestRelease} target="_blank" rel="noreferrer">최신 릴리스 <Arrow diagonal /></a></div></div></section>
   </div>;
 }

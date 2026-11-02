@@ -382,7 +382,7 @@ test('usage: runs/undo/recover arguments are checked; unknown run IDs are errors
   assert.equal(invoke(['runs', 'NOT_AN_ID']).status, 2);
   assert.equal(invoke(['runs', '00000000-0000-4000-8000-000000000000']).status, 1);
   assert.equal(invoke(['undo', '00000000-0000-4000-8000-000000000000', '--confirm', '00000000']).status, 1);
-  assert.equal(invoke(['undo']).status, 2);
+  assert.equal(invoke(['undo']).status, 0, 'undo without an ID and nothing to undo (cli-guided.test.ts covers the rest)');
   assert.equal(invoke(['recover', 'extra']).status, 2);
   assert.equal(invoke(['apply']).status, 2);
   assert.equal(invoke(['apply', 'a'.repeat(64), '--mode', 'organize', '--confirm', '00000000']).status, 4, 'unknown plan ID (PLAN_CHANGED)');

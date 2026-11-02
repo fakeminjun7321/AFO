@@ -12,7 +12,6 @@ import { Hero } from "./components/Hero";
 import { HomeContent } from "./components/HomeContent";
 import { Footer } from "./components/Footer";
 import { HelpPage } from "./pages/HelpPage";
-import { StatusPage } from "./pages/StatusPage";
 import { AuthPage } from "./pages/AuthPage";
 import { AccountPage } from "./pages/AccountPage";
 const RulesPage = lazy(() =>
@@ -24,13 +23,16 @@ const LocalPreview = lazy(() =>
 import { AdminPage } from "./pages/AdminPage";
 import { AuthProvider } from "./auth/AuthProvider";
 import { PreviewSessionProvider } from "./features/local-preview/session";
-import { HomeOverview } from "./components/HomeOverview";
 import { ResourcesPage } from "./pages/ResourcesPage";
 import { DownloadsPage } from "./pages/DownloadsPage";
 import { NotesPage } from "./pages/NotesPage";
+import { InstallPage } from "./pages/InstallPage";
+import { CommunityPage } from "./pages/CommunityPage";
 
 const titles: Record<string, string> = {
-  "/": "파일은 제자리에. 당신은 다음 일에.",
+  "/": "폴더를 끌어다 놓으면 정리되는 파일 정리 프로그램",
+  "/install": "설치",
+  "/community": "커뮤니티",
   "/guide": "사용 방법",
   "/help": "도움말",
   "/status": "개발 현황",
@@ -71,7 +73,6 @@ function Shell() {
               <>
                 <Hero />
                 <HomeContent />
-                <HomeOverview />
               </>
             }
           />
@@ -79,7 +80,9 @@ function Shell() {
           <Route path="/downloads" element={<DownloadsPage />} />
           <Route path="/notes" element={<NotesPage />} />
           <Route path="/help" element={<HelpPage />} />
-          <Route path="/status" element={<StatusPage />} />
+          <Route path="/install" element={<InstallPage />} />
+          <Route path="/community" element={<CommunityPage />} />
+          <Route path="/status" element={<Navigate to="/notes" replace />} />
           <Route path="/guide" element={<Navigate to="/help" replace />} />
           <Route path="/demo" element={<Navigate to="/help" replace />} />
           <Route path="/preview" element={<Suspense fallback={<p className="route-status" role="status">폴더 분석 화면을 열고 있어요.</p>}><LocalPreview /></Suspense>} />

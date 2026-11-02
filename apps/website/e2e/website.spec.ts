@@ -21,6 +21,9 @@ test("public routes, responsive navigation, sample demo and real local rule pers
       "/signup",
       "/reset-password",
       "/rules",
+      "/install",
+      "/community",
+      "/notes",
     ]) {
       await page.goto(path);
       await expect(page.locator("h1")).toHaveCount(1);
@@ -37,7 +40,7 @@ test("public routes, responsive navigation, sample demo and real local rule pers
   await page.getByRole("button", { name: "메뉴 열기" }).click();
   await page
     .getByRole("navigation", { name: "주 메뉴" })
-    .getByRole("link", { name: "내 폴더 분석" })
+    .getByRole("link", { name: "웹 미리보기" })
     .click();
   await expect(page).toHaveURL(/\/preview$/);
   await expect(page.getByRole("heading", { name: /폴더를 열고/ })).toBeVisible();

@@ -278,7 +278,7 @@ test('analysis is deterministic regardless of hash concurrency', async (t) => {
   const one = await analyzeFolder(root, { hashConcurrency: 1 });
   const many = await analyzeFolder(root, { hashConcurrency: 8 });
   assert.deepEqual(one, many);
-  assert.equal(one.preview.classificationVersion, 'default-2');
+  assert.equal(one.preview.classificationVersion, 'default-3');
 });
 test('reference reading returns names and extensions only and never opens files', async (t) => {
   const root = await fixture(t, { '과제/물리/물리_1.PDF': 'one', '과제/물리/물리_2.pdf': 'two', 'README': 'r', '.hidden': 'h' });

@@ -1,49 +1,67 @@
-const entries = [
-  {
-    date: "2026.10.27",
-    title: "관리자 조회 기능 준비",
-    body: "읽기 전용 관리자 API를 구현하고 Emulator에서 검증했습니다. 운영은 무료 Spark를 유지하기로 정해, 공개 관리자 화면에서는 Firebase 콘솔로 사용자·프로젝트·DB·Hosting 정보를 확인합니다.",
-  },
-  {
-    date: "2026.10.26",
-    title: "정리 기준을 계정에 보관하기",
-    body: "규칙 편집·브라우저 저장·JSON 교환과 클라우드 저장을 연결했습니다. 저장·재조회·계정 분리·버전 충돌을 검증했습니다.",
-  },
-  {
-    date: "2026.10.26",
-    title: "로그인과 화면 흐름 정리",
-    body: "이메일·Google 로그인 옵션과 관리자 역할을 추가했습니다. 메뉴를 줄이고 로그인·체험·도움말의 정보 위계를 맞췄습니다. 실제 Google 인증 완료와 관리자 진입은 본인 계정 확인이 남아 있습니다.",
-  },
-  {
-    date: "2026.10.26",
-    title: "안심하고 확인할 테스트 자료",
-    body: "합성 파일과 예시 규칙을 내려받을 수 있게 했습니다. 개인 파일 대신 테스트 자료로 규칙 보관 흐름을 먼저 확인할 수 있습니다.",
-  },
-];
+import { Arrow } from "../components/Icons";
+import { notes, remaining, statusRows } from "../data/notes";
+import { links } from "../data/project";
+import "./site-pages.css";
+
 export function NotesPage() {
   return (
     <section className="notes-page section-wrap">
       <div className="page-heading">
         <h1>개발 노트</h1>
-        <p>만든 기능과 확인한 범위를 기록합니다.</p>
+        <p>만든 기능, 실제로 확인한 범위, 남은 일을 GitHub 기록에 맞춰 적습니다. 2026-11-02 기준.</p>
       </div>
-      <div className="notes-list">
-        {entries.map((e) => (
-          <article key={e.title}>
-            <time>{e.date}</time>
-            <div>
-              <h2>{e.title}</h2>
-              <p>{e.body}</p>
-            </div>
-          </article>
-        ))}
-      </div>
-      <section className="next-work">
-        <h2>다음 단계</h2>
-        <p>
-          승인·실행·복구 흐름을 순서대로 개발하고 검증합니다.
-          현재 웹사이트가 실제 파일을 이동·삭제하는 기능은 제공하지 않습니다.
+
+      <section className="site-block notes-status" aria-labelledby="notes-status-title">
+        <h2 id="notes-status-title">검증 상태</h2>
+        <p className="site-note">
+          “실제 Mac 검증”은 실제 Mac(macOS 27, Apple Silicon)에서 합성 테스트 파일로 확인했다는 뜻입니다.
+          <strong> Windows 실제 PC에서는 아직 확인하지 않았고</strong>, GitHub Actions의 Windows VM에서 자동 테스트만 돌렸습니다.
         </p>
+        <div className="site-table site-table--status" role="table" aria-label="기능별 검증 상태">
+          <div role="row" className="site-table-head"><span role="columnheader">기능</span><span role="columnheader">macOS</span><span role="columnheader">Windows</span></div>
+          {statusRows.map((r) => (
+            <div role="row" key={r.feature}>
+              <span role="cell">{r.feature}</span>
+              <span role="cell" className={r.mac.startsWith("실제") ? "is-verified" : "is-pending"}>{r.mac}</span>
+              <span role="cell" className="is-pending">{r.windows}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="site-block" aria-labelledby="notes-log-title">
+        <h2 id="notes-log-title">진행 기록</h2>
+        <div className="notes-list">
+          {notes.map((e) => (
+            <article key={e.title}>
+              <time>{e.date}</time>
+              <div>
+                <h3>{e.title}</h3>
+                <p>{e.body}</p>
+                <div className="note-links">
+                  {e.links.map((l) => <a key={l.href} href={l.href} target="_blank" rel="noreferrer">{l.label} <Arrow diagonal /></a>)}
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="site-block next-work" aria-labelledby="notes-next-title">
+        <h2 id="notes-next-title">남은 일</h2>
+        <ul className="remaining-list">
+          {remaining.map((r) => <li key={r.label}><a href={r.href} target="_blank" rel="noreferrer">{r.label} <Arrow diagonal /></a></li>)}
+        </ul>
+        <p className="site-note">웹사이트는 계속 읽기 전용입니다. 웹에서 파일을 옮기거나 지우는 기능은 없고, 실제 정리는 설치한 CLI에서만 합니다.</p>
+      </section>
+
+      <section className="site-block" aria-labelledby="notes-source-title">
+        <h2 id="notes-source-title">출처</h2>
+        <div className="site-links">
+          <a className="quiet-link" href={links.plan} target="_blank" rel="noreferrer">이슈 #1 현재 상태 <Arrow diagonal /></a>
+          <a className="quiet-link" href={links.verification} target="_blank" rel="noreferrer">docs/verification 검증 기록 <Arrow diagonal /></a>
+          <a className="quiet-link" href={`${links.pulls}?q=is%3Apr+is%3Amerged`} target="_blank" rel="noreferrer">병합된 Pull Request <Arrow diagonal /></a>
+        </div>
       </section>
     </section>
   );

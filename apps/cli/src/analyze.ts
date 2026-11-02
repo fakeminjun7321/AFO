@@ -23,7 +23,9 @@ export async function readJsonFile(file: string): Promise<unknown> {
 export interface ProfileInfo { source: 'saved' | 'stale' | 'file' | 'none' | 'skipped' | 'corrupt'; id: string | null; revision: number | null;
   status: string | null; warning?: string }
 export interface AnalyzeValues { profile?: string | undefined; reference?: string | undefined; 'no-saved-rules'?: boolean | undefined;
-  move?: string[] | undefined; remember?: boolean | undefined }
+  move?: string[] | undefined; remember?: boolean | undefined;
+  /** One-off corrections chosen by file ID (the guided flow); the same path as --move without parsing "<path>=<folder>" text. */
+  overrides?: { fileId: string; target: string }[] | undefined }
 export interface AnalyzeContext { warn: (line: string) => void; stateDir: () => string; options: { signal?: AbortSignal };
   /** The command will write the state folder: it must not overlap the work or reference folder. */
   writesState: boolean }
@@ -95,8 +97,23 @@ export async function analyzeTarget(target: string, values: AnalyzeValues, ctx: 
     }
   }
 
+  const byId: { fileId: string; target: string }[] = [];
+  for (const o of values.overrides ?? []) {
+    const folder = TargetDirectorySchema.safeParse(o.target);
+    if (!folder.success) throw usage(`목적지는 작업 폴더 안의 상대 폴더여야 합니다(숨김·..·절대 경로 불가): ${o.target}`);
+    if (overrides[o.fileId] !== undefined) throw usage('같은 파일에 수정을 두 번 지정했습니다.');
+    overrides[o.fileId] = folder.data;
+    byId.push({ fileId: o.fileId, target: folder.data });
+  }
+
   const analysis = await analyzeRoot(grant, { ...ctx.options, stateDir: ctx.stateDir(), ...(profile ? { profile } : {}),
-    ...(referenceGrant ? { reference: referenceGrant } : {}), ...(picked.length ? { overrides } : {}) });
+    ...(referenceGrant ? { reference: referenceGrant } : {}), ...(Object.keys(overrides).length ? { overrides } : {}) });
+  for (const o of byId) {
+    // File IDs hash the root, relative path and inode: a missing ID means the file was renamed, replaced or removed since.
+    const item = analysis.preview.items.find((i) => i.fileId === o.fileId);
+    if (!item) throw new AfoError('FILE_CHANGED', '분석 중 파일이 바뀌었습니다. 다시 실행하세요.');
+    picked.push({ fileId: o.fileId, relativePath: item.source, target: o.target });
+  }
   for (const p of picked) {
     const item = analysis.preview.items.find((i) => i.fileId === p.fileId);
     if (!item) throw new AfoError('FILE_CHANGED', `분석 중 파일이 바뀌었습니다: ${p.relativePath}. 다시 실행하세요.`);

@@ -8,7 +8,8 @@ import type { CorruptProfile } from '../../../packages/filesystem/src/profiles.j
 
 /** CLI adapter for the saved personal rule profile (#18). Policy stays in engine/filesystem; this file only maps commands. */
 export class CliError extends Error {
-  constructor(message: string, readonly exitCode: 1 | 2 | 4) { super(message); this.name = 'CliError'; }
+  /** `plain`: a stop the user chose in the guided flow, printed without the "AFO 오류:" prefix. */
+  constructor(message: string, readonly exitCode: 1 | 2 | 4 | 130, readonly plain = false) { super(message); this.name = 'CliError'; }
 }
 export const usage = (message: string): CliError => new CliError(message, 2);
 

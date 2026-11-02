@@ -57,10 +57,10 @@ test('"all duplicates" deletes candidates only and keeps one keeper per group (i
   for (const [mode, kind] of [['trash', 'trash'], ['permanent', 'delete']] as const) {
     const plan = buildPlan(preview(), opts({ deleteSelections: 'all-duplicates', deleteMode: mode }));
     const ops = bySource(plan);
-    assert.deepEqual([ops['report.pdf']!.kind, ops['report.pdf']!.keeper], [kind, 'report copy.pdf']);
+    assert.deepEqual([ops['report copy.pdf']!.kind, ops['report copy.pdf']!.keeper], [kind, 'report.pdf']);
     assert.deepEqual([ops['이미지/b.jpg']!.kind, ops['이미지/b.jpg']!.keeper], [kind, 'a.jpg']);
-    assert.equal(ops['report.pdf']!.expected.sha256, A);
-    for (const keeper of ['report copy.pdf', 'a.jpg']) {
+    assert.equal(ops['report copy.pdf']!.expected.sha256, A);
+    for (const keeper of ['report.pdf', 'a.jpg']) {
       assert.equal(ops[keeper], undefined, `${keeper} is not an operation`);
       assert.equal(reviewOf(plan)[keeper], 'keep');
     }
@@ -73,10 +73,10 @@ test('keeper changes move the deletion to the other file and change only those o
   const base = preview();
   const groupA = base.duplicates.find((g) => g.sha256 === A)!;
   const before = buildPlan(base, opts({ deleteSelections: [{ sha256: A, candidates: groupA.candidates }] }));
-  const changed = chooseKeeper(base, A, 'report.pdf');
-  const after = buildPlan(changed, opts({ deleteSelections: [{ sha256: A, candidates: ['report copy.pdf'] }] }));
-  assert.equal(bySource(after)['report copy.pdf']!.keeper, 'report.pdf');
-  assert.equal(bySource(after)['report.pdf'], undefined);
+  const changed = chooseKeeper(base, A, 'report copy.pdf');
+  const after = buildPlan(changed, opts({ deleteSelections: [{ sha256: A, candidates: ['report.pdf'] }] }));
+  assert.equal(bySource(after)['report.pdf']!.keeper, 'report copy.pdf');
+  assert.equal(bySource(after)['report copy.pdf'], undefined);
   const diff = diffPlans(before, after);
   assert.deepEqual(diff.unchanged.length, 2, 'a.jpg and clip.mp4 moves are the same operations');
   assert.equal(diff.added.length, 1); assert.equal(diff.removed.length, 1);
@@ -85,12 +85,12 @@ test('keeper changes move the deletion to the other file and change only those o
 
 test('invalid duplicate selections are KEEPER_INVALID; explicit deletes have no keeper and stay inside the analysis', () => {
   const p = preview();
-  assert.throws(() => buildPlan(p, opts({ deleteSelections: [{ sha256: A, candidates: ['report copy.pdf'] }] })), code('KEEPER_INVALID'),
+  assert.throws(() => buildPlan(p, opts({ deleteSelections: [{ sha256: A, candidates: ['report.pdf'] }] })), code('KEEPER_INVALID'),
     'the keeper is not a candidate');
   assert.throws(() => buildPlan(p, opts({ deleteSelections: [{ sha256: A, candidates: ['clip.mp4'] }] })), code('KEEPER_INVALID'));
   assert.throws(() => buildPlan(p, opts({ deleteSelections: [{ sha256: A, candidates: [] }] })), code('KEEPER_INVALID'));
   assert.throws(() => buildPlan(p, opts({ deleteSelections: [{ sha256: C, candidates: ['ref/old.txt'] }] })), code('KEEPER_INVALID'));
-  assert.throws(() => buildPlan(p, opts({ deleteSelections: [{ sha256: A, candidates: ['report.pdf'] }, { sha256: A, candidates: ['report.pdf'] }] })),
+  assert.throws(() => buildPlan(p, opts({ deleteSelections: [{ sha256: A, candidates: ['report copy.pdf'] }, { sha256: A, candidates: ['report copy.pdf'] }] })),
     code('KEEPER_INVALID'));
   assert.throws(() => buildPlan(p, opts({ deleteSelections: 'all-duplicates', explicitDeletes: ['a.jpg'] })), code('KEEPER_INVALID'),
     'a keeper cannot also be chosen for deletion');
@@ -98,9 +98,9 @@ test('invalid duplicate selections are KEEPER_INVALID; explicit deletes have no 
   assert.throws(() => buildPlan(p, opts({ explicitDeletes: ['missing.pdf'] })), code('SOURCE_MISSING'));
   // A forged preview whose group claims a file with other content is refused against the scan hashes.
   const forged = PreviewSchema.parse({ ...p, duplicates: p.duplicates.map((g) => g.sha256 === A
-    ? { ...g, candidates: ['report.pdf'], members: undefined } : g) });
-  const s = scan(); s.files[0]!.sha256 = D;
-  assert.throws(() => buildPlan(forged, opts({ scan: s, deleteSelections: [{ sha256: A, candidates: ['report.pdf'] }] })), code('KEEPER_INVALID'));
+    ? { ...g, candidates: ['report copy.pdf'], members: undefined } : g) });
+  const s = scan(); s.files[1]!.sha256 = D;
+  assert.throws(() => buildPlan(forged, opts({ scan: s, deleteSelections: [{ sha256: A, candidates: ['report copy.pdf'] }] })), code('KEEPER_INVALID'));
   const plan = buildPlan(p, opts({ explicitDeletes: ['notes'], deleteMode: 'permanent' }));
   assert.deepEqual([bySource(plan)['notes']!.kind, bySource(plan)['notes']!.keeper], ['delete', null]);
 });

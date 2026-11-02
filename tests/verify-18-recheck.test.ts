@@ -507,8 +507,8 @@ const DEFAULTS: [string, string | null, string][] = [
   ['archive.tar.gz', '압축', 'DEFAULT_EXTENSION'], ['BIG.TAR.GZ', '압축', 'DEFAULT_EXTENSION'], ['backup.tgz', '압축', 'DEFAULT_EXTENSION'],
   ['X.TGZ', '압축', 'DEFAULT_EXTENSION'], ['a.gz', '압축', 'DEFAULT_EXTENSION'], ['a.tar', '압축', 'DEFAULT_EXTENSION'],
   ['tar.gz', '압축', 'DEFAULT_EXTENSION'], ['v1.2.zip', '압축', 'DEFAULT_EXTENSION'], ['my.report.pdf', '문서', 'DEFAULT_EXTENSION'],
-  ['report.pdf.exe', null, 'COMPOUND_EXTENSION'], ['SETUP.PDF.EXE', null, 'COMPOUND_EXTENSION'], ['photo.jpg.gz', null, 'COMPOUND_EXTENSION'],
-  ['data.tar.zip', null, 'COMPOUND_EXTENSION'], ['a.tar.tgz', null, 'COMPOUND_EXTENSION'], ['archive.tar.gz.exe', null, 'COMPOUND_EXTENSION'],
+  ['report.pdf.exe', null, 'COMPOUND_EXTENSION'], ['SETUP.PDF.EXE', null, 'COMPOUND_EXTENSION'], ['photo.jpg.gz', '압축', 'DEFAULT_EXTENSION'],
+  ['data.tar.zip', '압축', 'DEFAULT_EXTENSION'], ['a.tar.tgz', null, 'COMPOUND_EXTENSION'], ['archive.tar.gz.exe', null, 'COMPOUND_EXTENSION'],
   ['noext', null, 'NO_EXTENSION'], ['x.zzz', null, 'UNKNOWN_EXTENSION'], ['문서.hwpx', '문서', 'DEFAULT_EXTENSION'],
 ];
 

@@ -8,6 +8,7 @@ import type { RunRecord, UndoRecord } from '../../../packages/filesystem/src/exe
 import { issueRootGrant, revokeGrant } from '../../../packages/filesystem/src/grants.js';
 import { inspectRuns } from '../../../packages/filesystem/src/recovery.js';
 import { CliError, usage } from './rules.js';
+import { haeyo } from './words.js';
 
 /**
  * Execution commands (#10–#13): apply, undo, runs, recover. Only an adapter: approvals are issued and consumed by approvals.ts,
@@ -189,8 +190,12 @@ function applyLines(report: ExecutionReport, mode: ApprovalMode, operations: Pla
     ...spaceLines(report, mode), ...afterLines(report, mode)];
 }
 
-/** undo <runId>: confirmation code = first 8 characters of the run ID; undoRun moves back only unchanged files into empty paths. */
-export async function undoCommand(runId: string, values: { confirm?: string | undefined }, ctx: ExecContext): Promise<CliResult> {
+/**
+ * undo <runId>: confirmation code = first 8 characters of the run ID; undoRun moves back only unchanged files into empty paths.
+ * `simple` (afo undo without an ID, guided.ts): the same checks and codes with a short screen; JSON output is identical.
+ */
+export async function undoCommand(runId: string, values: { confirm?: string | undefined }, ctx: ExecContext,
+  simple = false): Promise<CliResult> {
   if (!OpaqueIdSchema.safeParse(runId).success) throw usage('undo에는 apply가 출력한 실행 ID를 그대로 넣으세요.');
   const stateDir = stateOf(ctx);
   const found = await readRun(stateDir, runId);
@@ -208,18 +213,20 @@ export async function undoCommand(runId: string, values: { confirm?: string | un
     return new CliResult(ctx.json ? JSON.stringify({ runId: run.runId, report: null, message: text }, null, 2) : text, 0);
   }
   const code = run.runId.slice(0, 8);
-  const summary = [`AFO 되돌리기 확인 — 실행 ${run.runId} (${run.startedAt})`,
+  const summary = simple ? simpleUndoSummary(run.startedAt, candidates.map((r) => ops?.get(r.opId)), unclear, code) : [`AFO 되돌리기 확인 — 실행 ${run.runId} (${run.startedAt})`,
     `되돌릴 후보 ${candidates.length}개(정리한 위치 → 원래 위치):`,
     ...candidates.map((r) => `  ${r.opId} ${where(ops?.get(r.opId), true)}`),
     ...(unclear ? ['이 실행에는 결과가 확인되지 않은 항목이 있습니다. 그런 항목은 추측해 옮기지 않고 결과 불명으로 보고합니다(recover로 확인).'] : []),
     '정리한 파일이 그대로이고 원래 경로가 비어 있을 때만 옮깁니다. 원래 경로에 파일이 있거나 내용이 바뀐 항목은 건너뜁니다(덮어쓰지 않음).',
-    '휴지통 이동·영구 삭제는 되돌리지 않습니다. 이동하면서 만든 빈 폴더는 지우지 않습니다.',
+    '휴지통 이동·영구 삭제는 되돌리지 않습니다. 이 실행이 새로 만든 폴더는 되돌린 뒤 비어 있을 때만 지웁니다.',
     `확인 코드: ${code} (실행 ID 앞 8자)`];
   const needs = values.confirm === undefined;
   if (!ctx.json || needs) for (const line of summary) ctx.warn(line);
-  const typed = await prompt(ctx, values.confirm, '확인 코드 8자를 입력하세요(빈 입력은 취소): ',
+  const typed = await prompt(ctx, values.confirm, simple ? '코드(그냥 Enter는 취소): ' : '확인 코드 8자를 입력하세요(빈 입력은 취소): ',
     '비대화형 되돌리기에는 --confirm <실행 ID 앞 8자>가 필요합니다. 아무것도 바꾸지 않았습니다.');
-  if (typed !== code) throw new CliError('확인 코드가 맞지 않아 되돌리지 않았습니다. 아무것도 바꾸지 않았습니다.', 4);
+  if (typed !== code) throw simple ? new CliError(`${typed === '' ? '코드를 입력하지 않아' : '코드가 맞지 않아'} 되돌리지 않았어요. ` +
+      '아무것도 바꾸지 않았어요.', 4, true)
+    : new CliError('확인 코드가 맞지 않아 되돌리지 않았습니다. 아무것도 바꾸지 않았습니다.', 4);
 
   const grant = await issueRootGrant(run.root.canonicalPath);
   let report: ExecutionReport;
@@ -227,7 +234,8 @@ export async function undoCommand(runId: string, values: { confirm?: string | un
   catch (error) {
     if (error instanceof RunRecordError) {
       ctx.warn(`경고: ${error.message} undo를 다시 실행하기 전에 recover로 확인하세요.`);
-      return new CliResult(ctx.json ? JSON.stringify({ runId: run.runId, report: error.report }, null, 2) : undoLines(error.report, ops).join('\n'), 1);
+      return new CliResult(ctx.json ? JSON.stringify({ runId: run.runId, report: error.report }, null, 2)
+        : (simple ? simpleUndoLines : undoLines)(error.report, ops).join('\n'), 1);
     }
     if (isAfoError(error, 'LOCKED_BY_OTHER'))
       throw new AfoError('LOCKED_BY_OTHER', `${error.message} 파일은 바꾸지 않았습니다. 다른 실행이 끝난 뒤 undo를 다시 실행하세요.`, { cause: error });
@@ -237,7 +245,32 @@ export async function undoCommand(runId: string, values: { confirm?: string | un
   } finally { revokeGrant(grant); }
   const exit = cancelled(report, ctx.signal) ? 130 : report.results.every((r) => r.status === 'moved') ? 0 : 3;
   if (ctx.json) return new CliResult(JSON.stringify({ runId: run.runId, report }, null, 2), exit);
-  return new CliResult(undoLines(report, ops).join('\n'), exit);
+  return new CliResult((simple ? simpleUndoLines : undoLines)(report, ops).join('\n'), exit);
+}
+
+const localTime = (iso: string): string => new Intl.DateTimeFormat('ko-KR',
+  { month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
+const MAX_UNDO_LIST = 20;
+function simpleUndoSummary(startedAt: string, ops: (PlanOperation | undefined)[], unclear: boolean, code: string): string[] {
+  return [`${localTime(startedAt)}에 정리한 파일 ${ops.length}개를 원래 자리로 되돌릴까요?`,
+    ...ops.slice(0, MAX_UNDO_LIST).map((op) => `  ${op === undefined ? '(계획 파일이 없어 이름을 표시하지 못함)' : where(op, true)}`),
+    ...(ops.length > MAX_UNDO_LIST ? [`  … 외 ${ops.length - MAX_UNDO_LIST}개`] : []),
+    ...(unclear ? ['결과가 확인되지 않은 파일은 건드리지 않아요(afo recover로 확인).'] : []),
+    '원래 자리에 다른 파일이 있거나 정리한 뒤 바뀐 파일은 덮어쓰지 않고 건너뛰어요.',
+    `계속하려면 아래 코드를 입력하세요: ${code}`];
+}
+function simpleUndoLines(report: ExecutionReport, ops: Map<string, PlanOperation> | null): string[] {
+  const back = report.results.filter((r) => r.status === 'moved').length;
+  const unknown = report.results.filter((r) => r.status === 'unknown').length;
+  const notBack = report.results.filter((r) => r.status !== 'moved');
+  const name = (opId: string): string => { const op = ops?.get(opId); return op?.destination ?? op?.source ?? '(이름 모름)'; };
+  const dirs = report.directories;
+  return [`되돌렸어요: ${back}개 · 건너뜀 ${report.results.length - back - unknown}${unknown ? ` · 결과 확인 못 함 ${unknown}` : ''}`,
+    ...notBack.slice(0, MAX_UNDO_LIST).map((r) => `  ${name(r.opId)} — ${haeyo(r.detail)}`),
+    ...(notBack.length > MAX_UNDO_LIST ? [`  … 외 ${notBack.length - MAX_UNDO_LIST}개`] : []),
+    ...(dirs?.removed.length ? [`정리할 때 만든 빈 폴더 ${dirs.removed.length}개도 지웠어요.`] : []),
+    ...(dirs?.kept.length ? [`정리할 때 만든 폴더 ${dirs.kept.length}개는 그대로 뒀어요:`, ...dirs.kept.map((k) => `  ${k.path} — ${haeyo(k.reason)}`)] : []),
+    ...(unknown ? ['결과를 확인하지 못한 파일이 있어요. 다시 실행하지 말고 afo recover로 실제 상태를 확인하세요.'] : [])];
 }
 
 function undoLines(report: ExecutionReport, ops: Map<string, PlanOperation> | null): string[] {
@@ -246,6 +279,8 @@ function undoLines(report: ExecutionReport, ops: Map<string, PlanOperation> | nu
   return [`AFO 되돌리기 결과 — 실행 ID: ${report.runId}`,
     ...(report.results.length ? resultLines(report, ops, true) : ['  되돌릴 항목이 없었습니다.']),
     `결과: 되돌림 ${back} / 되돌리지 않음 ${report.results.length - back - unknown} / 결과 불명 ${unknown}`,
+    ...(report.directories?.removed.length ? [`이 실행이 만든 빈 폴더를 지웠습니다: ${report.directories.removed.join(', ')}`] : []),
+    ...(report.directories?.kept ?? []).map((k) => `이 실행이 만든 폴더를 그대로 둠: ${k.path} — ${k.reason}`),
     `참고: ${report.space.note}`, '휴지통 이동·영구 삭제는 되돌리지 않습니다(휴지통은 OS에서 사용자가 복원).',
     ...(unknown ? ['결과 불명 항목은 recover로 실제 파일 상태를 확인하세요. AFO는 자동으로 다시 실행·원복하지 않습니다.'] : [])];
 }

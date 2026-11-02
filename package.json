@@ -2,8 +2,14 @@
   "name": "afo",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
-  "engines": { "node": ">=24 <25" },
+  "bin": {
+    "afo": "dist/apps/cli/src/index.js"
+  },
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
@@ -12,8 +18,16 @@
     "preview": "node dist/apps/cli/src/index.js preview",
     "gui": "node dist/apps/cli/src/index.js gui",
     "rules:suggest": "node dist/apps/cli/src/index.js suggest-rules",
-    "rules:confirm": "node dist/apps/cli/src/index.js confirm-rules"
+    "rules:confirm": "node dist/apps/cli/src/index.js confirm-rules",
+    "release:build": "node scripts/release/build-binaries.mjs"
   },
-  "dependencies": { "zod": "4.6.7" },
-  "devDependencies": { "@types/node": "24.19.2", "typescript": "5.9.3" }
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "esbuild": "0.28.2",
+    "postject": "1.0.0-alpha.6",
+    "typescript": "5.9.3"
+  }
 }

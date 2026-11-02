@@ -4,9 +4,28 @@ import { compare, digest, pathKey } from './util.js';
 
 export const SPACE_NOTE = '추정치입니다. 휴지통 이동은 공간을 확보하지 않으며 APFS 복제·스냅샷·압축 때문에 실제 확보량은 다를 수 있습니다.';
 const PROTECTED_KEEP = '참고한 기존 파일을 남깁니다.';
-const DEFAULT_KEEP = '경로 순서상 첫 파일을 기본으로 남깁니다. 남길 파일은 바꿀 수 있습니다.';
+const DEFAULT_KEEP = '사본 표시(" (1)", " copy", " 사본" 등)가 없고 더 얕은 위치·짧은 이름의 파일을 기본으로 남깁니다. 남길 파일은 바꿀 수 있습니다.';
 const USER_KEEP = '사용자가 남길 파일을 지정했습니다.';
 type Member = NonNullable<Duplicate['members']>[number];
+
+/**
+ * Copy marks that browsers, Finder and Explorer add before the extension: "a (1)"–"a (99)", "a copy", "a copy 2", "a_copy", "a-copy",
+ * "a 사본", "a 사본 2", "a 복사본", "a복사본", "a - 복사본", "a - 복사본 (2)". Case and Unicode form (NFC) are ignored.
+ */
+const COPY_MARK = /^.+?(?: \([1-9]\d?\)| copy(?: \d+)?|[_-]copy(?:[ _-]?\d+)?| - 복사본(?: \([1-9]\d?\))?| ?복사본(?: \d+)?| 사본(?: \d+)?)$/u;
+export function hasCopyMark(relativePath: string): boolean {
+  const name = (relativePath.split('/').at(-1) ?? '').normalize('NFC').toLowerCase();
+  const last = name.lastIndexOf('.'); const first = name.indexOf('.');
+  // Both the stem before the last extension and before the first one: "v1.2 (1).pdf" and "archive (1).tar.gz".
+  return [last > 0 ? name.slice(0, last) : name, first > 0 ? name.slice(0, first) : name].some((stem) => COPY_MARK.test(stem));
+}
+/** Default keeper order: protected → no copy mark → shallower path → shorter name → path order. Deterministic for the same paths. */
+function keeperOrder(a: { path: string; protected: boolean }, b: { path: string; protected: boolean }): number {
+  const depth = (p: string): number => p.split('/').length;
+  const nameLength = (p: string): number => [...(p.split('/').at(-1) ?? '')].length;
+  return Number(b.protected) - Number(a.protected) || Number(hasCopyMark(a.path)) - Number(hasCopyMark(b.path)) ||
+    depth(a.path) - depth(b.path) || nameLength(a.path) - nameLength(b.path) || compare(a.path, b.path);
+}
 
 function withTotals(group: Omit<Duplicate, 'logicalCandidateBytes' | 'allocatedCandidateBytes' | 'reclaimableEstimateBytes'> &
   { size: number; members: Member[] }): Duplicate {
@@ -49,9 +68,11 @@ export function findDuplicates(files: FileSnapshot[], protectedKeys: ReadonlySet
     g.sort((a, b) => Number(isProtected(b)) - Number(isProtected(a)) || compare(a.relativePath, b.relativePath));
     const members: Member[] = g.map((f) => ({ relativePath: f.relativePath, allocatedBytes: f.allocatedBytes ?? null,
       protected: isProtected(f) }));
-    const keep = members[0]!;
+    // members stay in path order (protected first); the keeper is chosen by keeperOrder.
+    const keep = [...members].sort((a, b) => keeperOrder({ path: a.relativePath, protected: a.protected },
+      { path: b.relativePath, protected: b.protected }))[0]!;
     return withTotals({ sha256: g[0]!.sha256!, suggestedKeep: keep.relativePath, size: g[0]!.size, members,
-      candidates: members.slice(1).filter((m) => !m.protected).map((m) => m.relativePath),
+      candidates: members.filter((m) => m !== keep && !m.protected).map((m) => m.relativePath),
       keepReason: keep.protected ? PROTECTED_KEEP : DEFAULT_KEEP });
   }).filter((g) => g.candidates.length > 0).sort((a, b) => compare(a.sha256, b.sha256));
   notes.sort((a, b) => compare(a.relativePath, b.relativePath) || compare(a.code, b.code));

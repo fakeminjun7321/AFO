@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { appendFile, lstat, readFile, rm, symlink, utimes, writeFile } from 'node:fs/promises';
+import { appendFile, lstat, mkdir, readFile, rename, rm, symlink, utimes, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { createManifest, diffManifest } from './fixtures/index.js';
 import { executeBatch, readRun, undoRun } from '../packages/filesystem/src/executor.js';
 import { PlatformError, linkMoveNoClobber } from '../packages/filesystem/src/platform.js';
@@ -32,7 +33,9 @@ test('undo: moved files return to their original paths; journal pairs keep the f
   assert.match(report.results[0]!.detail, /되돌렸습니다/u);
   const now = await createManifest(env.root);
   assert.deepEqual(files(now), files(original), 'same paths, sizes, mtimes and hashes as before the run');
-  assert.deepEqual(diffManifest(original, now).added, [`${F}문서`, `${F}text`].sort(), 'only the created (now empty) folders remain');
+  assert.deepEqual(diffManifest(original, now).added, [], 'the folders the run created are removed again once empty');
+  assert.deepEqual([...report.directories!.removed].sort(), [`${F}문서`, `${F}text`].sort());
+  assert.deepEqual(report.directories!.kept, []);
   const entries = await journal(env, runId);
   assert.deepEqual(phases(entries), [`${ids[0]}:intent`, `${ids[0]}:done`, `${ids[1]}:intent`, `${ids[1]}:done`,
     `${ids[0]}:undo-intent`, `${ids[0]}:undone`, `${ids[1]}:undo-intent`, `${ids[1]}:undone`]);
@@ -149,4 +152,57 @@ test('undo (D2): a forward move closed failed+UNKNOWN is reported unknown and ne
   assert.deepEqual(tail, [`${ok.id}:undo-intent`, `${ok.id}:undone`], 'no undo entry for the unclear or the failed op');
   const again = await undoRun(env.stateDir, report.runId, env.grant);
   assert.deepEqual(again.results.map((r) => [r.opId, r.status]), [[unclear.id, 'unknown']], 'still reported on every later undo');
+});
+
+test('undo removes only the empty folders this run created (deepest first); an existing empty folder and a folder with a user file stay', async (t) => {
+  const env = await setup(t, { [`${F}a.pdf`]: 'a', [`${F}b.txt`]: 'b', [`${F}c.jpg`]: 'c', [`${F}있던폴더/`]: '' });
+  const original = await createManifest(env.root);
+  const { runId } = await organize(env, [[`${F}a.pdf`, `${F}있던폴더/${F}a.pdf`], [`${F}b.txt`, `${F}새/${F}깊은/${F}b.txt`],
+    [`${F}c.jpg`, `${F}채운/${F}c.jpg`]]);
+  const { run } = (await readRun(env.stateDir, runId))!;
+  assert.deepEqual(run.createdDirectories?.map((d) => d.path), [`${F}새`, `${F}새/${F}깊은`, `${F}채운`], 'only folders mkdir created');
+  await writeFile(abs(env, `${F}채운/${F}user.txt`), 'the user put a file here');
+  const report = await undoRun(env.stateDir, runId, env.grant);
+  assert.ok(report.results.every((r) => r.status === 'moved'));
+  assert.deepEqual(report.directories!.removed, [`${F}새/${F}깊은`, `${F}새`], 'deepest first');
+  assert.deepEqual(report.directories!.kept.map((k) => k.path), [`${F}채운`]);
+  assert.match(report.directories!.kept[0]!.reason, /다른 항목/u);
+  const now = await createManifest(env.root);
+  assert.deepEqual(now[`${F}있던폴더`], { type: 'directory' }, 'a folder that existed before is never removed');
+  assert.equal(now[`${F}새`], undefined);
+  assert.deepEqual(diffManifest(original, now).added, [`${F}채운`, `${F}채운/${F}user.txt`]);
+  assert.deepEqual(diffManifest(original, now).removed, []);
+});
+
+test('undo keeps a recorded folder that was replaced by another folder of the same name (identity changed)', async (t) => {
+  const env = await setup(t, { [`${F}a.pdf`]: 'a', [`${F}b.pdf`]: 'b' });
+  const { runId } = await organize(env, [[`${F}a.pdf`, `${F}문서/${F}a.pdf`], [`${F}b.pdf`, `${F}다른/${F}b.pdf`]]);
+  // The user moves the file out, replaces the folder with a new one of the same name and moves the file back.
+  await rename(abs(env, `${F}다른/${F}b.pdf`), abs(env, `${F}b-out.pdf`));
+  await rm(abs(env, `${F}다른`), { recursive: true });
+  await mkdir(abs(env, `${F}다른`));
+  await rename(abs(env, `${F}b-out.pdf`), abs(env, `${F}다른/${F}b.pdf`));
+  const report = await undoRun(env.stateDir, runId, env.grant);
+  assert.deepEqual(report.results.map((r) => r.status), ['moved', 'moved']);
+  assert.deepEqual(report.directories!.removed, [`${F}문서`]);
+  assert.deepEqual(report.directories!.kept.map((k) => k.path), [`${F}다른`]);
+  assert.match(report.directories!.kept[0]!.reason, /바뀌어/u);
+  assert.equal((await lstat(abs(env, `${F}다른`))).isDirectory(), true, 'the replacement folder (now empty) is not removed');
+});
+
+test('undo of an older run record without the folder list still works and removes no folder', async (t) => {
+  const env = await setup(t, { [`${F}a.pdf`]: 'a' });
+  const original = await createManifest(env.root);
+  const { runId } = await organize(env, [[`${F}a.pdf`, `${F}문서/${F}a.pdf`]]);
+  const file = path.join(env.stateDir, 'runs', `${runId}.json`);
+  const record = JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>;
+  assert.ok(Array.isArray(record.createdDirectories));
+  delete record.createdDirectories; // the record format before this change
+  await writeFile(file, JSON.stringify(record));
+  const report = await undoRun(env.stateDir, runId, env.grant);
+  assert.deepEqual(report.results.map((r) => r.status), ['moved']);
+  assert.equal(report.directories, undefined);
+  assert.match(report.space.note, /목록이 없어 빈 폴더를 지우지 않았습니다/u);
+  const now = await createManifest(env.root);
+  assert.deepEqual(diffManifest(original, now).added, [`${F}문서`], 'the old behaviour: the empty folder stays');
 });

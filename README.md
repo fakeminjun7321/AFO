@@ -45,6 +45,14 @@ afo plan "/정리할/테스트 폴더"        # 계획 ID와 방식별 승인 �
 afo apply <계획 ID> --mode organize --confirm <승인 코드>
 ```
 
+### 화면으로 보기
+
+```sh
+afo gui "/정리할/테스트 폴더"
+```
+
+이 컴퓨터(127.0.0.1)에서만 열리는 브라우저 화면이 뜨고, 미리보기·정리 계획·개인 규칙·실행 기록·복구 점검을 보여 줍니다. 화면은 파일을 옮기거나 지우지 않으며, 실행은 화면이 알려 주는 `apply` 명령으로 터미널에서 합니다. 자세한 내용은 [CLI 문서](docs/CLI.md#화면으로-보기-gui)를 봅니다.
+
 ## 할 수 있는 것과 검증 상태
 
 | 기능 | 상태 |
@@ -56,7 +64,7 @@ afo apply <계획 ID> --mode organize --confirm <승인 코드>
 | 실제 폴더 생성·이동·되돌리기, OS 휴지통 보내기, 선택 파일 영구 삭제 | 구현, macOS 실물 검증 |
 | 중단 복구 보고(`recover`), 같은 폴더 동시 실행 잠금 | 구현, macOS 실물 검증 |
 | curl/PowerShell 설치 | macOS 실물에서 설치·실행 검증, Windows는 CI에서만 확인 |
-| 로컬 GUI(`afo gui`) | 개발 중([#9](https://github.com/fakeminjun7321/AFO/issues/9)) |
+| 로컬 화면(`afo gui`, 보기 전용) | 구현, macOS 실물 검증. 화면에서 실행하기는 후속([#9](https://github.com/fakeminjun7321/AFO/issues/9)) |
 
 "macOS 실물 검증"은 실제 Mac에서 합성 테스트 파일로 확인했다는 뜻입니다. **Windows 실제 PC에서의 검증은 아직 하지 않았습니다**(GitHub Actions의 Windows VM에서만 테스트). 검증 기록은 [docs/verification](docs/verification/)에 있습니다.
 

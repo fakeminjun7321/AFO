@@ -77,6 +77,7 @@ afo --version                                         # 설치된 버전
 | `... undo <실행 ID> [--confirm <코드>] [--json]` | 이동(organize) 실행만 원래 위치로 되돌림(`undoRun`). 확인 코드는 실행 ID 앞 8자 | 작업 폴더(역이동), 상태 폴더 |
 | `... runs [<실행 ID>] [--json]` | 실행 기록 요약(시각·방식·결과 수·되돌리기 횟수·undo 가능 여부) 또는 한 실행의 항목별 결과와 되돌리기 기록 | 없음 |
 | `... recover [--json]` | `inspectRuns`로 끝나지 않은 실행·결과 불명 항목과 해제 조건을 보고. 자동 재실행·원복·삭제 없음 | 없음 |
+| `... gui [<폴더>] [--port <번호>] [--no-open]` | 이 컴퓨터에서만 열리는 브라우저 화면(아래 "화면으로 보기")으로 미리보기·계획·규칙·실행 기록·복구 점검을 봄. 실행(apply·undo)은 하지 않음 | 상태 폴더(`plans/`, 화면에서 계획을 만들 때만) |
 
 `preview` 옵션:
 
@@ -139,6 +140,22 @@ afo --version                                         # 설치된 버전
 - `undo [<실행 ID>] [--confirm <실행 ID 앞 8자>] [--json]`: 실행 ID를 빼면 `runSummaries`로 가장 최근의 되돌릴 수 있는 실행을 고른 뒤 같은 절차입니다(없으면 0, JSON `{ runId: null, report: null, message }`). `readRun`으로 되돌릴 후보(이동했고 아직 되돌리지 않은 항목, 정리한 위치 → 원래 위치)를 stderr에 보여 주고 확인 코드를 TTY 입력 또는 `--confirm`으로 받습니다(비TTY에서 없거나 틀리면 4). 그 뒤 원래 폴더 권한을 다시 발급해 `undoRun`을 호출합니다. 원래 경로가 차 있거나(`DEST_EXISTS`) 정리한 파일이 바뀐(`FILE_CHANGED`) 항목은 `되돌리지 않음`으로 표시하고 덮어쓰지 않습니다(종료 코드 3). 결과가 확인되지 않은 항목은 추측해 옮기지 않고 `결과 불명`으로 보고합니다. 휴지통·영구 삭제 실행은 되돌리지 않습니다(1, 휴지통은 OS에서 사용자가 복원). 되돌릴 항목이 없으면 확인 없이 0. 그 실행이 **새로 만든** 폴더(실행 기록 `runs/<실행 ID>.json`의 `createdDirectories`: 경로와 dev/ino)는 되돌린 뒤 깊은 것부터 하나씩 `rmdir`합니다. 같은 폴더(dev/ino·링크 아님, 부모 경계 검사)이고 비어 있을 때만 지우며 재귀 삭제는 없습니다. 원래 있던 폴더는 목록에 없어 지우지 않고, 사용자가 파일을 넣었거나 바뀐 폴더·지우지 못한 폴더는 그대로 두고 결과(`report.directories.kept`, 사람용 출력)에 이유를 표시합니다. 이 목록이 없는 이전 실행 기록은 지금처럼 되돌리고 폴더는 지우지 않습니다. `--json`: `{ runId, report }`(`report.directories: { removed, kept }`는 목록이 있는 실행에만).
 - `runs [--json]`: `listRuns`/`readRun`의 요약을 시작 시각 순으로. JSON `{ runs: [{ runId, planId, mode, startedAt, finishedAt, results, undos, undone, undoable }] }`(`results`는 상태별 개수, 끝나지 않은 실행은 `null`; 읽을 수 없는 기록은 `{ runId, error }`). `runs <실행 ID> [--json]`: 항목별 결과·공간 설명·되돌리기 회차별 결과, JSON은 `{ run, undos }`. 없는 실행 ID는 1, 형식이 아니면 2.
 - `recover [--json]`: `inspectRuns(상태 폴더, { loadPlan: loadSavedPlan })`. `clean`이 아닌 실행만 보고합니다(상태 `active`/`unfinished`/`corrupt`/`unreadable`, 문제, 끝나지 않은 작업의 관측 상태와 해제 조건·할 일). JSON `{ checked, runs }`. 확인이 필요한 실행이 있으면 3, 없거나 진행 중(`active`)뿐이면 0. 파일·상태 폴더를 바꾸지 않습니다.
+
+## 화면으로 보기 (gui)
+
+`gui [<폴더>] [--port <번호>] [--no-open]`(`npm run gui -- <폴더>`와 같음, 구현: `apps/cli/src/gui.ts`·`gui-assets.ts`)
+
+- `127.0.0.1`의 빈 포트(또는 `--port`, 1024–65535)에 작은 HTTP 서버를 띄우고 stderr에 `AFO GUI: http://127.0.0.1:<포트>/#token=<무작위 48자>`를 출력한 뒤 기본 브라우저로 엽니다(`--no-open`이면 열지 않음). Ctrl+C로 끝내면 종료 코드 0입니다.
+- 폴더를 주면 화면이 열리자마자 그 폴더를 분석합니다. 화면의 폴더 입력은 절대 경로만 받습니다. 홈·디스크 루트 같은 거부 대상은 CLI와 같은 오류로 표시합니다.
+- 화면: **미리보기**(개수 요약, 목적지 폴더별 묶음, 파일별 제안 검색·거르기, 중복 후보, 제외·오류), **정리 계획**(삭제 방식·중복 포함 선택 → 계획 저장, 방식별 작업·승인 코드·복사할 `apply` 명령), **개인 규칙**(저장 프로필·규칙·저장한 수정, 읽기만), **실행 기록**(실행별 결과와 파일 이름, 이동이면 `undo` 명령), **복구 점검**(`recover`와 같은 보고).
+- 공용 함수를 그대로 씁니다: 미리보기는 `analyzeTarget`, 계획은 `createPlan`(CLI `plan`과 같은 함수, 같은 `plans/latest-<루트ID>.json` 인덱스 갱신), 기록은 `runSummaries`·`readRun`, 복구는 `recoverReport`(`inspectRuns`), 규칙은 `loadProfile`. CLI 출력을 파싱하지 않습니다.
+- **실행하지 않습니다.** apply·undo·규칙 변경 API가 없습니다. 화면은 승인 코드와 `apply <계획 ID> --mode <방식>` 명령을 보여 주고, 사용자가 터미널에서 실행하면 CLI가 작업 목록을 다시 보여 주고 승인 코드(영구 삭제는 문구도)를 묻습니다.
+- 요청 검사: API는 매 요청의 `x-afo-token`(시작할 때 만든 무작위 값, 상수 시간 비교), `Host`가 `127.0.0.1:<포트>` 또는 `localhost:<포트>`인지, `Origin`이 있으면 같은 주소인지 확인하고 아니면 403입니다. 페이지 자체도 `Host`를 확인합니다(DNS rebinding 방지). POST는 `application/json`·64 KiB 이하·정해진 필드만 받습니다. 토큰은 URL의 `#` 뒤에 있어 서버 로그·Referer로 가지 않습니다.
+- 페이지는 strict CSP(`default-src 'none'; script-src 'self'` 등)로 제공하고, 파일 이름은 모두 `textContent`로 넣습니다(폴더 안 이름은 신뢰하지 않는 입력).
+- 분석·계획은 한 번에 하나만 실행합니다(진행 중이면 409). 브라우저가 요청을 끊거나 GUI를 끝내면 진행 중인 분석을 취소합니다.
+- 한계: 같은 컴퓨터의 다른 사용자·프로세스가 토큰을 알면 이 화면과 같은 읽기·계획 저장을 할 수 있습니다(파일 실행은 없음). 표는 항목을 최대 500개까지 표시하고 나머지는 검색으로 좁힙니다. Windows 실물에서는 아직 확인하지 않았습니다.
+
+검증: `tests/gui.test.ts`가 실제 `gui` 자식 프로세스(`--no-open`, temp `AFO_STATE_DIR`)로 CSP·정적 경로, 토큰 없음·틀림·다른 Host·다른 Origin·JSON 아님·상대 경로·모르는 필드 거부, apply/undo API 부재, 미리보기 결과가 `preview --json`과 같고 작업·상태 폴더가 바뀌지 않음, 계획 저장 내용·승인 코드 일치, GUI 계획 → CLI apply 뒤 실행 기록·파일 이름·recover 표시, Ctrl+C 종료 코드 0(Windows 제외), 사용법 오류 2를 확인합니다. 클릭 흐름은 [검증 기록](verification/ISSUE_9_GUI.md)에 있습니다.
 
 ## 안전 규칙
 

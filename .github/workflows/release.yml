@@ -1,0 +1,106 @@
+name: 릴리스
+# v* 태그: 실행 파일 빌드 → 세 OS에서 설치 스크립트로 설치·실행 확인 → GitHub Release에 올림.
+# PR과 수동 실행(workflow_dispatch)은 빌드·설치 확인만 하고 릴리스는 만들지 않습니다.
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - 'install.sh'
+      - 'install.ps1'
+      - 'scripts/release/**'
+      - 'apps/cli/src/sea.ts'
+      - 'apps/cli/src/index.ts'
+      - 'package*.json'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    # macOS 실행 파일의 ad-hoc codesign 때문에 macOS에서 세 대상을 모두 만듭니다.
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: 태그와 package.json 버전 일치 확인
+        if: startsWith(github.ref, 'refs/tags/')
+        run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
+      - run: npm test
+      - run: npm run release:build
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: afo-release
+          path: release/
+          if-no-files-found: error
+
+  install:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-15-intel, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: afo-release
+          path: release
+      # 설치 스크립트가 실제로 쓰는 경로(HTTP 다운로드 → SHA256SUMS 대조 → 압축 해제 → 실행 확인)를 로컬 서버로 확인합니다.
+      - name: install.sh로 설치하고 합성 폴더 미리보기(macOS)
+        if: runner.os == 'macOS'
+        run: |
+          (cd release && python3 -m http.server 8765 --bind 127.0.0.1 >/dev/null 2>&1 &)
+          sleep 2
+          AFO_DOWNLOAD_BASE=http://127.0.0.1:8765 AFO_INSTALL="$RUNNER_TEMP/afo" AFO_NO_MODIFY_PATH=1 sh install.sh
+          afo="$RUNNER_TEMP/afo/bin/afo"
+          test "$("$afo" --version)" = "afo $(node -p 'require("./package.json").version')"
+          dir="$(mktemp -d)/AFO 설치 확인"; mkdir -p "$dir"; printf 'a' > "$dir/보고서.pdf"; printf 'b' > "$dir/사진.JPG"
+          AFO_STATE_DIR="$(mktemp -d)" "$afo" preview "$dir"
+          test -f "$dir/보고서.pdf" && test -f "$dir/사진.JPG"
+      - name: install.ps1로 설치하고 합성 폴더 미리보기(Windows PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $server = Start-Process python -ArgumentList '-m','http.server','8765','--bind','127.0.0.1' -WorkingDirectory release -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 2
+          $env:AFO_DOWNLOAD_BASE = 'http://127.0.0.1:8765'; $env:AFO_INSTALL = "$env:RUNNER_TEMP\afo"; $env:AFO_NO_MODIFY_PATH = '1'
+          # irm | iex와 같이 UTF-8로 읽은 스크립트 문자열을 실행합니다.
+          Get-Content -Raw -Encoding UTF8 install.ps1 | Invoke-Expression
+          $afo = "$env:RUNNER_TEMP\afo\afo.exe"
+          $version = node -p "require('./package.json').version"
+          if ((& $afo --version) -ne "afo $version") { throw 'afo --version 불일치' }
+          $dir = Join-Path $env:RUNNER_TEMP 'AFO 설치 확인'; New-Item -ItemType Directory $dir | Out-Null
+          Set-Content -NoNewline -Path (Join-Path $dir 'report.pdf') -Value 'a'
+          $env:AFO_STATE_DIR = Join-Path $env:RUNNER_TEMP 'afo-state'
+          & $afo preview $dir
+          if ($LASTEXITCODE -ne 0) { throw "preview 실패: $LASTEXITCODE" }
+          if (-not (Test-Path (Join-Path $dir 'report.pdf'))) { throw '미리보기가 파일을 바꿨습니다.' }
+          Stop-Process -Id $server.Id
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: install
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: afo-release
+          path: release
+      - name: GitHub Release 만들기
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --title "AFO $GITHUB_REF_NAME" --generate-notes

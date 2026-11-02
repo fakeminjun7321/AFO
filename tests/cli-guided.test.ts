@@ -274,9 +274,10 @@ test('guided menu 2 (AFO_REAL_TRASH_TEST=1 only): one synthetic afo-test- duplic
   const { dirs, session } = await setup(t, { [`work/${tag}.txt`]: `dup ${tag}`, [`work/${tag} copy.txt`]: `dup ${tag}`,
     'work/other.pdf': 'unrelated', 'state/': '' });
   const before = await manifest(dirs.work);
-  const s = session(dirs.work, '2', approvalShown);
+  const s = session(dirs.work, '2', 'y');
   const r = await runCli([], undefined, s.io);
   assert.equal(r.exitCode, 0, r.output);
+  assert.equal(s.questions.at(-1), trashQuestion(1), 'the trash question (y/N), not the organize one');
   assert.match(r.output, /휴지통으로 보냄 1 · 건너뜀 0 · 실패 0/u);
   const after = await manifest(dirs.work);
   const pair = [`${tag}.txt`, `${tag} copy.txt`];

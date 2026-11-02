@@ -50,18 +50,27 @@
       $marker = 'AFO install.ps1: afo gui'
       $sendTo = Join-Path $env:APPDATA 'Microsoft\Windows\SendTo'
       $lnkPath = Join-Path $sendTo 'AFO로 정리.lnk'
+      # WScript.Shell은 시스템 코드 페이지 밖의 글자(한글)가 든 경로를 읽고 쓰지 못합니다: ASCII 이름으로 다룬 뒤 PowerShell로 옮깁니다.
+      $asciiLnk = Join-Path $sendTo 'afo-sendto.tmp.lnk'
       $shell = New-Object -ComObject WScript.Shell
-      if ((Test-Path $lnkPath) -and ($shell.CreateShortcut($lnkPath).Description -ne $marker)) {
+      $foreign = $false
+      if (Test-Path -LiteralPath $lnkPath) {
+        Copy-Item -LiteralPath $lnkPath -Destination $asciiLnk -Force
+        $foreign = $shell.CreateShortcut($asciiLnk).Description -ne $marker
+        Remove-Item -LiteralPath $asciiLnk -Force
+      }
+      if ($foreign) {
         Write-Host "보내기 메뉴를 만들지 않았습니다: $lnkPath 가 이미 있고 AFO가 만든 것이 아닙니다."
       } else {
         New-Item -ItemType Directory -Force -Path $sendTo | Out-Null
-        $lnk = $shell.CreateShortcut($lnkPath)
+        $lnk = $shell.CreateShortcut($asciiLnk)
         $lnk.TargetPath = Join-Path $installDir 'afo.exe'
         $lnk.Arguments = 'gui --exit-when-closed'
         $lnk.WorkingDirectory = $installDir
         $lnk.Description = $marker
         $lnk.WindowStyle = 7
         $lnk.Save()
+        Move-Item -LiteralPath $asciiLnk -Destination $lnkPath -Force
         Write-Host '탐색기 보내기 메뉴를 만들었습니다: 폴더를 오른쪽 클릭 -> 보내기 -> AFO로 정리'
       }
     } catch { Write-Host "보내기 메뉴를 만들지 못했습니다: $($_.Exception.Message)" }

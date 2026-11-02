@@ -92,7 +92,9 @@ jobs:
           $lnkName = 'AFO' + [char]0xB85C + ' ' + [char]0xC815 + [char]0xB9AC + '.lnk'
           $lnkPath = Join-Path $env:APPDATA "Microsoft\Windows\SendTo\$lnkName"
           if (-not (Test-Path -LiteralPath $lnkPath)) { throw "SendTo shortcut missing: $lnkPath" }
-          $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut($lnkPath)
+          # WScript.Shell은 한글 경로를 읽지 못해 ASCII 이름으로 복사해 읽습니다(install.ps1과 같은 방식).
+          $asciiLnk = Join-Path $env:RUNNER_TEMP 'afo-check.lnk'; Copy-Item -LiteralPath $lnkPath -Destination $asciiLnk -Force
+          $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut($asciiLnk)
           if ($lnk.TargetPath -ne $afo) { throw "SendTo target: $($lnk.TargetPath)" }
           if ($lnk.Arguments -ne 'gui --exit-when-closed') { throw "SendTo arguments: $($lnk.Arguments)" }
           $dir = Join-Path $env:RUNNER_TEMP 'AFO 설치 확인'; New-Item -ItemType Directory $dir | Out-Null

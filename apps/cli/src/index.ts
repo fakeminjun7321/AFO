@@ -45,8 +45,10 @@ apply <계획 ID> --mode organize|trash|permanent-delete [--only <작업ID,...>]
 undo [<실행 ID>] [--confirm <실행 ID 앞 8자>] [--json]   이동(organize) 실행만 원래 위치로 되돌림(ID를 빼면 가장 최근의 되돌릴 수 있는 실행)
 runs [<실행 ID>] [--json]                실행 기록 요약 또는 한 실행의 항목별 결과
 recover [--json]                         끝나지 않은 실행·결과 불명 항목 보고(자동 재실행·원복·삭제 없음)
-gui [<폴더>] [--port <번호>] [--no-open]  이 컴퓨터에서만 열리는 브라우저 화면으로 미리보기·계획·규칙·실행 기록·복구 점검을 봄
-     (화면은 파일을 옮기거나 지우지 않음. 실행은 화면이 알려 주는 apply 명령으로 CLI에서). Ctrl+C로 종료
+gui [<폴더>] [--port <번호>] [--no-open] [--exit-when-closed]
+     이 컴퓨터에서만 열리는 브라우저 화면으로 미리보기·계획·규칙·실행 기록·복구 점검을 보고, 목록을 확인한 뒤
+     정리(이동)·중복 사본 휴지통 보내기·되돌리기를 실행(영구 삭제는 apply로만). Ctrl+C로 종료.
+     --exit-when-closed: 브라우저 화면을 닫으면 잠시 뒤 저절로 종료(Finder 빠른 동작·Windows 보내기 메뉴용)
 suggest-rules <참고 폴더> [--json]       규칙 후보(초안) JSON을 stdout에, 요약을 stderr에 출력
 rules save <초안 JSON> --select <규칙ID,...>
 rules list [--json]
@@ -60,8 +62,9 @@ preview는 저장된 개인 규칙을 자동 적용합니다. --move는 이번 �
 --remember를 붙이면 그 수정을 이후에도 적용하도록 저장합니다.
 plan의 --delete-mode 기본값은 trash(휴지통)입니다. permanent(영구 삭제)는 되돌릴 수 없습니다.
 --delete-file로 같은 내용의 사본을 모두 고르면 거부합니다. 마지막 사본까지 지우려면 --delete-last-copy를 붙입니다.
-preview·plan·suggest-rules·rules·runs·recover·gui는 사용자 파일을 바꾸지 않습니다. 사용자 파일을 옮기거나 지우는 명령은
+preview·plan·suggest-rules·rules·runs·recover는 사용자 파일을 바꾸지 않습니다. 사용자 파일을 옮기거나 지우는 명령은
 apply와 undo뿐이며, 둘 다 확인 코드를 직접 입력해야 합니다(TTY가 아니면 --confirm 필수, 없으면 종료 코드 4).
+gui 화면은 목록을 보여 주고 확인 버튼을 눌러야 같은 apply·undo 경로로 실행합니다(영구 삭제 제외).
 apply는 승인 한 번에 한 번만 실행하고 실행 직전 파일을 다시 확인해 바뀐 파일은 건너뜁니다. 덮어쓰지 않습니다.
 휴지통으로 보낸 파일은 OS 휴지통에서 직접 복원하고, 영구 삭제는 되돌릴 수 없습니다.
 상태(규칙·계획·승인·실행 기록)는 앱 로컬 상태 폴더(AFO_STATE_DIR)에 씁니다.
@@ -85,7 +88,7 @@ const allowed: Record<string, readonly string[]> = {
   plan: ['profile', 'reference', 'json', 'no-saved-rules', 'move', 'delete-mode', 'delete-duplicates', 'delete-file', 'delete-last-copy'],
   'suggest-rules': ['json'], 'confirm-rules': ['select'], rules: ['json', 'select', 'confirm'],
   apply: ['mode', 'only', 'confirm', 'phrase', 'json'], undo: ['confirm', 'json'], runs: ['json'], recover: ['json'],
-  gui: ['port', 'no-open'],
+  gui: ['port', 'no-open', 'exit-when-closed'],
 };
 
 /** Output only; exit codes of apply/undo/recover are lost here. The process entry point uses runCli. */
@@ -113,7 +116,7 @@ async function dispatch(args: string[], signal: AbortSignal | undefined, io: Cli
       confirm: { type: 'string' }, 'delete-mode': { type: 'string' }, 'delete-duplicates': { type: 'string' },
       'delete-file': { type: 'string', multiple: true }, 'delete-last-copy': { type: 'boolean' },
       mode: { type: 'string' }, only: { type: 'string' }, phrase: { type: 'string' },
-      port: { type: 'string' }, 'no-open': { type: 'boolean' },
+      port: { type: 'string' }, 'no-open': { type: 'boolean' }, 'exit-when-closed': { type: 'boolean' },
     } });
   } catch (error) {
     throw usage(`옵션을 해석할 수 없습니다(${error instanceof Error ? error.message : String(error)}). --help 참고`);

@@ -24,7 +24,12 @@ Node.js 등 다른 프로그램은 필요 없습니다. 설치 스크립트는 [
 | macOS (Apple Silicon·Intel) | `~/.afo/bin/afo` | 이미 PATH에 있는 `~/.local/bin`·`/opt/homebrew/bin`·`/usr/local/bin` 중 쓸 수 있는 곳에 `afo` 링크(바로 사용). 없으면 `~/.zshrc`(bash는 `~/.bash_profile`)에 한 줄 추가 |
 | Windows 10/11 (x64, Arm은 에뮬레이션) | `%LOCALAPPDATA%\Programs\AFO\afo.exe` | 사용자 PATH에 추가 |
 
-- 특정 버전: `curl -fsSL …/install.sh | AFO_VERSION=0.1.0 sh`. PATH를 직접 관리하려면 `AFO_NO_MODIFY_PATH=1`.
+| OS | 폴더 오른쪽 클릭 메뉴(설치 스크립트가 만듦) |
+| --- | --- |
+| macOS | Finder 빠른 동작 **AFO로 정리**(`~/Library/Services/AFO로 정리.workflow`): 폴더를 오른쪽 클릭 → 빠른 동작(또는 서비스) → AFO로 정리. 터미널 없이 `afo gui <폴더> --exit-when-closed`를 띄워 브라우저 화면이 열리고, 화면을 닫으면 afo도 저절로 끝납니다. 메뉴에 안 보이면 시스템 설정의 확장 프로그램(Finder) 항목에서 AFO로 정리를 켭니다 |
+| Windows | 탐색기 보내기 메뉴 **AFO로 정리**(`%APPDATA%\Microsoft\Windows\SendTo\AFO로 정리.lnk`): 폴더를 오른쪽 클릭 → 보내기(Windows 11은 "더 많은 옵션 표시" 안) → AFO로 정리. 폴더는 한 번에 하나만 고릅니다 |
+
+- 특정 버전: `curl -fsSL …/install.sh | AFO_VERSION=0.1.0 sh`. PATH를 직접 관리하려면 `AFO_NO_MODIFY_PATH=1`. 오른쪽 클릭 메뉴를 만들지 않으려면 macOS는 `AFO_NO_QUICK_ACTION=1`, Windows는 `$env:AFO_NO_SENDTO='1'`. 같은 이름의 항목이 이미 있고 AFO가 만든 것이 아니면 건드리지 않습니다.
 - 실행 파일은 코드 서명·공증을 받지 않았습니다. 설치 스크립트로 받으면 macOS에서 바로 실행되지만, 브라우저로 직접 받은 파일은 Gatekeeper가 막을 수 있습니다. Windows에서는 SmartScreen·백신 경고가 나올 수 있습니다.
 
 ## 사용법
@@ -51,7 +56,7 @@ afo apply <계획 ID> --mode organize --confirm <승인 코드>
 afo gui "/정리할/테스트 폴더"
 ```
 
-이 컴퓨터(127.0.0.1)에서만 열리는 브라우저 화면이 뜨고, 미리보기·정리 계획·개인 규칙·실행 기록·복구 점검을 보여 줍니다. 화면은 파일을 옮기거나 지우지 않으며, 실행은 화면이 알려 주는 `apply` 명령으로 터미널에서 합니다. 자세한 내용은 [CLI 문서](docs/CLI.md#화면으로-보기-gui)를 봅니다.
+이 컴퓨터(127.0.0.1)에서만 열리는 브라우저 화면이 뜨고, 미리보기·정리 계획·개인 규칙·실행 기록·복구 점검을 보여 줍니다. 계획을 만든 뒤 **[정리하기]**·**[중복 사본 휴지통으로 보내기]**를 누르면 옮길 파일 목록을 한 번 더 보여 주고, 확인해야 실행합니다(휴지통은 "확인했어요" 체크도 필요). 정리는 [실행 기록]의 **[되돌리기]**로 되돌릴 수 있고, 휴지통으로 보낸 파일은 OS 휴지통에서 직접 꺼냅니다. 영구 삭제는 화면에서 하지 않고 터미널의 `apply`로만 합니다. 설치 스크립트가 만든 오른쪽 클릭 메뉴(**AFO로 정리**)로 폴더에서 바로 열 수도 있습니다. 자세한 내용은 [CLI 문서](docs/CLI.md#화면으로-보기-gui)를 봅니다.
 
 ## 할 수 있는 것과 검증 상태
 
@@ -64,7 +69,8 @@ afo gui "/정리할/테스트 폴더"
 | 실제 폴더 생성·이동·되돌리기, OS 휴지통 보내기, 선택 파일 영구 삭제 | 구현, macOS 실물 검증 |
 | 중단 복구 보고(`recover`), 같은 폴더 동시 실행 잠금 | 구현, macOS 실물 검증 |
 | curl/PowerShell 설치 | macOS 실물에서 설치·실행 검증, Windows는 CI에서만 확인 |
-| 로컬 화면(`afo gui`, 보기 전용) | 구현, macOS 실물 검증. 화면에서 실행하기는 후속([#9](https://github.com/fakeminjun7321/AFO/issues/9)) |
+| 로컬 화면(`afo gui`): 미리보기·계획, 화면에서 정리·휴지통 보내기·되돌리기 | 구현, macOS 실물에서 API·단일 실행 파일로 검증([#9](https://github.com/fakeminjun7321/AFO/issues/9)). 영구 삭제는 터미널에서만 |
+| 폴더 오른쪽 클릭 메뉴(Finder 빠른 동작·Windows 보내기) | macOS는 temp HOME에 설치·`automator`로 실행 확인, Windows는 CI 확인만(실물 미검증) |
 
 "macOS 실물 검증"은 실제 Mac에서 합성 테스트 파일로 확인했다는 뜻입니다. **Windows 실제 PC에서의 검증은 아직 하지 않았습니다**(GitHub Actions의 Windows VM에서만 테스트). 검증 기록은 [docs/verification](docs/verification/)에 있습니다.
 
@@ -80,8 +86,8 @@ afo gui "/정리할/테스트 폴더"
 
 업데이트는 설치 명령을 다시 실행하면 됩니다. `afo --version`으로 버전을 확인합니다.
 
-제거(macOS): `rm ~/.afo/bin/afo`와 설치 때 안내된 링크(예: `rm ~/.local/bin/afo`)를 지우고, `~/.zshrc`에 `# AFO` PATH 줄이 있으면 지웁니다.
-제거(Windows): `Remove-Item "$env:LOCALAPPDATA\Programs\AFO" -Recurse` 후 사용자 환경 변수 PATH에서 그 폴더를 지웁니다.
+제거(macOS): `rm ~/.afo/bin/afo`와 설치 때 안내된 링크(예: `rm ~/.local/bin/afo`)를 지우고, `~/.zshrc`에 `# AFO` PATH 줄이 있으면 지웁니다. 빠른 동작은 `rm -r ~/Library/Services/"AFO로 정리.workflow"`로 지웁니다.
+제거(Windows): `Remove-Item "$env:LOCALAPPDATA\Programs\AFO" -Recurse` 후 사용자 환경 변수 PATH에서 그 폴더를 지웁니다. 보내기 메뉴는 `Remove-Item "$env:APPDATA\Microsoft\Windows\SendTo\AFO로 정리.lnk"`로 지웁니다.
 
 규칙·계획·실행 기록은 따로 저장됩니다. macOS는 `~/Library/Application Support/AFO`, Windows는 `%LOCALAPPDATA%\AFO`입니다. 이 폴더를 지우면 저장한 규칙과 `afo undo` 기록도 사라집니다.
 

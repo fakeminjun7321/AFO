@@ -1,6 +1,7 @@
 /**
  * Static page for `gui` (#9), embedded so `npm run build` needs no bundler or asset copy.
  * The page renders every file name with textContent (never innerHTML): names in a scanned folder are untrusted input.
+ * File changes happen only after an in-page confirmation listing the operations (trash also needs a checkbox); see gui.ts.
  * Keep appJs free of backticks and dollar-brace sequences: it lives inside a String.raw template.
  */
 export const pageHtml = String.raw`<!doctype html>
@@ -15,7 +16,7 @@ export const pageHtml = String.raw`<!doctype html>
 <body>
 <header class="top">
   <div class="brand"><span class="logo">AFO</span><span class="sub">로컬 화면 · 이 컴퓨터에서만 열립니다</span></div>
-  <span class="badge safe">이 화면은 파일을 옮기거나 지우지 않습니다</span>
+  <span class="badge safe">확인한 작업만 실행해요 · 영구 삭제는 터미널에서만</span>
 </header>
 <section class="controls" aria-label="폴더 선택">
   <label class="field grow"><span>작업 폴더(절대 경로)</span><input id="folder" type="text" spellcheck="false" autocomplete="off" placeholder="/Users/me/정리할-폴더"></label>
@@ -59,7 +60,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system
 .actions{display:flex;gap:8px}
 button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:9px 16px}
 button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700}
-button:disabled{opacity:.5;cursor:progress}
+button:disabled{opacity:.5;cursor:not-allowed}
 .status{grid-column:1/-1;margin:0;min-height:1.4em;font-size:13px;color:var(--muted)}.status.err{color:var(--bad)}
 .tabs{display:flex;gap:4px;overflow-x:auto;padding:0 clamp(16px,4vw,40px);border-bottom:1px solid var(--line);background:var(--panel)}
 .tabs button{border:0;border-bottom:3px solid transparent;border-radius:0;background:none;padding:12px 14px;color:var(--muted);white-space:nowrap}
@@ -81,6 +82,10 @@ details.folder{border-bottom:1px solid var(--line);padding:6px 0}details.folder 
 .empty{color:var(--muted);text-align:center;padding:28px 10px}
 .note{border-left:3px solid var(--accent);padding:6px 12px;background:var(--chip);border-radius:0 8px 8px 0;font-size:13.5px}
 .note.danger{border-left-color:var(--bad)}
+.confirm{display:grid;gap:8px;margin:10px 0;padding:12px 14px;border:2px solid var(--accent);border-radius:10px}.confirm.danger{border-color:var(--bad)}
+.confirm p{margin:0}.confirm ul{margin:0;padding-left:20px;word-break:break-all;max-height:320px;overflow:auto}
+details.hint{margin:8px 0 4px;font-size:13px;color:var(--muted)}details.hint summary{cursor:pointer}
+.result{border-left:4px solid var(--ok)}.result.partial{border-left-color:var(--warn)}
 .foot{padding:0 clamp(16px,4vw,40px) 28px;color:var(--muted);font-size:12px}
 @media (max-width:640px){.controls{grid-template-columns:1fr}.actions button{flex:1}}`;
 
@@ -88,7 +93,9 @@ export const appJs = String.raw`(function () {
   'use strict';
   var token = new URLSearchParams(location.hash.slice(1)).get('token') || '';
   var state = { info: null, tab: 'preview', preview: null, plan: null, busy: false, filter: '', action: 'all',
-    deleteMode: 'trash', deleteDuplicates: false, runDetail: null };
+    deleteMode: 'trash', deleteDuplicates: false, runDetail: null,
+    confirm: null, confirmChecked: false, done: {}, result: null, runConfirm: null, lastUndo: null };
+  var SHOW = 20;
   var LIMIT = 500;
   var $ = function (id) { return document.getElementById(id); };
 
@@ -134,6 +141,14 @@ export const appJs = String.raw`(function () {
     } }, '복사');
   }
   function command(text) { return el('div', { class: 'cmd' }, el('code', { text: text }), copyButton(text)); }
+  function terminalHint(text, extra) {
+    return el('details', { class: 'hint' }, el('summary', { text: '터미널로 하려면' }), extra ? el('p', { class: 'small', text: extra }) : null, command(text));
+  }
+  function cliOf() { return state.info ? state.info.cli : 'afo'; }
+  function shortList(items, line) {
+    return el('ul', { class: 'small' }, items.slice(0, SHOW).map(function (x) { return el('li', { class: 'path', text: line(x) }); }),
+      items.length > SHOW ? el('li', { class: 'muted', text: '… 외 ' + (items.length - SHOW) + '개' }) : null);
+  }
 
   function setStatus(text, isError) { var s = $('status'); s.textContent = text || ''; s.className = 'status' + (isError ? ' err' : ''); }
   function api(method, url, body) {
@@ -176,8 +191,8 @@ export const appJs = String.raw`(function () {
   function analyze() {
     var body = options();
     if (!body.folder) { setStatus('작업 폴더의 절대 경로를 입력하세요.', true); $('folder').focus(); return; }
-    setBusy(true, '분석 중… 파일 이름·크기를 읽고 같은 크기 파일의 내용 해시를 비교합니다(파일은 바꾸지 않습니다).');
-    state.plan = null;
+    setBusy(true, '분석 중… 파일 이름·크기를 읽고 같은 크기 파일의 내용 해시를 비교해요(파일은 바꾸지 않아요).');
+    state.plan = null; state.confirm = null; state.result = null;
     api('POST', '/api/preview', body).then(function (data) {
       state.preview = data; setBusy(false, '분석 완료 · ' + when(new Date().toISOString())); select('preview');
     }, function (e) { setBusy(false); setStatus(errText(e), true); });
@@ -186,9 +201,10 @@ export const appJs = String.raw`(function () {
     var body = options();
     if (!body.folder) { setStatus('작업 폴더의 절대 경로를 입력하세요.', true); return; }
     body.deleteMode = state.deleteMode; body.deleteDuplicates = state.deleteDuplicates ? 'all' : 'none';
-    setBusy(true, '정리 계획을 만드는 중… 계획은 앱 상태 폴더에만 저장하고 파일은 바꾸지 않습니다.');
+    setBusy(true, '정리 계획을 만드는 중… 계획은 앱 상태 폴더에만 저장하고 파일은 바꾸지 않아요.');
     api('POST', '/api/plan', body).then(function (data) {
       state.plan = data; state.preview = { preview: data.preview, profile: data.profile };
+      state.done = {}; state.confirm = null; state.result = null;
       setBusy(false, '계획 저장 완료 · 만료 ' + when(data.plan.expiresAt)); render();
     }, function (e) { setBusy(false); setStatus(errText(e), true); });
   }
@@ -237,7 +253,7 @@ export const appJs = String.raw`(function () {
       return el('div', null, el('h3', null, el('span', { class: 'mono', text: g.sha256.slice(0, 12) }), ' · 후보 ' + g.candidates.length + '개 · ' + bytes(g.logicalCandidateBytes)),
         el('p', { class: 'small' }, '남길 파일 제안: ', el('b', { text: g.suggestedKeep }), g.keepReason ? el('span', { class: 'muted', text: ' (' + g.keepReason + ')' }) : null),
         el('ul', { class: 'small' }, g.candidates.map(function (c) { return el('li', { class: 'path', text: c }); })));
-    }) : empty('내용이 같은 파일이 없습니다.'), el('p', { class: 'muted small', text: '이름이 같아도 내용이 다르면 중복이 아닙니다. 삭제하려면 [정리 계획]에서 포함한 뒤 CLI로 승인합니다.' })));
+    }) : empty('내용이 같은 파일이 없습니다.'), el('p', { class: 'muted small', text: '이름이 같아도 내용이 다르면 중복이 아니에요. 휴지통으로 보내려면 [정리 계획]에서 중복 후보를 넣어 계획을 만든 뒤 확인하고 실행해요.' })));
 
     if (p.skipped.length) view.appendChild(card('제외·오류 ' + p.skipped.length + '개', el('details', null, el('summary', { text: '목록 보기' }),
       table(['경로', '이유'], p.skipped.slice(0, LIMIT).map(function (s) { return el('tr', null, el('td', { class: 'path', text: s.relativePath || '(루트)' }), el('td', { class: 'small', text: s.reason })); })))));
@@ -253,25 +269,32 @@ export const appJs = String.raw`(function () {
     mode.addEventListener('change', function () { state.deleteMode = mode.value; render(); });
     var dup = el('input', { type: 'checkbox', checked: state.deleteDuplicates });
     dup.addEventListener('change', function () { state.deleteDuplicates = dup.checked; });
-    view.appendChild(card('정리 계획 만들기', el('p', { class: 'small muted', text: '같은 폴더를 다시 분석해 계획을 앱 상태 폴더에 저장합니다. 계획은 1시간 뒤 만료되고, 이 화면은 실행하지 않습니다.' }),
+    view.appendChild(card('정리 계획 만들기', el('p', { class: 'small muted', text: '같은 폴더를 다시 분석해 계획을 앱 상태 폴더에 저장해요. 계획은 1시간 뒤 만료돼요. 만든 뒤 아래에서 목록을 확인하고 실행해요.' }),
       el('div', { class: 'toolbar' }, mode, el('label', { class: 'check' }, dup, '중복 후보도 삭제 계획에 넣기(남길 파일은 유지)')),
-      state.deleteMode === 'permanent' ? el('p', { class: 'note danger', text: '영구 삭제는 휴지통을 거치지 않으며 되돌릴 수 없습니다. 실행할 때 승인 코드와 확인 문구 "영구 삭제"를 모두 입력해야 합니다.' }) : null,
+      state.deleteMode === 'permanent' ? el('p', { class: 'note danger', text: '영구 삭제는 휴지통을 거치지 않고 되돌릴 수 없어요. 이 화면에서는 실행하지 않고, 터미널에서 승인 코드와 확인 문구 "영구 삭제"를 모두 입력해야 해요.' }) : null,
       el('div', { class: 'actions' }, el('button', { class: 'primary run', type: 'button', onclick: makePlan, disabled: state.busy }, '계획 만들기'))));
     if (!state.plan) return;
-    var plan = state.plan.plan, cli = state.info ? state.info.cli : 'node dist/apps/cli/src/index.js';
+    var plan = state.plan.plan, cli = cliOf();
     view.appendChild(el('div', { class: 'stats' }, stat(plan.summary.move, '이동'), stat(plan.summary.trash, '휴지통'), stat(plan.summary.delete, '영구 삭제'),
       stat(plan.reviewItems.length, '검토·유지(계획 밖)')));
     view.appendChild(el('p', { class: 'note' }, '계획 ID ', el('span', { class: 'mono', text: plan.id }), ' · 만료 ' + when(plan.expiresAt) + '. ' + profileText(state.plan.profile)));
-    if (!state.plan.approvalChoices.length) view.appendChild(card('실행할 작업 없음', empty('이 계획에는 옮기거나 지울 파일이 없습니다.')));
+    if (state.result && state.result.planId === plan.id) view.appendChild(applyResultCard(state.result));
+    if (!state.plan.approvalChoices.length) view.appendChild(card('실행할 작업 없음', empty('이 계획에는 옮기거나 지울 파일이 없어요.')));
     state.plan.approvalChoices.forEach(function (c) {
       var ops = plan.operations.filter(function (op) { return op.kind === modeKind[c.mode]; });
       var size = ops.reduce(function (s, op) { return s + op.expected.size; }, 0);
       var danger = c.mode === 'permanent-delete';
+      var line = cli + ' apply ' + plan.id + ' --mode ' + c.mode;
+      var action;
+      if (danger) action = [el('p', { class: 'note danger', text: '영구 삭제는 되돌릴 수 없어서 이 화면에서는 실행하지 않아요. 터미널에서 아래 명령을 실행하면 목록을 다시 보여 주고 승인 코드와 확인 문구 "영구 삭제"를 물어봐요.' }),
+        el('p', null, '승인 코드 ', el('span', { class: 'code', text: c.code })), command(line)];
+      else if (state.done[c.mode]) action = el('p', { class: 'note', text: '이 작업은 실행했어요(실행 ' + state.done[c.mode].slice(0, 8) + '). 같은 계획은 다시 실행할 수 없어요. 다시 정리하려면 [분석] 뒤 계획을 새로 만드세요.' });
+      else if (state.confirm === c.mode) action = confirmApply(c, ops);
+      else action = [el('div', { class: 'actions' }, el('button', { class: 'primary run', type: 'button', disabled: state.busy,
+          onclick: function () { if (state.busy) return; state.confirm = c.mode; state.confirmChecked = false; render(); } }, c.mode === 'organize' ? '정리하기' : '중복 사본 휴지통으로 보내기')),
+        el('p', { class: 'small muted', text: '누르면 실행할 목록을 한 번 더 보여 주고 확인을 받아요.' })];
       view.appendChild(card('[' + modeLabel[c.mode] + '] ' + ops.length + '개' + (c.mode === 'organize' ? '' : ' · 논리 크기 ' + bytes(size) + ' (확보량 아님)'),
-        el('p', null, '승인 코드 ', el('span', { class: 'code', text: c.code })),
-        el('p', { class: 'small muted', text: '터미널에서 아래 명령을 실행하면 이 작업 목록을 다시 보여 주고 승인 코드' + (danger ? '와 확인 문구 "영구 삭제"' : '') + '를 물어봅니다. 실행 직전에 파일을 다시 확인하고 바뀐 파일은 건너뜁니다.' }),
-        command(cli + ' apply ' + plan.id + ' --mode ' + c.mode),
-        danger ? el('p', { class: 'note danger', text: '되돌릴 수 없습니다. 남길 파일이 실제로 있는지 실행 직전에 확인합니다.' }) : null,
+        action, danger || state.done[c.mode] ? null : terminalHint(line, '승인 코드 ' + c.code + ' — 이 명령은 작업 목록을 다시 보여 주고 이 코드를 물어봐요.'),
         table(['작업', '파일', c.mode === 'organize' ? '옮길 위치' : '남길 파일', '이유'], ops.slice(0, LIMIT).map(function (op) {
           return el('tr', null, el('td', { class: 'mono', text: op.id.slice(0, 8) }), el('td', { class: 'path', text: op.source }),
             el('td', { class: 'path', text: op.kind === 'move' ? op.destination : (op.keeper || '직접 고른 파일') }), el('td', { class: 'small', text: op.reason }));
@@ -287,13 +310,66 @@ export const appJs = String.raw`(function () {
     }) : empty('없습니다.')));
   }
 
+  function confirmApply(c, ops) {
+    var organize = c.mode === 'organize';
+    var go = el('button', { class: 'primary run', type: 'button', disabled: state.busy || (!organize && !state.confirmChecked),
+      onclick: function () { runApply(c.mode, go); } }, organize ? '이대로 정리하기' : '휴지통으로 보내기');
+    var check = null;
+    if (!organize) {
+      check = el('input', { type: 'checkbox', checked: state.confirmChecked });
+      check.addEventListener('change', function () { state.confirmChecked = check.checked; go.disabled = state.busy || !check.checked; });
+    }
+    return el('div', { class: 'confirm' + (organize ? '' : ' danger'), role: 'group', 'aria-label': '실행 확인' },
+      el('p', null, el('b', { text: organize ? '파일 ' + ops.length + '개를 아래처럼 옮길까요?' : '중복 사본 ' + ops.length + '개를 휴지통으로 보낼까요?' })),
+      shortList(ops, function (op) { return organize ? op.source + ' → ' + op.destination : op.source + (op.keeper ? ' (남길 파일: ' + op.keeper + ')' : ''); }),
+      el('p', { class: 'note' + (organize ? '' : ' danger'), text: organize
+        ? '되돌릴 수 있어요([실행 기록]의 되돌리기 버튼). 실행 직전에 파일을 다시 확인하고, 그사이 바뀐 파일이나 이미 같은 이름이 있는 곳은 건너뛰어요(덮어쓰지 않아요).'
+        : '휴지통에서 직접 꺼낼 수 있어요. 되돌리기 버튼으로는 안 돼요. 남길 파일은 그대로 두고, 실행 직전에 내용이 같은지 다시 확인해요.' }),
+      check ? el('label', { class: 'check' }, check, '확인했어요: 위 사본을 휴지통으로 보내요') : null,
+      el('div', { class: 'actions' }, go, el('button', { class: 'run', type: 'button', disabled: state.busy,
+        onclick: function () { state.confirm = null; render(); } }, '취소')));
+  }
+  function runApply(mode, button) {
+    if (state.busy || !state.plan) return;
+    button.disabled = true;
+    var planId = state.plan.plan.id;
+    setBusy(true, (mode === 'organize' ? '정리하는 중' : '휴지통으로 보내는 중') + '… 끝날 때까지 기다려 주세요.');
+    api('POST', '/api/apply', { planId: planId, mode: mode }).then(function (data) {
+      state.done[mode] = data.runId; state.confirm = null; state.result = { planId: planId, mode: mode, data: data };
+      setBusy(false, '실행 완료 · 실행 ID ' + data.runId.slice(0, 8)); render();
+    }, function (e) { state.confirm = null; setBusy(false); setStatus(errText(e), true); render(); });
+  }
+  function tally(report) {
+    var n = { moved: 0, trashed: 0, deleted: 0, skipped: 0, failed: 0, unknown: 0 };
+    report.results.forEach(function (r) { n[r.status] = (n[r.status] || 0) + 1; });
+    return n;
+  }
+  function applyResultCard(result) {
+    var report = result.data.report, n = tally(report), ops = {};
+    state.plan.plan.operations.forEach(function (op) { ops[op.id] = op; });
+    var bad = report.results.filter(function (r) { return r.status !== 'moved' && r.status !== 'trashed'; });
+    var organize = result.mode === 'organize';
+    return el('section', { class: 'card result' + (bad.length ? ' partial' : '') }, el('h2', { text: organize ? '정리 결과' : '휴지통 보내기 결과' }),
+      el('div', { class: 'stats' }, stat(organize ? n.moved : n.trashed, organize ? '옮김' : '휴지통으로 보냄'), stat(n.skipped, '건너뜀'), stat(n.failed, '실패'),
+        n.unknown ? stat(n.unknown, '결과 확인 못 함') : null),
+      bad.length ? [el('h3', { text: '옮기지 않은 파일과 이유' }), shortList(bad, function (r) {
+        var op = ops[r.opId]; return (op ? op.source : r.opId.slice(0, 12)) + ' — ' + statusLabel[r.status] + (r.errorCode ? ' [' + r.errorCode + ']' : '') + ': ' + r.detail;
+      })] : null,
+      n.unknown ? el('p', { class: 'note danger', text: '결과를 확인하지 못한 파일이 있어요. 다시 실행하지 말고 [복구 점검]을 확인하세요.' }) : null,
+      result.data.exitCode === 130 ? el('p', { class: 'note', text: '중간에 취소됐어요. 실행하지 않은 파일은 그대로예요.' }) : null,
+      organize && n.moved ? el('div', { class: 'actions' }, el('button', { class: 'run', type: 'button', disabled: state.busy,
+        onclick: function () { state.runConfirm = result.data.runId; select('runs'); } }, '되돌리기…')) : null,
+      el('p', { class: 'small muted', text: organize ? '실행 ID ' + report.runId + ' · [실행 기록]에서 언제든 되돌릴 수 있어요.'
+        : '실행 ID ' + report.runId + ' · 휴지통으로 보낸 파일은 Finder·Windows 휴지통에서 직접 꺼내요. ' + report.space.note }));
+  }
+
   /* ---------- 개인 규칙 ---------- */
   function renderRules(view) {
     var box = card('개인 규칙', el('p', { class: 'muted', text: '불러오는 중…' }));
     view.appendChild(box);
     api('GET', '/api/rules').then(function (data) {
       box.replaceChildren(el('h2', { text: '개인 규칙' }));
-      var cli = state.info ? state.info.cli : 'node dist/apps/cli/src/index.js';
+      var cli = cliOf();
       if (data.state === 'none') {
         box.append(empty('저장된 개인 규칙이 없습니다. 미리보기는 기본 분류를 씁니다.'),
           el('p', { class: 'small', text: '기존에 정리해 둔 폴더를 참고해 규칙을 만들려면 터미널에서:' }),
@@ -324,28 +400,69 @@ export const appJs = String.raw`(function () {
   function renderRuns(view) {
     var box = card('실행 기록', el('p', { class: 'muted', text: '불러오는 중…' }));
     view.appendChild(box);
+    if (state.lastUndo) view.insertBefore(undoResultCard(state.lastUndo), box);
     var detail = el('div');
     view.appendChild(detail);
     api('GET', '/api/runs').then(function (data) {
       box.replaceChildren(el('h2', { text: '실행 기록 ' + data.runs.length + '개' }));
-      if (!data.runs.length) { box.append(empty('아직 CLI apply로 실행한 기록이 없습니다.')); return; }
+      if (!data.runs.length) { box.append(empty('아직 실행한 기록이 없어요.')); return; }
       box.append(table(['시작', '방식', '결과', '되돌리기', ''], data.runs.slice().reverse().map(function (r) {
         if (r.error) return el('tr', null, el('td', { class: 'mono', text: r.runId }), el('td', { colspan: 4, class: 'bad', text: '읽을 수 없음: ' + r.error }));
         var res = r.results;
-        return el('tr', { class: 'click', tabindex: 0, onclick: function () { showRun(r.runId, detail); }, onkeydown: function (ev) { if (ev.key === 'Enter') showRun(r.runId, detail); } },
+        return el('tr', { class: 'click', tabindex: 0, onclick: function () { showRun(r.runId, detail); }, onkeydown: function (ev) { if (ev.key === 'Enter' && ev.target === ev.currentTarget) showRun(r.runId, detail); } },
           el('td', { text: when(r.startedAt) }), el('td', { text: runMode[r.mode] || r.mode }),
           el('td', { text: res === null ? '끝나지 않음 — 복구 점검 확인' : '성공 ' + (res.moved + res.trashed + res.deleted) + ' · 건너뜀 ' + res.skipped + ' · 실패 ' + res.failed + ' · 불명 ' + res.unknown }),
-          el('td', { text: r.undos + '회' + (r.undoable ? ' · 되돌리기 가능' : '') }), el('td', { class: 'muted small', text: '자세히 ›' }));
+          el('td', null, r.undos + '회 ', r.undoable ? el('button', { class: 'run', type: 'button', disabled: state.busy, onclick: function (ev) {
+            ev.stopPropagation(); if (state.busy) return; state.runConfirm = r.runId; showRun(r.runId, detail);
+          } }, '되돌리기') : null), el('td', { class: 'muted small', text: '자세히 ›' }));
       })));
+      if (state.runConfirm) showRun(state.runConfirm, detail);
     }, function (e) { box.replaceChildren(el('h2', { text: '실행 기록' }), el('p', { class: 'bad', text: errText(e) })); });
+  }
+  function confirmUndo(run, candidates, name, target) {
+    var go = el('button', { class: 'primary run', type: 'button', disabled: state.busy, onclick: function () { runUndo(run.runId, go, name); } }, '이대로 되돌리기');
+    return el('div', { class: 'confirm', role: 'group', 'aria-label': '되돌리기 확인' },
+      el('p', null, el('b', { text: when(run.startedAt) + '에 정리한 파일 ' + candidates.length + '개를 원래 자리로 되돌릴까요?' })),
+      shortList(candidates, function (r) { return name(r.opId, true); }),
+      el('p', { class: 'note', text: '원래 자리에 다른 파일이 있거나 정리한 뒤 바뀐 파일은 덮어쓰지 않고 건너뛰어요. 정리할 때 새로 만든 폴더는 비어 있으면 지워요.' }),
+      run.report.results.some(function (r) { return r.status === 'unknown'; }) ? el('p', { class: 'small warn', text: '결과를 확인하지 못한 파일은 건드리지 않아요([복구 점검]에서 확인).' }) : null,
+      el('div', { class: 'actions' }, go, el('button', { class: 'run', type: 'button', disabled: state.busy,
+        onclick: function () { state.runConfirm = null; showRun(run.runId, target); } }, '취소')));
+  }
+  function runUndo(runId, button, name) {
+    if (state.busy) return;
+    button.disabled = true;
+    setBusy(true, '되돌리는 중… 끝날 때까지 기다려 주세요.');
+    api('POST', '/api/undo', { runId: runId }).then(function (data) {
+      state.runConfirm = null; state.lastUndo = { runId: runId, data: data, name: name };
+      setBusy(false, '되돌리기 완료'); render();
+    }, function (e) { state.runConfirm = null; setBusy(false); setStatus(errText(e), true); render(); });
+  }
+  function undoResultCard(u) {
+    var report = u.data.report;
+    if (!report) return el('section', { class: 'card result' }, el('h2', { text: '되돌리기 결과' }), el('p', { text: u.data.message || '되돌릴 항목이 없었어요.' }));
+    var back = report.results.filter(function (r) { return r.status === 'moved'; }).length;
+    var rest = report.results.filter(function (r) { return r.status !== 'moved'; });
+    var dirs = report.directories;
+    return el('section', { class: 'card result' + (rest.length ? ' partial' : '') }, el('h2', { text: '되돌리기 결과 · 실행 ' + u.runId.slice(0, 8) }),
+      el('div', { class: 'stats' }, stat(back, '원래 자리로 되돌림'), stat(rest.length, '되돌리지 않음')),
+      rest.length ? [el('h3', { text: '되돌리지 않은 파일과 이유' }), shortList(rest, function (r) {
+        return u.name(r.opId, true) + ' — ' + (r.status === 'unknown' ? '결과 확인 못 함' : '건너뜀') + (r.errorCode ? ' [' + r.errorCode + ']' : '') + ': ' + r.detail;
+      })] : null,
+      dirs && dirs.removed.length ? el('p', { class: 'small', text: '정리할 때 만든 빈 폴더 ' + dirs.removed.length + '개도 지웠어요.' }) : null,
+      dirs && dirs.kept.length ? shortList(dirs.kept, function (k) { return '그대로 둔 폴더 ' + k.path + ' — ' + k.reason; }) : null);
   }
   function showRun(runId, target) {
     target.replaceChildren(card('실행 ' + runId, el('p', { class: 'muted', text: '불러오는 중…' })));
     api('GET', '/api/runs/' + encodeURIComponent(runId)).then(function (data) {
       var run = data.run, ops = {};
       (data.operations || []).forEach(function (op) { ops[op.id] = op; });
-      var cli = state.info ? state.info.cli : 'node dist/apps/cli/src/index.js';
-      var name = function (id) { var op = ops[id]; return op ? op.source + (op.destination ? ' → ' + op.destination : '') : id.slice(0, 12) + '…'; };
+      var cli = cliOf();
+      var name = function (id, reverse) {
+        var op = ops[id];
+        if (!op) return id.slice(0, 12) + '… (계획 파일이 없어 이름을 표시하지 못함)';
+        return op.destination ? (reverse ? op.destination + ' → ' + op.source : op.source + ' → ' + op.destination) : op.source;
+      };
       var c = card('실행 ' + runId.slice(0, 8) + ' · ' + (runMode[run.mode] || run.mode),
         el('p', { class: 'small muted', text: '시작 ' + when(run.startedAt) + ' · 끝 ' + (run.finishedAt ? when(run.finishedAt) : '기록 없음') + ' · 계획 ' + run.planId.slice(0, 12) + '…' }));
       if (run.report === null) c.append(el('p', { class: 'note danger', text: '결과 기록이 없습니다(중단된 실행일 수 있음). 다시 실행하지 말고 [복구 점검]을 확인하세요.' }));
@@ -354,8 +471,17 @@ export const appJs = String.raw`(function () {
           return el('tr', null, el('td', null, el('span', { class: 'badge ' + (x.status === 'failed' || x.status === 'unknown' ? 'bad' : x.status === 'skipped' ? 'review' : 'safe'), text: statusLabel[x.status] || x.status })),
             el('td', { class: 'path', text: name(x.opId) }), el('td', { class: 'mono', text: x.errorCode || '' }), el('td', { class: 'small', text: x.detail }));
         })), el('p', { class: 'small muted', text: run.report.space.note }));
-        if (run.mode === 'organize') c.append(el('p', { class: 'small', text: '이동을 되돌리려면 터미널에서(실행 ID 앞 8자를 확인 코드로 물어봅니다):' }), command(cli + ' undo ' + runId));
-        else if (run.mode === 'trash') c.append(el('p', { class: 'small muted', text: '휴지통으로 보낸 파일은 Finder·Windows 휴지통에서 직접 복원합니다.' }));
+        if (run.mode === 'organize') {
+          var undone = {};
+          data.undos.forEach(function (u) { u.report.results.forEach(function (x) { if (x.status === 'moved') undone[x.opId] = true; }); });
+          var candidates = run.report.results.filter(function (x) { return x.status === 'moved' && !undone[x.opId]; });
+          if (!candidates.length) c.append(el('p', { class: 'small muted', text: '되돌릴 이동 항목이 없어요' + (Object.keys(undone).length ? '(이미 되돌렸어요).' : '.') }));
+          else if (state.runConfirm === runId) c.append(confirmUndo(run, candidates, name, target));
+          else c.append(el('div', { class: 'actions' }, el('button', { class: 'run', type: 'button', disabled: state.busy,
+            onclick: function () { if (state.busy) return; state.runConfirm = runId; showRun(runId, target); } }, '되돌리기…')));
+          if (candidates.length) c.append(terminalHint(cli + ' undo ' + runId, '확인 코드는 실행 ID 앞 8자(' + runId.slice(0, 8) + ')예요.'));
+        }
+        else if (run.mode === 'trash') c.append(el('p', { class: 'small muted', text: '휴지통으로 보낸 파일은 Finder·Windows 휴지통에서 직접 꺼내요. 되돌리기 버튼으로는 안 돼요.' }));
         else c.append(el('p', { class: 'small bad', text: '영구 삭제는 되돌릴 수 없습니다.' }));
       }
       data.undos.forEach(function (u) {
@@ -408,6 +534,28 @@ export const appJs = String.raw`(function () {
     render();
   }
 
+  /* ---------- 화면이 열려 있음을 알리기(--exit-when-closed) ---------- */
+  function ping() { api('POST', '/api/ping', {}).catch(function () { /* the presence stream reports a lost server */ }); }
+  function keepAlive() {
+    setInterval(ping, 10000);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) ping(); });
+    presence(0);
+  }
+  /* An open request survives background-tab timer throttling; it ends when the tab closes or the server stops. */
+  function presence(tries) {
+    var lost = function () {
+      if (tries < 2) setTimeout(function () { presence(tries + 1); }, 2000);
+      else setStatus('AFO 화면 서버가 끝났어요. 다시 쓰려면 afo gui를 다시 실행하거나 Finder에서 다시 여세요.', true);
+    };
+    fetch('/api/presence', { headers: { 'x-afo-token': token }, cache: 'no-store' }).then(function (r) {
+      if (!r.ok || !r.body) throw new Error('presence');
+      tries = 0;
+      var reader = r.body.getReader();
+      var pump = function () { return reader.read().then(function (x) { if (!x.done) return pump(); }); };
+      return pump();
+    }).then(lost, lost);
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     Array.prototype.forEach.call(document.querySelectorAll('[role=tab]'), function (b) { b.addEventListener('click', function () { select(b.getAttribute('data-tab')); }); });
     $('analyze').addEventListener('click', analyze);
@@ -416,7 +564,9 @@ export const appJs = String.raw`(function () {
     if (!token) return;
     api('GET', '/api/info').then(function (info) {
       state.info = info;
-      $('foot').textContent = '상태 폴더: ' + info.stateDir + ' · 실행(apply·undo)은 CLI에서만 합니다.';
+      $('foot').textContent = '상태 폴더: ' + info.stateDir + ' · 정리·휴지통 보내기·되돌리기는 목록을 확인한 뒤에만 실행해요. 영구 삭제는 터미널에서만 해요.' +
+        (info.exitWhenClosed ? ' 이 창을 닫으면 잠시 뒤 AFO도 저절로 끝나요.' : '');
+      keepAlive();
       if (info.initialFolder) { $('folder').value = info.initialFolder; analyze(); }
       else $('folder').focus();
     }, function (e) { setStatus(errText(e), true); });

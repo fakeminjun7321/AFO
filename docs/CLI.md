@@ -77,7 +77,7 @@ afo --version                                         # 설치된 버전
 | `... undo <실행 ID> [--confirm <코드>] [--json]` | 이동(organize) 실행만 원래 위치로 되돌림(`undoRun`). 확인 코드는 실행 ID 앞 8자 | 작업 폴더(역이동), 상태 폴더 |
 | `... runs [<실행 ID>] [--json]` | 실행 기록 요약(시각·방식·결과 수·되돌리기 횟수·undo 가능 여부) 또는 한 실행의 항목별 결과와 되돌리기 기록 | 없음 |
 | `... recover [--json]` | `inspectRuns`로 끝나지 않은 실행·결과 불명 항목과 해제 조건을 보고. 자동 재실행·원복·삭제 없음 | 없음 |
-| `... gui [<폴더>] [--port <번호>] [--no-open]` | 이 컴퓨터에서만 열리는 브라우저 화면(아래 "화면으로 보기")으로 미리보기·계획·규칙·실행 기록·복구 점검을 봄. 실행(apply·undo)은 하지 않음 | 상태 폴더(`plans/`, 화면에서 계획을 만들 때만) |
+| `... gui [<폴더>] [--port <번호>] [--no-open] [--exit-when-closed]` | 이 컴퓨터에서만 열리는 브라우저 화면(아래 "화면으로 보기")으로 미리보기·계획·규칙·실행 기록·복구 점검을 보고, 화면에서 목록을 확인한 뒤 정리(organize)·휴지통(trash)·되돌리기를 `apply`·`undo`와 같은 경로로 실행. 영구 삭제는 하지 않음 | 상태 폴더(`plans/`, 실행하면 `approvals/`·`runs/`·`journal/`·`locks/`), 화면에서 실행·되돌리기를 누르면 작업 폴더 |
 
 `preview` 옵션:
 
@@ -143,19 +143,24 @@ afo --version                                         # 설치된 버전
 
 ## 화면으로 보기 (gui)
 
-`gui [<폴더>] [--port <번호>] [--no-open]`(`npm run gui -- <폴더>`와 같음, 구현: `apps/cli/src/gui.ts`·`gui-assets.ts`)
+`gui [<폴더>] [--port <번호>] [--no-open] [--exit-when-closed]`(`npm run gui -- <폴더>`와 같음, 구현: `apps/cli/src/gui.ts`·`gui-assets.ts`)
 
-- `127.0.0.1`의 빈 포트(또는 `--port`, 1024–65535)에 작은 HTTP 서버를 띄우고 stderr에 `AFO GUI: http://127.0.0.1:<포트>/#token=<무작위 48자>`를 출력한 뒤 기본 브라우저로 엽니다(`--no-open`이면 열지 않음). Ctrl+C로 끝내면 종료 코드 0입니다.
+- `127.0.0.1`의 빈 포트(또는 `--port`, 1024–65535)에 작은 HTTP 서버를 띄우고 stderr에 `AFO GUI: http://127.0.0.1:<포트>/#token=<무작위 48자>`를 출력한 뒤 기본 브라우저로 엽니다(`--no-open`이면 열지 않음). Ctrl+C로 끝내면 종료 코드 0입니다. 끝날 때 stdout에 화면에서 실행·되돌리기를 몇 번 했는지 적습니다.
 - 폴더를 주면 화면이 열리자마자 그 폴더를 분석합니다. 화면의 폴더 입력은 절대 경로만 받습니다. 홈·디스크 루트 같은 거부 대상은 CLI와 같은 오류로 표시합니다.
-- 화면: **미리보기**(개수 요약, 목적지 폴더별 묶음, 파일별 제안 검색·거르기, 중복 후보, 제외·오류), **정리 계획**(삭제 방식·중복 포함 선택 → 계획 저장, 방식별 작업·승인 코드·복사할 `apply` 명령), **개인 규칙**(저장 프로필·규칙·저장한 수정, 읽기만), **실행 기록**(실행별 결과와 파일 이름, 이동이면 `undo` 명령), **복구 점검**(`recover`와 같은 보고).
-- 공용 함수를 그대로 씁니다: 미리보기는 `analyzeTarget`, 계획은 `createPlan`(CLI `plan`과 같은 함수, 같은 `plans/latest-<루트ID>.json` 인덱스 갱신), 기록은 `runSummaries`·`readRun`, 복구는 `recoverReport`(`inspectRuns`), 규칙은 `loadProfile`. CLI 출력을 파싱하지 않습니다.
-- **실행하지 않습니다.** apply·undo·규칙 변경 API가 없습니다. 화면은 승인 코드와 `apply <계획 ID> --mode <방식>` 명령을 보여 주고, 사용자가 터미널에서 실행하면 CLI가 작업 목록을 다시 보여 주고 승인 코드(영구 삭제는 문구도)를 묻습니다.
-- 요청 검사: API는 매 요청의 `x-afo-token`(시작할 때 만든 무작위 값, 상수 시간 비교), `Host`가 `127.0.0.1:<포트>` 또는 `localhost:<포트>`인지, `Origin`이 있으면 같은 주소인지 확인하고 아니면 403입니다. 페이지 자체도 `Host`를 확인합니다(DNS rebinding 방지). POST는 `application/json`·64 KiB 이하·정해진 필드만 받습니다. 토큰은 URL의 `#` 뒤에 있어 서버 로그·Referer로 가지 않습니다.
+- 화면: **미리보기**(개수 요약, 목적지 폴더별 묶음, 파일별 제안 검색·거르기, 중복 후보, 제외·오류), **정리 계획**(삭제 방식·중복 포함 선택 → 계획 저장 → 방식별 작업 목록과 실행 버튼), **개인 규칙**(저장 프로필·규칙·저장한 수정, 읽기만), **실행 기록**(실행별 결과와 파일 이름, 되돌릴 수 있는 이동 실행에 [되돌리기]), **복구 점검**(`recover`와 같은 보고).
+- 공용 함수를 그대로 씁니다: 미리보기는 `analyzeTarget`, 계획은 `createPlan`(CLI `plan`과 같은 함수, 같은 `plans/latest-<루트ID>.json` 인덱스 갱신), 실행은 `applyCommand`, 되돌리기는 `undoCommand`, 기록은 `runSummaries`·`readRun`, 복구는 `recoverReport`(`inspectRuns`), 규칙은 `loadProfile`. CLI 출력을 파싱하지 않습니다.
+- **화면에서 실행하기**: 계획을 만들면 방식별로 [정리하기](organize)·[중복 사본 휴지통으로 보내기](trash) 버튼이 나옵니다. 누르면 먼저 화면 안의 확인 상자가 작업 개수와 처음 20개 파일(정리는 `원래 위치 → 옮길 위치`, 휴지통은 남길 파일과 함께)을 보여 줍니다. 정리는 "되돌릴 수 있어요(되돌리기 버튼)", 휴지통은 "휴지통에서 직접 꺼낼 수 있어요, 되돌리기 버튼으로는 안 돼요"라고 알리고, 휴지통은 [확인했어요] 체크를 해야 실행 버튼이 켜집니다. 결과는 옮김/휴지통으로 보냄·건너뜀·실패·결과 불명 개수와 성공하지 않은 파일별 이유로 보여 줍니다. 요청 중에는 버튼을 끄고, 서버도 한 번에 한 작업만 받습니다(진행 중이면 409).
+- `POST /api/apply { planId, mode: "organize" | "trash" }`는 `applyCommand(planId, { mode, confirm: <코드> }, { json: true, … })`를 그대로 호출합니다(`issueApproval` → `consumeApproval` → `executeBatch`). 코드는 서버가 저장된 계획에서 그 방식의 전체 작업으로 계산한 값(`plan`이 출력하는 승인 코드와 같음)이며 화면은 코드를 입력받지 않습니다. 화면 안의 확인 클릭이 사용자 확인입니다. 같은 계획·방식을 다시 보내면 CLI와 같이 `APPROVAL_USED`(422)로 거부합니다. `mode: "permanent-delete"`는 400으로 거부합니다: 영구 삭제는 터미널의 `apply`에서 승인 코드와 확인 문구를 직접 입력해야 합니다(화면은 그 명령만 보여 줌). 응답은 `{ exitCode, runId, report }`(`exitCode`는 CLI 종료 코드: 0·3·130).
+- `POST /api/undo { runId }`는 `undoCommand(runId, { confirm: <실행 ID 앞 8자> }, { json: true, … })`입니다. 화면은 되돌릴 후보(이동했고 아직 되돌리지 않은 항목) 개수와 처음 20개를 보여 주고 확인을 받습니다. 휴지통·영구 삭제 실행은 `undoCommand`가 거부합니다(400). 응답은 `{ exitCode, runId, report }`(되돌릴 항목이 없으면 `report: null, message`).
+- 파일 작업은 브라우저 탭을 닫거나 요청을 끊어도 취소하지 않습니다(절반만 하다 멈추지 않게). GUI를 Ctrl+C로 끝내면 CLI의 Ctrl+C처럼 취소합니다. 분석·계획은 요청이 끊기면 취소합니다.
+- 오류는 공통 형식 `{ error: { code, message } }`입니다: 형식 오류·사용법 400, 토큰·Host·Origin 403, JSON 아님 415, AFO 오류(승인 재사용·계획 없음·만료 등) 422.
+- 화면 아래의 "터미널로 하려면"을 펼치면 같은 작업의 `apply`·`undo` 명령과 코드를 보여 줍니다(단일 실행 파일이면 그 실행 파일 경로, 아니면 `node <진입 파일>`).
+- `--exit-when-closed`(Finder 빠른 동작·Windows 보내기 메뉴가 씀): 페이지는 10초마다 `POST /api/ping`(토큰 필요, 본문 `{}`)을 보내고 `GET /api/presence` 요청을 열어 둡니다(백그라운드 탭의 타이머 지연에도 끊기지 않게). 열린 presence 요청이 없고 마지막 요청 뒤 60초가 지나면(처음 페이지가 120초 안에 열리지 않으면 그때) 서버를 닫고 종료 코드 0으로 끝냅니다. 실행·되돌리기 중에는 끝내지 않습니다. 테스트에서만 `AFO_GUI_FIRST_LOAD_MS`·`AFO_GUI_IDLE_MS`로 두 시간을 줄입니다.
+- 요청 검사: API는 매 요청의 `x-afo-token`(시작할 때 만든 무작위 값, 상수 시간 비교), `Host`가 `127.0.0.1:<포트>` 또는 `localhost:<포트>`인지, `Origin`이 있으면 같은 주소인지 확인하고 아니면 403입니다. 페이지 자체도 `Host`를 확인합니다(DNS rebinding 방지). POST는 `application/json`·64 KiB 이하·정해진 필드만 받습니다(모르는 필드 400). 토큰은 URL의 `#` 뒤에 있어 서버 로그·Referer로 가지 않습니다.
 - 페이지는 strict CSP(`default-src 'none'; script-src 'self'` 등)로 제공하고, 파일 이름은 모두 `textContent`로 넣습니다(폴더 안 이름은 신뢰하지 않는 입력).
-- 분석·계획은 한 번에 하나만 실행합니다(진행 중이면 409). 브라우저가 요청을 끊거나 GUI를 끝내면 진행 중인 분석을 취소합니다.
-- 한계: 같은 컴퓨터의 다른 사용자·프로세스가 토큰을 알면 이 화면과 같은 읽기·계획 저장을 할 수 있습니다(파일 실행은 없음). 표는 항목을 최대 500개까지 표시하고 나머지는 검색으로 좁힙니다. Windows 실물에서는 아직 확인하지 않았습니다.
+- 한계: 같은 컴퓨터의 다른 사용자·프로세스가 토큰을 알면 이 화면과 같은 일(정리·휴지통 보내기·되돌리기 포함, 영구 삭제 제외)을 할 수 있습니다. 토큰은 이 프로세스의 stderr와 브라우저 주소에만 있습니다. `--only`(일부 작업만 승인)는 화면에 없고 방식 전체를 실행합니다. 표는 항목을 최대 500개까지 표시하고 나머지는 검색으로 좁힙니다. Windows 실물에서는 아직 확인하지 않았습니다.
 
-검증: `tests/gui.test.ts`가 실제 `gui` 자식 프로세스(`--no-open`, temp `AFO_STATE_DIR`)로 CSP·정적 경로, 토큰 없음·틀림·다른 Host·다른 Origin·JSON 아님·상대 경로·모르는 필드 거부, apply/undo API 부재, 미리보기 결과가 `preview --json`과 같고 작업·상태 폴더가 바뀌지 않음, 계획 저장 내용·승인 코드 일치, GUI 계획 → CLI apply 뒤 실행 기록·파일 이름·recover 표시, Ctrl+C 종료 코드 0(Windows 제외), 사용법 오류 2를 확인합니다. 클릭 흐름은 [검증 기록](verification/ISSUE_9_GUI.md)에 있습니다.
+검증: `tests/gui.test.ts`가 실제 `gui` 자식 프로세스(`--no-open`, temp `AFO_STATE_DIR`)로 CSP·정적 경로, 토큰 없음·틀림·다른 Host·다른 Origin·JSON 아님·상대 경로·모르는 필드 거부, 미리보기 결과가 `preview --json`과 같고 작업·상태 폴더가 바뀌지 않음, 계획 저장 내용·승인 코드 일치, GUI 계획 → CLI apply 뒤 실행 기록·파일 이름·recover 표시, **API로 정리**(독립 manifest로 목적지 sha256·원래 경로 부재·다른 파일 그대로) → 같은 apply 재시도 거부(422, 변경 없음) → **API로 되돌리기**(manifest가 처음과 같음), `permanent-delete`·토큰 없음·틀림·다른 Origin·모르는 필드·필드 누락·JSON 아님 거부(작업 폴더·실행 기록·승인 기록 변화 없음), `AFO_REAL_TRASH_TEST=1`에서만 API로 `afo-test-` 합성 사본 1개를 실제 휴지통으로(남길 파일 그대로, 그 실행의 undo 거부), `--exit-when-closed`(페이지 없음 → 0으로 종료, ping·presence 동안 유지, 끊긴 뒤 종료, 옵션이 없으면 유지), Ctrl+C 종료 코드 0(Windows 제외), 사용법 오류 2를 확인합니다. 클릭 흐름은 [검증 기록](verification/ISSUE_9_GUI.md)에 있습니다.
 
 ## 안전 규칙
 

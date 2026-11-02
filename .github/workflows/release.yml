@@ -62,9 +62,15 @@ jobs:
         run: |
           (cd release && python3 -m http.server 8765 --bind 127.0.0.1 >/dev/null 2>&1 &)
           sleep 2
-          AFO_DOWNLOAD_BASE=http://127.0.0.1:8765 AFO_INSTALL="$RUNNER_TEMP/afo" AFO_NO_MODIFY_PATH=1 sh install.sh
+          # 빠른 동작은 temp HOME에 만들어 러너 프로필과 상관없이 확인합니다.
+          qa_home="$RUNNER_TEMP/qa-home"; mkdir -p "$qa_home"
+          HOME="$qa_home" AFO_DOWNLOAD_BASE=http://127.0.0.1:8765 AFO_INSTALL="$RUNNER_TEMP/afo" AFO_NO_MODIFY_PATH=1 sh install.sh
           afo="$RUNNER_TEMP/afo/bin/afo"
           test "$("$afo" --version)" = "afo $(node -p 'require("./package.json").version')"
+          wf="$(find "$qa_home/Library/Services" -maxdepth 1 -name 'AFO*.workflow' -print)"; test -n "$wf"
+          plutil -lint "$wf/Contents/Info.plist" "$wf/Contents/document.wflow"
+          test "$(plutil -extract NSServices.0.NSSendFileTypes.0 raw "$wf/Contents/Info.plist")" = public.folder
+          plutil -extract actions.0.action.ActionParameters.COMMAND_STRING raw "$wf/Contents/document.wflow" | grep -F "afo='$afo'"
           dir="$(mktemp -d)/AFO 설치 확인"; mkdir -p "$dir"; printf 'a' > "$dir/보고서.pdf"; printf 'b' > "$dir/사진.JPG"
           AFO_STATE_DIR="$(mktemp -d)" "$afo" preview "$dir"
           test -f "$dir/보고서.pdf" && test -f "$dir/사진.JPG"
@@ -75,11 +81,20 @@ jobs:
           $server = Start-Process python -ArgumentList '-m','http.server','8765','--bind','127.0.0.1' -WorkingDirectory release -PassThru -WindowStyle Hidden
           Start-Sleep -Seconds 2
           $env:AFO_DOWNLOAD_BASE = 'http://127.0.0.1:8765'; $env:AFO_INSTALL = "$env:RUNNER_TEMP\afo"; $env:AFO_NO_MODIFY_PATH = '1'
+          # 보내기 메뉴는 temp APPDATA에 만들어 러너 프로필과 상관없이 확인합니다.
+          $env:APPDATA = Join-Path $env:RUNNER_TEMP 'appdata'
           # irm | iex와 같이 UTF-8로 읽은 스크립트 문자열을 실행합니다.
           Get-Content -Raw -Encoding UTF8 install.ps1 | Invoke-Expression
           $afo = "$env:RUNNER_TEMP\afo\afo.exe"
           $version = node -p "require('./package.json').version"
           if ((& $afo --version) -ne "afo $version") { throw 'afo --version 불일치' }
+          # 이 파일의 한글 인코딩에 기대지 않도록 바로 가기 이름(AFO로 정리.lnk)을 코드 포인트로 만듭니다.
+          $lnkName = 'AFO' + [char]0xB85C + ' ' + [char]0xC815 + [char]0xB9AC + '.lnk'
+          $lnkPath = Join-Path $env:APPDATA "Microsoft\Windows\SendTo\$lnkName"
+          if (-not (Test-Path -LiteralPath $lnkPath)) { throw "SendTo shortcut missing: $lnkPath" }
+          $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut($lnkPath)
+          if ($lnk.TargetPath -ne $afo) { throw "SendTo target: $($lnk.TargetPath)" }
+          if ($lnk.Arguments -ne 'gui --exit-when-closed') { throw "SendTo arguments: $($lnk.Arguments)" }
           $dir = Join-Path $env:RUNNER_TEMP 'AFO 설치 확인'; New-Item -ItemType Directory $dir | Out-Null
           Set-Content -NoNewline -Path (Join-Path $dir 'report.pdf') -Value 'a'
           $env:AFO_STATE_DIR = Join-Path $env:RUNNER_TEMP 'afo-state'

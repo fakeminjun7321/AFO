@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { TestContext } from 'node:test';
@@ -45,12 +45,14 @@ async function setup(t: TestContext, files: FixtureSpec = spec) {
   };
   return { dirs, session, invoke };
 }
+const ORGANIZE = '이대로 정리할까요? 나중에 afo undo로 되돌릴 수 있어요. (Y/n): ';
+/** Answers "y" to the organize question, after checking it is that question and no approval code is shown any more. */
 const code = (screen: string): string => {
-  const m = /계속하려면 아래 코드를 입력하세요: ([a-f0-9]{8})/u.exec(screen);
-  assert.ok(m, 'the approval code is shown before asking');
-  return m[1]!;
+  assert.ok(screen.endsWith(ORGANIZE), 'the yes/no question is asked after the plan');
+  assert.ok(!screen.includes('계속하려면 아래 코드를'), 'no approval code to type');
+  return 'y';
 };
-const undoCode = (screen: string): string => /계속하려면 아래 코드를 입력하세요: (\S{8})/u.exec(screen)![1]!;
+const undoCode = (screen: string): string => { assert.ok(screen.endsWith('되돌릴까요? (Y/n): ')); return 'y'; };
 const sha = (m: Manifest, rel: string): string | undefined => { const e = m[rel]; return e?.type === 'file' ? e.sha256 : undefined; };
 /** Every file of `before` is at its expected new path (or unchanged when not listed) with the same content; nothing else appeared. */
 function assertMoved(before: Manifest, after: Manifest, moves: Record<string, string>): void {
@@ -246,15 +248,17 @@ test('O1 guided: after saving a rule, a stop says files are unchanged and the sa
   const { dirs, session } = await setup(t, { 'work/d.xyz': 'x', 'state/': '' });
   const before = await manifest(dirs.work);
   let line = '';
-  try { await runCli([], undefined, session(dirs.work, '1', '2', '자료', 'y', '').io); }
+  try { await runCli([], undefined, session(dirs.work, '1', '2', '자료', 'y', 'n').io); }
   catch (error) { line = `${exitCodeOf(error)} ${errorLine(error)}`; }
-  assert.equal(line, '4 코드를 입력하지 않아 실행하지 않았어요. 파일은 바꾸지 않았어요(저장한 규칙은 남아 있어요).');
+  assert.equal(line, '4 정리하지 않았어요. 파일은 바꾸지 않았어요(저장한 규칙은 남아 있어요).');
+  assert.deepEqual(await readdir(path.join(dirs.state, 'approvals')).catch(() => []), [], 'no approval on "n"');
+  assert.deepEqual(await readdir(path.join(dirs.state, 'runs')).catch(() => []), [], 'nothing ran');
   assert.deepEqual(await manifest(dirs.work), before);
   // A second folder (the first one's .xyz is now a saved correction, so nothing there is unknown any more).
   const other = await setup(t, { 'work/e.qqq': 'q', 'state/': '' });
   const cancel = other.session(other.dirs.work, '1', '2', '자료2', 'y');
   const ask = cancel.io.ask;
-  cancel.io.ask = (q: string) => q.startsWith('코드') ? Promise.reject(Object.assign(new Error('aborted'), { name: 'AbortError' })) : ask(q);
+  cancel.io.ask = (q: string) => q === ORGANIZE ? Promise.reject(Object.assign(new Error('aborted'), { name: 'AbortError' })) : ask(q);
   line = '';
   try { await runCli([], undefined, cancel.io); } catch (error) { line = `${exitCodeOf(error)} ${errorLine(error)}`; }
   assert.equal(line, '130 그만뒀어요(Ctrl+C). 파일은 바꾸지 않았어요(저장한 규칙은 남아 있어요).');

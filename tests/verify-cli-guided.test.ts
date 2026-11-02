@@ -33,7 +33,7 @@ const realTrash = process.env['AFO_REAL_TRASH_TEST'] === '1' && process.platform
 
 // ---------- pty driver (Python, standard library only) ----------
 // steps: wait for `expect` (regex on ANSI-stripped output, searched after the previous match), then type `send`.
-// `{1}` in send is replaced by group 1 of the latest match that had groups (e.g. the approval code shown on screen).
+// `{1}` in send is replaced by group 1 of the latest match that had groups (none of the current steps needs it).
 const DRIVER = String.raw`import json, os, pty, re, select, sys, time
 spec = json.load(open(sys.argv[1], encoding='utf-8'))
 ansi = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[=>]')
@@ -160,8 +160,14 @@ async function setup(t: TestContext, spec: Spec) {
 // Prompts as shown on screen.
 const FOLDER = '끌어다 놓고 Enter를 누르세요\\(경로를 붙여 넣어도 돼요, 그냥 Enter는 종료\\): ';
 const MENU = '번호를 입력하세요: ';
-const CODE = '계속하려면 아래 코드를 입력하세요: ([a-f0-9]{8})\\n코드\\(그냥 Enter는 취소\\): ';
-const UNDO = '계속하려면 아래 코드를 입력하세요: (\\S{8})\\n코드\\(그냥 Enter는 취소\\): ';
+// The guided confirmations are yes/no now (the approval is still issued internally with the plan's code): organize defaults to yes,
+// the trash to no; `afo undo` in a terminal asks yes/no too. No code is shown or typed on these screens.
+const ORGANIZE = '이대로 정리할까요\\? 나중에 afo undo로 되돌릴 수 있어요\\. \\(Y/n\\): ';
+const TRASH = '이 사본 \\d+개를 휴지통으로 보낼까요\\? afo undo로는 되돌리지 않아요\\. \\(y/N\\): ';
+const UNDO = '되돌릴까요\\? \\(Y/n\\): ';
+/** The folder question once a guided run has executed in this state folder (the remembered folder is offered with Enter). */
+const LAST = '끌어다 놓고 Enter를 누르세요\\(그냥 Enter는 지난번 폴더, q는 종료\\): ';
+const UNCLEAR = '답을 알아듣지 못해 그만둘게요\\. 아무것도 바꾸지 않았어요\\.';
 const ENTER = '\r'; const CTRL_C = '\x03';
 // default-3: after menu 1 the unknown 'notes' (no extension) is asked about; Enter keeps it where it is.
 const KEEP_UNKNOWN: Step = { expect: '번호를 입력하세요\\(그냥 Enter는 3\\): ', send: ENTER };
@@ -187,8 +193,8 @@ test('pty: five dragged-folder spellings (quotes, "\\ " + trailing space, ~/ wit
   const seen = new Set<string>();
   for (const [label, typed] of Object.entries(inputs)) {
     const r = await pty([{ expect: FOLDER, send: typed + ENTER }, { expect: '파일 6개를 살펴봤어요\\. \\(아직 아무것도 바꾸지 않았어요\\)' },
-      { expect: MENU, send: `1${ENTER}` }, KEEP_UNKNOWN, { expect: CODE, send: ENTER }]);
-    assert.equal(r.exit, 4, `${label}: empty code refuses with 4\n${r.transcript}`);
+      { expect: MENU, send: `1${ENTER}` }, KEEP_UNKNOWN, { expect: ORGANIZE, send: `n${ENTER}` }]);
+    assert.equal(r.exit, 4, `${label}: "n" refuses with 4\n${r.transcript}`);
     assert.ok(!r.transcript.includes('이 폴더는 정리할 수 없어요'), `${label}: accepted at once`);
     assert.equal((await newPlanRoot(state, seen)).normalize('NFC'), work.normalize('NFC'), `${label}: plan bound to the same real folder`);
   }
@@ -210,28 +216,42 @@ test('pty: missing folder, the (fake) home itself and a file path are explained 
   assert.deepEqual(await readdir(state), [], 'state folder untouched');
 });
 
-test('pty: wrong code and empty code (menu 1 and 2) run nothing: exit 4, files, approvals/ and runs/ unchanged', { skip: SKIP }, async (t) => {
+test('pty: "n", trash Enter and three unclear answers (menu 1 and 2) run nothing: exit 4/2, files, approvals/ and runs/ unchanged', { skip: SKIP }, async (t) => {
+  // Was "wrong code and empty code": the typed code became a yes/no; the same refusals with the same oracles.
   const { state, work, pty } = await setup(t, BASE);
   const before = await snap(work);
-  for (const [menu, typed] of [['1', '00000000'], ['1', ''], ['2', 'ffffffff'], ['2', ''], ['1', 'abcdefgh-x']] as const) {
-    const r = await pty([{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: menu + ENTER }, ...(menu === '1' ? [KEEP_UNKNOWN] : []), { expect: CODE, send: typed + ENTER }]);
-    assert.equal(r.exit, 4, `menu ${menu} code '${typed}'\n${r.transcript}`);
-    assert.match(r.transcript, typed === '' ? /코드를 입력하지 않아 실행하지 않았어요\. 아무것도 바꾸지 않았어요\./u
-      : /코드가 맞지 않아 실행하지 않았어요\. 아무것도 바꾸지 않았어요\./u);
+  const cases: [string, string[], number, RegExp][] = [
+    ['1', ['n'], 4, /정리하지 않았어요\. 아무것도 바꾸지 않았어요\./u],
+    ['1', ['아니요'], 4, /정리하지 않았어요\. 아무것도 바꾸지 않았어요\./u],
+    ['2', ['n'], 4, /휴지통으로 보내지 않았어요\. 아무것도 바꾸지 않았어요\./u],
+    ['2', [''], 4, /휴지통으로 보내지 않았어요\. 아무것도 바꾸지 않았어요\./u],   // Enter is "no" for the trash
+    ['1', ['00000000', 'abcdefgh-x', 'ffffffff'], 2, new RegExp(UNCLEAR, 'u')],
+    ['2', ['ffffffff', 'yess', '?'], 2, new RegExp(UNCLEAR, 'u')],
+  ];
+  for (const [menu, answers, exit, message] of cases) {
+    const question = menu === '1' ? ORGANIZE : TRASH;
+    const r = await pty([{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: menu + ENTER }, ...(menu === '1' ? [KEEP_UNKNOWN] : []),
+      ...answers.map((a) => ({ expect: question, send: a + ENTER })), { expect: message.source }]);
+    assert.equal(r.exit, exit, `menu ${menu} answers ${JSON.stringify(answers)}\n${r.transcript}`);
+    assert.match(r.transcript, message);
+    assert.ok(!r.transcript.includes('계속하려면 아래 코드를'), 'no code is shown');
     assert.equal(r.stdout, '', 'nothing on stdout when nothing ran');
     assert.deepEqual(await snap(work), before);
     assert.deepEqual(await writesOf(state), []);
   }
+  assert.ok(!await exists(path.join(state, 'guided.json')), 'a refused run is not remembered as the last folder');
 });
 
-test('pty: menu 1 + shown code really moves files; a new `afo undo` process (Ctrl+C first, then the code) restores the manifest', { skip: SKIP }, async (t) => {
+test('pty: menu 1 + y really moves files; a new `afo undo` process (Ctrl+C, n, unclear answers, then y) restores the manifest', { skip: SKIP }, async (t) => {
   const { state, work, pty } = await setup(t, BASE);
   const before = await snap(work);
   const r = await pty([{ expect: FOLDER, send: `${work.replace(/ /gu, '\\ ')} ${ENTER}` }, { expect: MENU, send: `1${ENTER}` }, KEEP_UNKNOWN,
-    { expect: '이렇게 정리할게요\\(파일 5개, 덮어쓰지 않아요\\):' }, { expect: CODE, send: `{1}${ENTER}` }]);
+    { expect: '이렇게 정리할게요\\(파일 5개, 덮어쓰지 않아요\\):' }, { expect: ORGANIZE, send: `y${ENTER}` }]);
   assert.equal(r.exit, 0, r.transcript);
   // Result goes to stdout; questions and screens do not.
-  assert.match(r.stdout, /정리를 마쳤어요\. \(실행 ID [0-9a-f]{8}\)\n {2}옮김 5 · 건너뜀 0 · 실패 0\n되돌리려면: afo undo/u);
+  assert.match(r.stdout, /정리를 마쳤어요\.\n {2}옮김 5 · 건너뜀 0 · 실패 0\n되돌리려면: afo undo\n/u);
+  assert.match(r.stdout, /\n다음에도 afo만 입력하고 Enter를 누르면 이 폴더를 같은 방식으로 정리해요\.\n정리 기록은 afo runs로 볼 수 있어요\.\n?$/u);
+  assert.ok(!r.stdout.includes('실행 ID'), 'no run ID in the result');
   assert.ok(!r.stdout.includes('번호를 입력하세요') && !r.stdout.includes('끌어다'), 'questions are not on stdout');
   const moved = await snap(work);
   for (const [source, destination] of Object.entries(MOVES)) {
@@ -247,11 +267,17 @@ test('pty: menu 1 + shown code really moves files; a new `afo undo` process (Ctr
   assert.equal(cancelled.exit, 130, cancelled.transcript);
   assert.deepEqual(await snap(work), moved, 'Ctrl+C at the undo question changes nothing');
 
-  const wrong = await pty([{ expect: UNDO, send: `00000000${ENTER}` }], ['undo']);
+  const runRecords = await snap(path.join(state, 'runs'));
+  const wrong = await pty([{ expect: UNDO, send: `n${ENTER}` }, { expect: '되돌리지 않았어요\\. 아무것도 바꾸지 않았어요\\.' }], ['undo']);
   assert.equal(wrong.exit, 4, wrong.transcript);
+  assert.ok(!wrong.transcript.includes('계속하려면 아래 코드를'), 'no code on the undo screen');
+  const unclear = await pty([{ expect: UNDO, send: `00000000${ENTER}` }, { expect: UNDO, send: `x${ENTER}` }, { expect: UNDO, send: `q${ENTER}` },
+    { expect: UNCLEAR }], ['undo']);
+  assert.equal(unclear.exit, 2, unclear.transcript);
   assert.deepEqual(await snap(work), moved);
+  assert.deepEqual(await snap(path.join(state, 'runs')), runRecords, 'n / unclear answers write no run record');
 
-  const undo = await pty([{ expect: UNDO, send: `{1}${ENTER}` }], ['undo']);
+  const undo = await pty([{ expect: UNDO, send: `y${ENTER}` }], ['undo']);
   assert.equal(undo.exit, 0, undo.transcript);
   const after = await snap(work);
   assert.deepEqual(filesOf(after), filesOf(before), 'same paths, sha256 and mtime as before');
@@ -280,8 +306,8 @@ test('pty: menu 4, empty menu answer and empty first answer quit with 0; Ctrl+C 
     ['folder question after typing', [{ expect: FOLDER, send: `${work}${CTRL_C}` }]],
     ['menu question', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: CTRL_C }]],
     ['menu after 3)', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `3${ENTER}` }, { expect: MENU, send: CTRL_C }]],
-    ['code question (organize)', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `1${ENTER}` }, KEEP_UNKNOWN, { expect: CODE, send: CTRL_C }]],
-    ['code question (trash)', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `2${ENTER}` }, { expect: CODE, send: CTRL_C }]],
+    ['yes/no question (organize)', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `1${ENTER}` }, KEEP_UNKNOWN, { expect: ORGANIZE, send: CTRL_C }]],
+    ['yes/no question (trash)', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `2${ENTER}` }, { expect: TRASH, send: CTRL_C }]],
   ];
   for (const [label, steps] of cancels) {
     const r = await pty(steps);
@@ -299,7 +325,7 @@ test('pty: menu items without work show "할 일 없음" and cannot be chosen; t
     { expect: '1\\) 폴더별로 정리하기\\(되돌릴 수 있어요\\) — 파일 2개\\n {2}2\\) 중복 파일을 휴지통으로 보내기 — 할 일 없음' },
     { expect: MENU, send: `2${ENTER}` }, { expect: '그 작업은 할 일이 없어요\\. 다른 번호를 골라 주세요\\.' }, { expect: MENU, send: `4${ENTER}` }]);
   assert.equal(r1.exit, 0, r1.transcript);
-  assert.ok(!r1.transcript.includes('계속하려면 아래 코드를'));
+  assert.ok(!r1.transcript.includes('계속하려면 아래 코드를') && !r1.transcript.includes('이대로 정리할까요'));
   assert.match(r1.transcript, /같은 내용의 중복 파일: 0묶음/u);
 
   // Nothing to organize (already placed + needs review) and no duplicates: neither 1 nor 2 can be chosen.
@@ -313,7 +339,8 @@ test('pty: menu items without work show "할 일 없음" and cannot be chosen; t
   const r3 = await idle.pty([{ expect: FOLDER, send: `${idle.work}${ENTER}` }, { expect: MENU, send: `1${ENTER}` }, { expect: MENU, send: `9${ENTER}` },
     { expect: MENU, send: `1${ENTER}` }, { expect: '번호를 알아듣지 못해 그만둘게요\\. 아무것도 바꾸지 않았어요\\.' }]);
   assert.equal(r3.exit, 2, r3.transcript);
-  assert.ok(!r3.transcript.includes('계속하려면 아래 코드를'));
+  assert.ok(!r3.transcript.includes('계속하려면 아래 코드를') && !r3.transcript.includes('이대로 정리할까요'));
+  assert.match(r3.transcript, /1~5 중에서 골라 주세요\./u);
   assert.deepEqual(await snap(idle.work), before);
   assert.deepEqual(await writesOf(idle.state), []);
 });
@@ -344,9 +371,10 @@ test('pty: saved personal rules — none/applied/disabled are stated; reference 
   await savePhysicsRule(plain, path.join(work, '정리함'), path.join(path.dirname(state), 'draft.json'));
   const before = await snap(work);
   const r = await pty([{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: '저장된 내 정리 규칙을 적용했어요\\.' },
-    { expect: MENU, send: `3${ENTER}` }, { expect: MENU, send: `1${ENTER}` }, { expect: CODE, send: `{1}${ENTER}` }]);
+    { expect: MENU, send: `3${ENTER}` }, { expect: MENU, send: `1${ENTER}` }, { expect: ORGANIZE, send: ENTER }]);   // Enter = yes (organize)
   assert.equal(r.exit, 0, r.transcript);
-  assert.match(r.transcript, /폴더별로 정리할 수 있는 파일: 2개/u);
+  assert.match(r.transcript, /폴더별로 정리할 수 있는 파일: 2개 — 정리하면 이렇게 돼요:/u);
+  assert.match(r.stdout, /저장한 내 정리 규칙도 계속 적용돼요\./u);
   assert.match(r.transcript, /그대로 둘 파일: 5개/u);
   assert.match(r.transcript, /\[정리\] 물리_새보고서\.pdf → 과제\/물리\/물리_새보고서\.pdf/u, 'confirmed rule applied');
   assert.match(r.transcript, /\[정리\] 수학_숙제\.pdf → 문서\/수학_숙제\.pdf/u, 'unconfirmed math rule not applied');
@@ -358,7 +386,10 @@ test('pty: saved personal rules — none/applied/disabled are stated; reference 
   assert.equal(after['물리_새보고서.pdf'], undefined);
 
   assert.equal(plain(['rules', 'disable-all']).status, 0);
-  const off = await pty([{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `3${ENTER}` }, { expect: MENU, send: `4${ENTER}` }]);
+  // After a guided run the folder is remembered: the question offers it, and Enter takes it.
+  const off = await pty([{ expect: `지난번에 정리한 폴더: ${work.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}\\n` }, { expect: LAST, send: ENTER },
+    { expect: MENU, send: `3${ENTER}` }, { expect: MENU, send: `4${ENTER}` }]);
+  assert.equal(off.exit, 0, off.transcript);
   assert.match(off.transcript, /내 정리 규칙이 꺼져 있어 기본 분류를 썼어요\./u);
   // Rules off: the moved file would now go to 문서/ by default, but reference files stay protected.
   assert.match(off.transcript, /\[정리\] 과제\/물리\/물리_새보고서\.pdf → 문서\/물리_새보고서\.pdf/u);
@@ -384,12 +415,14 @@ test('pty: the guided summary says when files are kept because they are referenc
 test('pty: honest wording — "아직 아무것도 바꾸지 않았어요" before running, no permanent delete in the menu, trash is not shown as freed space', { skip: SKIP }, async (t) => {
   const { work, pty } = await setup(t, BASE);
   const r = await pty([{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `3${ENTER}` }, { expect: MENU, send: `2${ENTER}` },
-    { expect: CODE, send: ENTER }]);
-  assert.equal(r.exit, 4);
+    { expect: TRASH, send: ENTER }]);
+  assert.equal(r.exit, 4, 'Enter is "no" for the trash');
   assert.match(r.transcript, /파일 6개를 살펴봤어요\. \(아직 아무것도 바꾸지 않았어요\)/u);
   assert.match(r.transcript, /자세히 보기 — 분류 결과\(아직 아무것도 바꾸지 않았어요\):/u);
   assert.match(r.transcript, /이 사본들을 휴지통으로 보낼게요\(1개, 남길 파일은 그대로\):\n {2}c copy\.txt \(같은 내용의 'c\.txt' 파일은 남겨요\)/u);
-  assert.match(r.transcript, /AFO 파일 정리 도우미예요\. 파일을 실제로 옮기기 전에 꼭 확인 코드를 물어봐요\./u);
+  assert.match(r.transcript, /AFO 파일 정리 도우미예요\. 파일을 옮기기 전에 무엇을 할지 보여 주고 꼭 물어봐요\. \(Ctrl\+C로 언제든 그만둘 수 있어요\)/u);
+  assert.match(r.transcript, /이 사본 1개를 휴지통으로 보낼까요\? afo undo로는 되돌리지 않아요\. \(y\/N\): /u);
+  assert.match(r.transcript, /휴지통으로 보내지 않았어요\. 아무것도 바꾸지 않았어요\./u);
   for (const banned of ['영구', '확보', '공간', ' B ', 'bytes']) assert.ok(!r.transcript.includes(banned), `no '${banned}' in the guided screens`);
 });
 
@@ -413,6 +446,25 @@ test('pty: real symlink to the entry point (as npm link installs it) runs direct
   assert.deepEqual(await snap(work), before);
 });
 
+test('pty: `afo <폴더>` opens that folder at once (no folder question), organizes on Enter (default yes); a pipe gets the preview', { skip: SKIP }, async (t) => {
+  const { state, work, pty, plain } = await setup(t, BASE);
+  const before = await snap(work);
+  const piped = plain([work]);
+  assert.equal(piped.status, 0, piped.stderr);
+  assert.equal(piped.stdout, plain(['preview', work]).stdout, 'no TTY: the same output as preview');
+  assert.deepEqual(await snap(work), before);
+  assert.deepEqual(await writesOf(state), []);
+  const r = await pty([{ expect: '파일 6개를 살펴봤어요' }, { expect: MENU, send: `1${ENTER}` }, KEEP_UNKNOWN, { expect: ORGANIZE, send: ENTER }], [work]);
+  assert.equal(r.exit, 0, r.transcript);
+  assert.ok(!r.transcript.includes('끌어다 놓고'), 'no folder question');
+  const moved = await snap(work);
+  for (const [source, destination] of Object.entries(MOVES)) {
+    assert.equal(moved[source], undefined, `${source} left its original path`);
+    assert.equal(moved[destination]?.sha256, before[source]!.sha256, `${destination} has the content of ${source}`);
+  }
+  assert.deepEqual(moved['notes'], before['notes']);
+});
+
 test('pty: menu 2 sends one synthetic afo-test- copy to the real OS trash and keeps the keeper (AFO_REAL_TRASH_TEST=1, macOS)', {
   skip: SKIP || (realTrash ? false : 'AFO_REAL_TRASH_TEST=1(macOS)일 때만 합성 사본 1개를 실제 휴지통으로 보냅니다.'),
 }, async (t) => {
@@ -420,9 +472,9 @@ test('pty: menu 2 sends one synthetic afo-test- copy to the real OS trash and ke
   const { work, pty } = await setup(t, { [`${tag}.txt`]: `dup ${tag}`, [`${tag} copy.txt`]: `dup ${tag}`, 'other.pdf': 'unrelated' });
   const before = await snap(work);
   const r = await pty([{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `2${ENTER}` },
-    { expect: '이 사본들을 휴지통으로 보낼게요\\(1개, 남길 파일은 그대로\\):' }, { expect: CODE, send: `{1}${ENTER}` }]);
+    { expect: '이 사본들을 휴지통으로 보낼게요\\(1개, 남길 파일은 그대로\\):' }, { expect: TRASH, send: `y${ENTER}` }]);
   assert.equal(r.exit, 0, r.transcript);
-  assert.match(r.stdout, /휴지통 보내기를 마쳤어요\. .*\n {2}휴지통으로 보냄 1 · 건너뜀 0 · 실패 0/u);
+  assert.match(r.stdout, /휴지통 보내기를 마쳤어요\.\n {2}휴지통으로 보냄 1 · 건너뜀 0 · 실패 0/u);
   assert.match(r.stdout, /afo undo로는 되돌리지 않아요/u);
   assert.ok(!/확보|공간/u.test(r.transcript), 'trash is not reported as freed space');
   const after = await snap(work);
@@ -508,7 +560,7 @@ test('R-K2 keeper through the CLI on real files: plan --delete-duplicates all an
   assert.deepEqual(withRef, ['archive (1).tar.gz <- archive.tar.gz', 'copy (1).txt <- copy.txt', '받은/보고서 copy.pdf <- 보고서.pdf',
     '보고서 (1).pdf <- 보고서.pdf'].sort());
 
-  const g = await pty([{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `2${ENTER}` }, { expect: CODE, send: ENTER }]);
+  const g = await pty([{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `2${ENTER}` }, { expect: TRASH, send: ENTER }]);
   assert.equal(g.exit, 4, g.transcript);
   assert.match(g.transcript, / {2}보고서 \(1\)\.pdf \(같은 내용의 '보고서\.pdf' 파일은 남겨요\)/u);
   assert.match(g.transcript, / {2}archive \(1\)\.tar\.gz \(같은 내용의 'archive\.tar\.gz' 파일은 남겨요\)/u);
@@ -557,7 +609,7 @@ test('R-U1 undo: created folders removed deepest first; pre-existing folders (al
   await symlink(path.join(outside, '이미지-target'), path.join(work, '이미지'));
   const beforeUndo = await snap(work); const outsideBefore = await snap(outside);
 
-  const u = await pty([{ expect: UNDO, send: `{1}${ENTER}` }], ['undo']);
+  const u = await pty([{ expect: UNDO, send: `y${ENTER}` }], ['undo']);
   assert.equal(u.exit, 3, u.transcript);   // b.jpg (link in path) and x.zip (original path taken) are not moved back
   const after = await snap(work);
   for (const d of ['깊은', '깊은/폴더', '깊은/폴더/안']) assert.equal(after[d], undefined, `${d} removed (empty, created by the run)`);
@@ -612,7 +664,7 @@ test('R-U2 undo with tampered createdDirectories (outside, "..", root itself, ab
         inode: { INO: String(o.ino), EINO: String(e.ino) }[tamper.inode] ?? tamper.inode }];
     });
     const moved = await both();
-    const u = await pty(readable ? [{ expect: UNDO, send: `{1}${ENTER}` }] : [], ['undo']);
+    const u = await pty(readable ? [{ expect: UNDO, send: `y${ENTER}` }] : [], ['undo']);
     const after = await both();
     assert.deepEqual(after.outside, start.outside, `${label}: outside unchanged`);
     if (!readable) {
@@ -644,7 +696,7 @@ test('R-U3 older run record (no createdDirectories): undo works, no folder remov
   const start = await snap(work);
   const runId = organize(plain, work);
   await editRun(state, runId, (r) => { delete r['createdDirectories']; });
-  const u = await pty([{ expect: UNDO, send: `{1}${ENTER}` }], ['undo']);
+  const u = await pty([{ expect: UNDO, send: `y${ENTER}` }], ['undo']);
   assert.equal(u.exit, 0, u.transcript);
   const after = await snap(work);
   assert.deepEqual(filesOf(after), filesOf(start), 'files back');
@@ -667,16 +719,18 @@ test('R-U3 older run record (no createdDirectories): undo works, no folder remov
 test('R-W guided wording: no "AFO 오류" on user stops (codes kept), 해요체, trash note, copy hint, short IDs, short undo screen in local time', { skip: SKIP }, async (t) => {
   const { state, work, pty } = await setup(t, BASE);
   const stops: [string, Step[], number][] = [
-    ['wrong code', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `1${ENTER}` }, KEEP_UNKNOWN, { expect: CODE, send: `00000000${ENTER}` }], 4],
-    ['empty code', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `2${ENTER}` }, { expect: CODE, send: ENTER }], 4],
+    ['organize n', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `1${ENTER}` }, KEEP_UNKNOWN, { expect: ORGANIZE, send: `n${ENTER}` }], 4],
+    ['trash Enter', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `2${ENTER}` }, { expect: TRASH, send: ENTER }], 4],
+    ['3 unclear yes/no', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `2${ENTER}` }, { expect: TRASH, send: `00000000${ENTER}` },
+      { expect: TRASH, send: `maybe${ENTER}` }, { expect: TRASH, send: `ok${ENTER}` }], 2],
     ['3 bad folders', [{ expect: FOLDER, send: `/없음1${ENTER}` }, { expect: FOLDER, send: `/없음2${ENTER}` }, { expect: FOLDER, send: `/없음3${ENTER}` }], 1],
     ['3 bad answers', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `9${ENTER}` }, { expect: MENU, send: `8${ENTER}` }, { expect: MENU, send: `7${ENTER}` }], 2],
     ['Ctrl+C', [{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: CTRL_C }], 130],
-    ['undo empty code', [], 4],
+    ['undo n', [], 4],
   ];
   const screens: string[] = [];
   for (const [label, steps, code] of stops) {
-    if (label === 'undo empty code') continue; // run after a real organize below
+    if (label === 'undo n') continue; // run after a real organize below
     const r = await pty(steps);
     assert.equal(r.exit, code, `${label}\n${r.transcript}`);
     assert.ok(!r.transcript.includes('AFO 오류'), `${label}: no "AFO 오류" prefix\n${r.transcript}`);
@@ -688,17 +742,18 @@ test('R-W guided wording: no "AFO 오류" on user stops (codes kept), 해요체,
   assert.match(s, /휴지통으로 보낼 수 있는 사본 1개/u);
   assert.match(s, /직접 확인이 필요한 파일: 1개 — 확장자 없음 1\n/u);
 
-  const ok = await pty([{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `1${ENTER}` }, KEEP_UNKNOWN, { expect: CODE, send: `{1}${ENTER}` }]);
+  const ok = await pty([{ expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `1${ENTER}` }, KEEP_UNKNOWN, { expect: ORGANIZE, send: `y${ENTER}` }]);
   assert.equal(ok.exit, 0, ok.transcript);
-  assert.match(ok.stdout, /정리를 마쳤어요\. \(실행 ID [0-9a-f]{8}\)\n/u);
-  assert.match(ok.stdout, /전체 실행 ID와 기록은 afo runs로 볼 수 있어요\./u);
+  assert.match(ok.stdout, /^정리를 마쳤어요\.\n/u, 'short headline, no run ID');
+  assert.match(ok.stdout, /정리 기록은 afo runs로 볼 수 있어요\./u);
+  assert.ok(!ok.stdout.includes('실행 ID'));
   const runId = (await readdir(path.join(state, 'runs'))).find((f) => /^[0-9a-f-]{36}\.json$/u.test(f))!.slice(0, -5);
   const started = (JSON.parse(await readFile(runFile(state, runId), 'utf8')) as { startedAt: string }).startedAt;
-  const noCode = await pty([{ expect: UNDO, send: ENTER }], ['undo']);
+  const noCode = await pty([{ expect: UNDO, send: `n${ENTER}` }], ['undo']);
   assert.equal(noCode.exit, 4, noCode.transcript);
   assert.ok(!noCode.transcript.includes('AFO 오류'), noCode.transcript);
-  assert.match(noCode.transcript, /코드를 입력하지 않아 되돌리지 않았어요\. 아무것도 바꾸지 않았어요\./u);
-  const u = await pty([{ expect: UNDO, send: `{1}${ENTER}` }], ['undo']);
+  assert.match(noCode.transcript, /되돌리지 않았어요\. 아무것도 바꾸지 않았어요\./u);
+  const u = await pty([{ expect: UNDO, send: `y${ENTER}` }], ['undo']);
   assert.equal(u.exit, 0, u.transcript);
   // Local time (TZ=Asia/Seoul = UTC+9, written out by hand); no operation IDs, ISO timestamps or full run IDs on screen.
   const kst = new Date(Date.parse(started) + 9 * 3600_000);

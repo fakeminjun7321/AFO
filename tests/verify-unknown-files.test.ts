@@ -269,8 +269,11 @@ async function setup(t: TestContext, spec: Spec) {
 const FOLDER = '끌어다 놓고 Enter를 누르세요\\(경로를 붙여 넣어도 돼요, 그냥 Enter는 종료\\): ';
 const MENU = '번호를 입력하세요: ';
 const UNKNOWN_Q = '번호를 입력하세요\\(그냥 Enter는 3\\): ';
-const CODE = '계속하려면 아래 코드를 입력하세요: ([a-f0-9]{8})\\n코드\\(그냥 Enter는 취소\\): ';
-const UNDO = '계속하려면 아래 코드를 입력하세요: (\\S{8})\\n코드\\(그냥 Enter는 취소\\): ';
+/** Either folder question: the second form appears once a guided run has executed in this state folder (Enter = the last folder). */
+const FOLDER_ANY = '끌어다 놓고 Enter를 누르세요\\((?:경로를 붙여 넣어도 돼요, 그냥 Enter는 종료|그냥 Enter는 지난번 폴더, q는 종료)\\): ';
+// Confirmations are yes/no now (organize: Enter = yes; `afo undo` in a terminal: Enter = yes); no code is shown or typed.
+const ORGANIZE = '이대로 정리할까요\\? 나중에 afo undo로 되돌릴 수 있어요\\. \\(Y/n\\): ';
+const UNDO = '되돌릴까요\\? \\(Y/n\\): ';
 const ENTER = '\r'; const CTRL_C = '\x03';
 const where = (what: string): string => `${esc(what)}를 어느 폴더로 옮길까요\\? \\(예: 데이터, 그냥 Enter는 그대로 두기\\): `;
 const again = (ext: string, folder: string): string => `다음에도 '${esc(ext)}' 파일은 '${esc(folder)}' 폴더로 정리할까요\\? \\(y/N\\): `;
@@ -308,7 +311,7 @@ test('U3 pty 1) 기타: really moved (manifest), unfinished downloads/disguised/
     { expect: UNKNOWN_Q, send: `1${ENTER}` },
     { expect: "종류를 모르는 파일 4개를 '기타' 폴더로 옮기는 계획을 만들게요\\." },
     { expect: '이렇게 정리할게요\\(파일 5개, 덮어쓰지 않아요\\):' },
-    { expect: CODE, send: `{1}${ENTER}` }]);
+    { expect: ORGANIZE, send: `y${ENTER}` }]);
   assert.equal(r.exit, 0, r.transcript);
   assert.ok(!r.transcript.includes('다음에도'), '1) asks no save question');
   assert.match(r.stdout, /옮김 5 · 건너뜀 0 · 실패 0/u);
@@ -318,7 +321,7 @@ test('U3 pty 1) 기타: really moved (manifest), unfinished downloads/disguised/
   for (const k of ['movie.mp4.part', 'dl/dump.sql.gz.part', 'big.crdownload', '.env', 'report.pdf.exe']) assert.deepEqual(moved[k], before[k], k);
   assert.deepEqual(await outside(), out0, 'nothing outside the work root changed');
 
-  const u = await pty([{ expect: UNDO, send: `{1}${ENTER}` }], ['undo']);
+  const u = await pty([{ expect: UNDO, send: `y${ENTER}` }], ['undo']);
   assert.equal(u.exit, 0, u.transcript);
   assert.deepEqual(await snap(work), before, 'every file (path, bytes, mtime) and folder as before: 기타/ and 문서/ removed, sub/ kept');
   assert.deepEqual(await outside(), out0);
@@ -350,7 +353,7 @@ test('U4 pty 2) bad folder names (hidden, .., absolute, C:\\, backslash, CON/nul
     ['같은 특수 문자나 제어 문자는 안 돼요', 2]];
   for (const [reason, n] of reasons) assert.equal((r.transcript.match(new RegExp(esc(reason), 'gu')) ?? []).length, n, reason);
   assert.ok(!r.transcript.includes('다음에도'), 'no save question without a folder');
-  assert.ok(!r.transcript.includes('계속하려면 아래 코드를'), 'no plan offered');
+  assert.ok(!r.transcript.includes('이대로 정리할까요') && !r.transcript.includes('계속하려면 아래 코드를'), 'no plan offered');
   assert.match(r.stdout, /옮길 파일이 없어요\. 아무것도 바꾸지 않았어요\./u);
   assert.deepEqual(await snap(work), before);
   assert.deepEqual(await outside(), out0);
@@ -365,7 +368,7 @@ test('U5 pty 2) folder = an existing file name, 1) with a file named "기타", a
   let before = await snap(work); const out0 = await outside();
   const r = await pty([{ expect: FOLDER, send: work + ENTER }, { expect: MENU, send: `1${ENTER}` }, { expect: UNKNOWN_Q, send: `2${ENTER}` },
     { expect: where("'.xyz' 파일 1개"), send: `notes.pdf.exe${ENTER}` }, { expect: again('.xyz', 'notes.pdf.exe'), send: `N${ENTER}` },
-    { expect: '이렇게 정리할게요\\(파일 1개, 덮어쓰지 않아요\\):\\n {2}y\\.pdf → 문서/y\\.pdf\\n' }, { expect: CODE, send: `{1}${ENTER}` }]);
+    { expect: '이렇게 정리할게요\\(파일 1개, 덮어쓰지 않아요\\):\\n {2}y\\.pdf → 문서/y\\.pdf\\n' }, { expect: ORGANIZE, send: `y${ENTER}` }]);
   assert.equal(r.exit, 0, r.transcript);
   assertMoved(before, await snap(work), { 'y.pdf': '문서/y.pdf' });
 
@@ -373,17 +376,17 @@ test('U5 pty 2) folder = an existing file name, 1) with a file named "기타", a
   await rm(work, { recursive: true }); await mkdir(work);
   await put(work, { '기타': 'a file named gita', 'e.xyz': 'e', 'sub/f.qqq': 'f' });
   before = await snap(work);
-  const r2 = await pty([{ expect: FOLDER, send: work + ENTER }, { expect: MENU, send: `1${ENTER}` }, { expect: UNKNOWN_Q, send: `1${ENTER}` }]);
+  const r2 = await pty([{ expect: FOLDER_ANY, send: work + ENTER }, { expect: MENU, send: `1${ENTER}` }, { expect: UNKNOWN_Q, send: `1${ENTER}` }]);
   assert.equal(r2.exit, 0, r2.transcript);
-  assert.ok(!r2.transcript.includes('계속하려면 아래 코드를'), 'no code: nothing could be planned');
+  assert.ok(!r2.transcript.includes('이대로 정리할까요'), 'no question: nothing could be planned');
   assert.deepEqual(await snap(work), before, '기타 is still the same file; nothing moved');
 
   // Two unknown files with the same name in different folders, and one whose 기타/ destination already exists.
   await rm(work, { recursive: true }); await mkdir(work);
   await put(work, { 'a/s.xyz': '1', 'b/s.xyz': '2', 't.qqq': 'root t', '기타/t.qqq': 'already there', 'k.pdf': 'k' });
   before = await snap(work);
-  const r3 = await pty([{ expect: FOLDER, send: work + ENTER }, { expect: MENU, send: `1${ENTER}` }, { expect: UNKNOWN_Q, send: `1${ENTER}` },
-    { expect: '이렇게 정리할게요\\(파일 1개, 덮어쓰지 않아요\\):' }, { expect: CODE, send: `{1}${ENTER}` }]);
+  const r3 = await pty([{ expect: FOLDER_ANY, send: work + ENTER }, { expect: MENU, send: `1${ENTER}` }, { expect: UNKNOWN_Q, send: `1${ENTER}` },
+    { expect: '이렇게 정리할게요\\(파일 1개, 덮어쓰지 않아요\\):' }, { expect: ORGANIZE, send: `y${ENTER}` }]);
   assert.equal(r3.exit, 0, r3.transcript);
   const after = await snap(work);
   assertMoved(before, after, { 'k.pdf': '문서/k.pdf' });
@@ -399,7 +402,7 @@ test('U5-D2 guided tells why unknown files it promised to move were left out (co
 });
 
 // ---------- 6. pty: "다음에도" y / N / no extension, then Ctrl+C or no code ----------
-test('U6 pty "다음에도": y saves .xyz only (applied by new processes, any case), N saves nothing, no-extension/non-ASCII get no question; Ctrl+C and empty code leave files as they were', { skip: SKIP }, async (t) => {
+test('U6 pty "다음에도": y saves .xyz only (applied by new processes, any case), N saves nothing, no-extension/non-ASCII get no question; Ctrl+C and "n" leave files as they were', { skip: SKIP }, async (t) => {
   const { base, work, pty, plain, outside, stateWrites, corrections } = await setup(t, {
     'data.xyz': 'x', 'k.qqq': 'q', '메모': 'm', 'b.한글': 'h', 'movie.mp4.part': 'partial' });
   const before = await snap(work); const out0 = await outside();
@@ -410,11 +413,11 @@ test('U6 pty "다음에도": y saves .xyz only (applied by new processes, any ca
     { expect: where('확장자 없는 파일 1개'), send: `메모함${ENTER}` },
     { expect: "저장했어요: 다음에도 '\\.xyz' 파일은 '자료' 폴더로 정리해요\\." },
     { expect: '이렇게 정리할게요\\(파일 4개, 덮어쓰지 않아요\\):' },
-    { expect: CODE, send: CTRL_C }]);
+    { expect: ORGANIZE, send: CTRL_C }]);
   assert.equal(r.exit, 130, r.transcript);
   assert.match(r.transcript, /그만뒀어요\(Ctrl\+C\)\./u);
   assert.equal((r.transcript.match(/다음에도 '[^']+' 파일은 '[^']+' 폴더로 정리할까요/gu) ?? []).length, 2, 'asked for .qqq and .xyz only (not 한글, not 확장자 없음)');
-  assert.deepEqual(await snap(work), before, 'Ctrl+C at the code: no file changed');
+  assert.deepEqual(await snap(work), before, 'Ctrl+C at the yes/no question: no file changed');
   assert.deepEqual(await stateWrites(), [], 'no approval / run / journal');
   assert.deepEqual(await corrections(), [[{ type: 'keyword', extension: '.xyz', keyword: null }, '자료']], 'the y answer stays saved; N did not save');
 
@@ -430,13 +433,13 @@ test('U6 pty "다음에도": y saves .xyz only (applied by new processes, any ca
     'z.xyz.part': [null, 'INCOMPLETE_DOWNLOAD'] });
   assert.match(plain(['rules', 'list']).stdout, /\.xyz → 자료/u);
 
-  // Second guided run on the same folder: .xyz is no longer "unknown" (saved correction); empty code runs nothing.
+  // Second guided run on the same folder: .xyz is no longer "unknown" (saved correction); "n" runs nothing.
   const r2 = await pty([{ expect: FOLDER, send: work + ENTER }, { expect: MENU, send: `1${ENTER}` },
     { expect: '종류를 모르는 파일이 있어요: \\.qqq 1개\\(예: k\\.qqq\\), \\.한글 1개\\(예: b\\.한글\\), 확장자 없음 1개\\(예: 메모\\)' },
     { expect: UNKNOWN_Q, send: ENTER }, { expect: '종류를 모르는 파일 3개는 그대로 둬요\\.' },
-    { expect: '이렇게 정리할게요\\(파일 1개, 덮어쓰지 않아요\\):\\n {2}data\\.xyz → 자료/data\\.xyz' }, { expect: CODE, send: ENTER }]);
+    { expect: '이렇게 정리할게요\\(파일 1개, 덮어쓰지 않아요\\):\\n {2}data\\.xyz → 자료/data\\.xyz' }, { expect: ORGANIZE, send: `n${ENTER}` }]);
   assert.equal(r2.exit, 4, r2.transcript);
-  assert.match(r2.transcript, /코드를 입력하지 않아 실행하지 않았어요\. 아무것도 바꾸지 않았어요\./u);
+  assert.match(r2.transcript, /정리하지 않았어요\. 아무것도 바꾸지 않았어요\./u);
   assert.deepEqual(await snap(work), before);
   assert.deepEqual(await outside(), out0);
   assert.deepEqual(await stateWrites(), []);
@@ -453,7 +456,12 @@ function session(state: string, answers: (string | ((screen: string) => string))
     return Promise.resolve(typeof a === 'function' ? a(lines.join('\n')) : a);
   } } };
 }
-const shownCode = (screen: string): string => /계속하려면 아래 코드를 입력하세요: ([a-f0-9]{8})/u.exec(screen)![1]!;
+/** "y" to the organize question (was: the approval code read from the screen); checks it is that question and no code is shown. */
+const shownCode = (screen: string): string => {
+  assert.ok(screen.endsWith('이대로 정리할까요? 나중에 afo undo로 되돌릴 수 있어요. (Y/n): '), 'the yes/no question');
+  assert.ok(!screen.includes('계속하려면 아래 코드를'), 'no code to type');
+  return 'y';
+};
 
 test('U7 io: a NUL byte in the folder name is refused; three refusals keep the files', async (t) => {
   const { work, state } = await setup(t, { 'd.xyz': 'x' });
@@ -533,7 +541,7 @@ test('R1b D1 shared schema: `plan --move` accepts a 255-byte folder and refuses 
 test('R2 a stored profile whose saved correction points to a 256-byte folder is treated as corrupt: not applied, files untouched, the file kept', async (t) => {
   const { work, state, plain } = await setup(t, { 'd.xyz': 'x', 'y.pdf': 'p' });
   // Save a valid 255-byte correction through the guided flow, then make it 256 bytes (as an older build could have stored it).
-  await runCli([], undefined, session(state, [work, '1', '2', 'a'.repeat(255), 'y', '']).io).catch(() => undefined);
+  await runCli([], undefined, session(state, [work, '1', '2', 'a'.repeat(255), 'y', 'n']).io).catch(() => undefined);
   const file = path.join(state, 'profiles', 'active.json');
   const doc = JSON.parse(await readFile(file, 'utf8')) as { profile: { corrections: { targetDirectory: string }[] } };
   doc.profile.corrections[0]!.targetDirectory += 'a';
@@ -546,7 +554,7 @@ test('R2 a stored profile whose saved correction points to a 256-byte folder is 
   const items = (JSON.parse(p.stdout) as { preview: { items: { source: string; reasonCode: string }[] }; profile: { source: string } });
   assert.equal(items.profile.source, 'corrupt');
   assert.deepEqual(items.preview.items.map((i) => [i.source, i.reasonCode]).sort(), [['d.xyz', 'UNKNOWN_EXTENSION'], ['y.pdf', 'DEFAULT_EXTENSION']]);
-  const g = session(state, [work, '1', '2', '자료', '']);
+  const g = session(state, [work, '1', '2', '자료', 'n']);
   await assert.rejects(runCli([], undefined, g.io), (e: unknown) => exitCodeOf(e) === 4);
   assert.match(g.screen(), /저장된 내 정리 규칙 파일이 손상돼 이번 정리에만 적용해요\./u);
   assert.ok(!g.screen().includes('다음에도'), 'no save question over a corrupt profile');
@@ -570,7 +578,7 @@ test('R3 pty D2: the file "기타" and same-name collisions are explained by rea
   const r2 = await pty([{ expect: FOLDER, send: work + ENTER }, { expect: MENU, send: `1${ENTER}` }, { expect: UNKNOWN_Q, send: `1${ENTER}` },
     { expect: "종류를 모르는 파일 3개를 '기타' 폴더로 옮기는 계획을 만들게요\\. \\('기타' 폴더에 이미 있는 1개는 그대로 둬요\\)" },
     { expect: '옮기지 못하는 파일 3개\\(그대로 둬요\\):' },
-    { expect: '이렇게 정리할게요\\(파일 1개, 덮어쓰지 않아요\\):' }, { expect: CODE, send: ENTER }]);
+    { expect: '이렇게 정리할게요\\(파일 1개, 덮어쓰지 않아요\\):' }, { expect: ORGANIZE, send: `n${ENTER}` }]);
   assert.equal(r2.exit, 4, r2.transcript);
   assert.match(r2.transcript, /^ {2}t\.qqq — 옮길 곳에 같은 이름이 이미 있어요\(이름 충돌, 덮어쓰지 않아요\)$/mu);
   assert.match(r2.transcript, /^ {2}a\/s\.xyz, b\/s\.xyz — 옮길 곳에서 다른 파일과 이름이 겹쳐요\(덮어쓰지 않아요\)$/mu);
@@ -586,12 +594,12 @@ test('R4 pty D3: names with "=", spaces and emoji (x and x=y.xyz together) are m
     { expect: where("'.qqq' 파일 1개"), send: `폴더=2${ENTER}` }, { expect: again('.qqq', '폴더=2'), send: `N${ENTER}` },
     { expect: where('확장자 없는 파일 4개'), send: `기타${ENTER}` },
     { expect: '확장자가 없는\\(또는 숫자로만 된\\) 파일은 기억할 수 없어 이번에만 옮겨요\\.' },
-    { expect: '이렇게 정리할게요\\(파일 8개, 덮어쓰지 않아요\\):' }, { expect: CODE, send: `{1}${ENTER}` }]);
+    { expect: '이렇게 정리할게요\\(파일 8개, 덮어쓰지 않아요\\):' }, { expect: ORGANIZE, send: `y${ENTER}` }]);
   assert.equal(r.exit, 0, r.transcript);
   assert.ok(!r.transcript.includes('--move'), 'no internal --move text');
   assertMoved(before, await snap(work), { 'x': '기타/x', 'x=y.xyz': '자료 = 1 😀/x=y.xyz', 'a = b 😀.xyz': '자료 = 1 😀/a = b 😀.xyz',
     'a = b 😀': '기타/a = b 😀', '=.qqq': '폴더=2/=.qqq', 'k=v': '기타/k=v', 'k': '기타/k', 'sub dir=1/c d=2.xyz': '자료 = 1 😀/c d=2.xyz' });
-  const u = await pty([{ expect: UNDO, send: `{1}${ENTER}` }], ['undo']);
+  const u = await pty([{ expect: UNDO, send: `y${ENTER}` }], ['undo']);
   assert.equal(u.exit, 0, u.transcript);
   assert.deepEqual(await snap(work), before, 'files and folders as before');
   assert.deepEqual(await outside(), out0);
@@ -605,7 +613,7 @@ test('R5 pty O6: files already inside the chosen folder are not counted and stay
     { expect: again('.qqq', '자료'), send: `N${ENTER}` },
     { expect: where("'.xyz' 파일 2개"), send: `기타${ENTER}` }, { expect: "'기타' 폴더에 이미 있는 1개는 그대로 둬요\\." },
     { expect: again('.xyz', '기타'), send: `N${ENTER}` },
-    { expect: '이렇게 정리할게요\\(파일 2개, 덮어쓰지 않아요\\):' }, { expect: CODE, send: `{1}${ENTER}` }]);
+    { expect: '이렇게 정리할게요\\(파일 2개, 덮어쓰지 않아요\\):' }, { expect: ORGANIZE, send: `y${ENTER}` }]);
   assert.equal(r.exit, 0, r.transcript);
   assert.ok(!r.transcript.includes('옮기지 못하는 파일'), 'files already in place are not reported as failures');
   assertMoved(before, await snap(work), { 'y.qqq': '자료/y.qqq', 'w.xyz': '기타/w.xyz' });
@@ -621,13 +629,14 @@ test('R6 io D3: a file renamed after the first analysis stops with FILE_CHANGED 
   assert.deepEqual(await stateWrites(), []);
 });
 
-test('R7 O1: a rule saved in this run, then no code → "파일은 바꾸지 않았어요(저장한 규칙은 남아 있어요)."; without a save the old sentence', async (t) => {
-  const { work, state, corrections } = await setup(t, { 'd.xyz': 'x' });
+test('R7 O1: a rule saved in this run, then "n" → "파일은 바꾸지 않았어요(저장한 규칙은 남아 있어요)."; without a save the old sentence', async (t) => {
+  const { work, state, corrections, stateWrites } = await setup(t, { 'd.xyz': 'x' });
   const before = await snap(work);
-  await assert.rejects(runCli([], undefined, session(state, [work, '1', '2', '자료', 'y', '']).io),
-    (e: unknown) => exitCodeOf(e) === 4 && errorLine(e) === '코드를 입력하지 않아 실행하지 않았어요. 파일은 바꾸지 않았어요(저장한 규칙은 남아 있어요).');
+  await assert.rejects(runCli([], undefined, session(state, [work, '1', '2', '자료', 'y', 'n']).io),
+    (e: unknown) => exitCodeOf(e) === 4 && errorLine(e) === '정리하지 않았어요. 파일은 바꾸지 않았어요(저장한 규칙은 남아 있어요).');
   assert.deepEqual(await corrections(), [[{ type: 'keyword', extension: '.xyz', keyword: null }, '자료']]);
-  await assert.rejects(runCli([], undefined, session(state, [work, '1', '']).io),
-    (e: unknown) => exitCodeOf(e) === 4 && errorLine(e) === '코드를 입력하지 않아 실행하지 않았어요. 아무것도 바꾸지 않았어요.');
+  await assert.rejects(runCli([], undefined, session(state, [work, '1', 'n']).io),
+    (e: unknown) => exitCodeOf(e) === 4 && errorLine(e) === '정리하지 않았어요. 아무것도 바꾸지 않았어요.');
   assert.deepEqual(await snap(work), before);
+  assert.deepEqual(await stateWrites(), [], 'no approval, run or journal on "n"');
 });

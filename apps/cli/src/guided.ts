@@ -1,31 +1,37 @@
+import { stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
+import { z } from 'zod';
 import { AfoError, CorrectionMatchSchema, TARGET_SEGMENT_MAX_BYTES, TargetDirectorySchema, approvalModeKind, isAfoError }
   from '../../../packages/contracts/src/index.js';
-import type { ApprovalMode, ClassificationReason, CorrectionMatch, ExecutionReport, PlanOperation, Preview }
+import type { ApprovalMode, ClassificationReason, CorrectionMatch, ExecutionReport, PlanOperation, Preview, ScanProgress }
   from '../../../packages/contracts/src/index.js';
 import { extensionOfName } from '../../../packages/engine/src/defaults.js';
-import { pathKey } from '../../../packages/engine/src/index.js';
+import { pathKey, suggestProfile } from '../../../packages/engine/src/index.js';
+import { issueReferenceGrant, readReference } from '../../../packages/filesystem/src/index.js';
 import { addCorrection } from '../../../packages/filesystem/src/profiles.js';
+import { readJson, writeJsonAtomic } from '../../../packages/filesystem/src/state.js';
 import { analyzeTarget } from './analyze.js';
 import type { ProfileInfo, Target } from './analyze.js';
-import { CliResult, applyCommand, runSummaries, undoCommand } from './apply.js';
+import { CliResult, applyCommand, askYesNo, runSummaries, undoCommand } from './apply.js';
 import type { ExecContext, RunSummary } from './apply.js';
 import { createPlan } from './plan.js';
 import type { PlanValues } from './plan.js';
-import { CliError, expected, isCorrupt } from './rules.js';
+import { CliError, expected, isCorrupt, saveDraft } from './rules.js';
 import type { Stored } from './rules.js';
 import { haeyo } from './words.js';
 
 /**
- * `afo` with no arguments on a TTY: folder → short summary → menu → plan → typed approval code → the same apply path
- * (applyCommand: issueApproval → consumeApproval → executeBatch). Only an adapter; no classification or approval logic here.
+ * `afo` (or `afo <폴더>`) on a TTY: folder → short summary with the folder tree → menu → plan → yes/no → the same apply path
+ * (applyCommand: issueApproval → consumeApproval → executeBatch, with the plan's own code). Only an adapter; no classification
+ * or approval logic here. Organizing (undoable) defaults to yes, sending copies to the trash defaults to no.
  * Questions and screens go to stderr (ctx.warn / ctx.ask), the final result is the returned stdout text.
  * Permanent delete is deliberately not offered here (plan --delete-mode permanent + apply only).
  */
 const MAX_FOLDER_TRIES = 3;
 const MAX_MENU_TRIES = 3;
 const MAX_LIST = 20;
+const MAX_TREE = 8;
 const nothing = '아무것도 바꾸지 않았어요.';
 /** A stop the user chose (no code, wrong code, gave up, Ctrl+C before running): no "AFO 오류:" prefix, exit code kept. */
 const stop = (message: string, exitCode: 1 | 2 | 4 | 130): CliError => new CliError(message, exitCode, true);
@@ -48,7 +54,7 @@ const more = (n: number): string[] => n > 0 ? [`  … 외 ${n}개`] : [];
 
 function profileNote(info: ProfileInfo): string {
   return info.source === 'saved' && info.status !== 'disabled' ? '저장된 내 정리 규칙을 적용했어요.'
-    : info.source === 'none' ? '저장된 내 정리 규칙이 없어 기본 분류(문서·이미지·영상 등)를 썼어요.'
+    : info.source === 'none' ? '저장된 내 정리 규칙이 없어 기본 분류(문서·이미지·영상 등)를 썼어요. 잘 정리해 둔 폴더가 있으면 5)로 그 방식을 따라 할 수 있어요.'
     : info.source === 'saved' ? '내 정리 규칙이 꺼져 있어 기본 분류를 썼어요.'
     : info.source === 'stale' ? '참고 폴더가 바뀐 것 같아 내 정리 규칙은 이번에 쓰지 않았어요(기본 분류).'
     : '저장된 내 정리 규칙을 읽지 못해 기본 분류를 썼어요.';
@@ -65,12 +71,24 @@ const labelOf = (item: Preview['items'][number]): string => (item.reasonCode && 
 const ranked = (counts: Map<string, number>): [string, number][] =>
   [...counts].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
 
-function summaryLines(preview: Preview, info: ProfileInfo): string[] {
+/** The folders a move would fill, most first, with two example names: what the folder will look like, before anything moves. */
+function treeLines(moves: Preview['items'], rootName: string): string[] {
+  if (!moves.length) return [];
+  const byFolder = new Map<string, string[]>();
+  for (const i of moves) byFolder.set(folderOf(i), [...byFolder.get(folderOf(i)) ?? [], path.posix.basename(i.source)]);
+  const all = ranked(new Map([...byFolder].map(([f, names]) => [f, names.length])));
+  const rows = all.slice(0, MAX_TREE).map(([f, n]) => {
+    const names = byFolder.get(f)!.sort(byText);
+    return `${f}/ ${n}개 (예: ${names.slice(0, 2).join(', ')}${names.length > 2 ? ', …' : ''})`;
+  });
+  if (all.length > MAX_TREE) rows.push(`… 폴더 ${all.length - MAX_TREE}개 더`);
+  return [`    ${rootName}/`, ...rows.map((r, i) => `    ${i === rows.length - 1 ? '└─' : '├─'} ${r}`)];
+}
+
+function summaryLines(preview: Preview, info: ProfileInfo, rootName: string): string[] {
   const moves = preview.items.filter((i) => i.action === 'move');
   const keeps = preview.items.filter((i) => i.action === 'keep');
   const reviews = preview.items.filter((i) => i.action === 'review');
-  const byFolder = new Map<string, number>();
-  for (const i of moves) byFolder.set(folderOf(i), (byFolder.get(folderOf(i)) ?? 0) + 1);
   const tally = (items: typeof reviews): string => {
     const byReason = new Map<string, number>();
     for (const i of items) byReason.set(labelOf(i), (byReason.get(labelOf(i)) ?? 0) + 1);
@@ -80,7 +98,8 @@ function summaryLines(preview: Preview, info: ProfileInfo): string[] {
   const dupFiles = preview.duplicates.reduce((n, g) => n + g.candidates.length, 0);
   const example = preview.duplicates.find((g) => g.candidates.length);
   return [`파일 ${preview.items.length}개를 살펴봤어요. (아직 아무것도 바꾸지 않았어요)`,
-    `  폴더별로 정리할 수 있는 파일: ${moves.length}개${byFolder.size ? ` — ${ranked(byFolder).map(([f, n]) => `${f} ${n}`).join(' · ')}` : ''}`,
+    `  폴더별로 정리할 수 있는 파일: ${moves.length}개${moves.length ? ' — 정리하면 이렇게 돼요:' : ''}`,
+    ...treeLines(moves, rootName),
     ...(keeps.length ? [`  그대로 둘 파일: ${keeps.length}개${tally(keeps)}`] : []),
     `  직접 확인이 필요한 파일: ${reviews.length}개${tally(reviews)}`,
     `  같은 내용의 중복 파일: ${preview.duplicates.length}묶음${example ? `(휴지통으로 보낼 수 있는 사본 ${dupFiles}개) — 예: 남길 파일 '${example.suggestedKeep}', 휴지통 후보 ` +
@@ -99,7 +118,7 @@ function detailLines(preview: Preview): string[] {
     ...(preview.items.length || preview.duplicates.length ? [] : ['  (분류할 파일이 없어요)'])];
 }
 
-type Choice = 'organize' | 'trash' | 'quit';
+type Choice = 'organize' | 'trash' | 'learn' | 'quit';
 
 async function menu(ctx: ExecContext, counts: { organize: number; unknown: number; trash: number; movedCopies: number },
   show: () => void): Promise<Choice> {
@@ -110,7 +129,7 @@ async function menu(ctx: ExecContext, counts: { organize: number; unknown: numbe
     ...(counts.organize && counts.unknown ? [`     종류를 모르는 파일 ${counts.unknown}개는 어디로 옮길지 이어서 물어봐요.`] : []),
     `  2) 중복 파일을 휴지통으로 보내기${counts.trash ? `(휴지통에서 다시 꺼낼 수 있어요. afo undo로는 되돌리지 않아요) — 사본 ${counts.trash}개`
       : ' — 할 일 없음'}`,
-    '  3) 자세히 보기', '  4) 그만두기'];
+    '  3) 자세히 보기', '  4) 그만두기', '  5) 내 정리 방식 알려 주기(잘 정리해 둔 폴더를 참고해요)'];
   for (const l of lines()) ctx.warn(l);
   for (let tries = 1; ; tries++) {
     const answer = (await ctx.ask('번호를 입력하세요: ')).trim();
@@ -118,7 +137,8 @@ async function menu(ctx: ExecContext, counts: { organize: number; unknown: numbe
     if (answer === '3') { show(); for (const l of lines()) ctx.warn(l); tries = 0; continue; }
     if (answer === '1' && (counts.organize || counts.unknown)) return 'organize';
     if (answer === '2' && counts.trash) return 'trash';
-    ctx.warn(answer === '1' || answer === '2' ? '그 작업은 할 일이 없어요. 다른 번호를 골라 주세요.' : '1, 2, 3, 4 중에서 골라 주세요.');
+    if (answer === '5') return 'learn';
+    ctx.warn(answer === '1' || answer === '2' ? '그 작업은 할 일이 없어요. 다른 번호를 골라 주세요.' : '1~5 중에서 골라 주세요.');
     if (tries >= MAX_MENU_TRIES) throw stop(`번호를 알아듣지 못해 그만둘게요. ${nothing}`, 2);
   }
 }
@@ -127,13 +147,13 @@ function opLine(op: PlanOperation): string {
   return op.kind === 'move' ? `  ${op.source} → ${op.destination}` : `  ${op.source}${op.keeper ? ` (같은 내용의 '${op.keeper}' 파일은 남겨요)` : ''}`;
 }
 
-function resultText(report: ExecutionReport, mode: ApprovalMode, ops: Map<string, PlanOperation>): string {
+function resultText(report: ExecutionReport, mode: ApprovalMode, ops: Map<string, PlanOperation>, rules: boolean): string {
   const n = (s: string): number => report.results.filter((r) => r.status === s).length;
   const ok = n('moved') + n('trashed');
   const bad = report.results.filter((r) => r.status !== 'moved' && r.status !== 'trashed');
   const name = (opId: string): string => ops.get(opId)?.source ?? opId;
   const stopped = report.results.filter((r) => r.errorCode === 'CANCELLED').length;
-  return [`${mode === 'organize' ? '정리' : '휴지통 보내기'}를 ${stopped ? '중간에 멈췄어요' : '마쳤어요'}. (실행 ID ${report.runId.slice(0, 8)})`,
+  return [`${mode === 'organize' ? '정리' : '휴지통 보내기'}를 ${stopped ? '중간에 멈췄어요' : '마쳤어요'}.`,
     `  ${mode === 'organize' ? `옮김 ${n('moved')}` : `휴지통으로 보냄 ${n('trashed')}`} · 건너뜀 ${n('skipped')} · 실패 ${n('failed')}` +
       `${n('unknown') ? ` · 결과 확인 못 함 ${n('unknown')}` : ''}`,
     ...(stopped ? [`Ctrl+C로 멈춰 남은 파일 ${stopped}개는 그대로 뒀어요. 이미 ${mode === 'organize' ? '옮긴' : '휴지통으로 보낸'} 파일 ${ok}개는 그 상태예요.`] : []),
@@ -142,7 +162,8 @@ function resultText(report: ExecutionReport, mode: ApprovalMode, ops: Map<string
     ...(n('unknown') ? ['결과를 확인하지 못한 파일이 있어요. 다시 실행하지 말고 afo recover로 실제 상태를 확인하세요.'] : []),
     ...(mode === 'organize' && n('moved') ? ['되돌리려면: afo undo'] : []),
     ...(mode === 'trash' && ok ? ['휴지통으로 보낸 파일은 Finder 휴지통(Windows는 휴지통)에서 되살릴 수 있어요. afo undo로는 되돌리지 않아요.'] : []),
-    '전체 실행 ID와 기록은 afo runs로 볼 수 있어요.',
+    `다음에도 afo만 입력하고 Enter를 누르면 이 폴더를 같은 방식으로 정리해요.${rules ? ' 저장한 내 정리 규칙도 계속 적용돼요.' : ''}`,
+    '정리 기록은 afo runs로 볼 수 있어요.',
   ].join('\n');
 }
 
@@ -310,41 +331,110 @@ function leftOut(wanted: Map<string, { source: string; target: string | undefine
     `  ${s.slice(0, 3).join(', ')}${s.length > 3 ? ` 외 ${s.length - 3}개` : ''} — ${reason}`)] : [] };
 }
 
-export async function guidedCommand(ctx: ExecContext): Promise<CliResult> {
-  // Everything before applyCommand only reads files (and saves a plan in the state folder): a cancel there changed nothing.
-  let prepared: Prepared | CliResult;
-  const run: RunState = { savedRule: false };
-  try { prepared = await prepare(ctx, run); }
-  catch (error) { if (isCancel(error)) throw stop(`그만뒀어요(Ctrl+C). ${unchanged(run)}`, 130); throw error; }
-  if (prepared instanceof CliResult) return prepared;
-  const { mode, ops, planId, typed } = prepared;
-
-  let result: CliResult;
-  try { result = await applyCommand(planId, { mode, confirm: typed }, { ...ctx, json: true }); }
-  catch (error) {
-    if (isAfoError(error, 'APPROVAL_INVALID')) throw stop(`코드가 맞지 않아 실행하지 않았어요. ${unchanged(run)}`, 4);
-    throw error;
-  }
-  const { report } = JSON.parse(result.output) as { report: ExecutionReport };
-  return new CliResult(resultText(report, mode, new Map(ops.map((op) => [op.id, op]))), result.exitCode);
+/** The guided flow's own memory in the state folder: the folder it last ran on, offered again with Enter. A convenience only. */
+const PrefsSchema = z.strictObject({ formatVersion: z.literal(1), lastFolder: z.string().min(1).max(4096).nullable() });
+const prefsFile = (stateDir: string): string => path.join(stateDir, 'guided.json');
+async function lastFolder(ctx: ExecContext): Promise<string | null> {
+  try {
+    const folder = (await readJson(prefsFile(ctx.stateDir()), PrefsSchema))?.lastFolder ?? null;
+    return folder !== null && (await stat(folder)).isDirectory() ? folder : null;
+  } catch { return null; }
+}
+async function rememberFolder(ctx: ExecContext, folder: string): Promise<void> {
+  try { await writeJsonAtomic(prefsFile(ctx.stateDir()), { formatVersion: 1, lastFolder: folder }, PrefsSchema); } catch { /* next time asks as usual */ }
 }
 
-interface Prepared { mode: ApprovalMode; ops: PlanOperation[]; planId: string; typed: string }
-async function prepare(ctx: ExecContext, run: RunState): Promise<Prepared | CliResult> {
+/** Scan progress as one rewritten status line, only after the scan has taken a moment (no flicker on small folders). */
+function progressLine(show: (text: string) => void): (p: ScanProgress) => void {
+  const started = Date.now(); let last = 0;
+  return (p) => {
+    const now = Date.now();
+    if (now - started < 300 || now - last < 150) return;
+    last = now;
+    show(p.phase === 'hash' ? `같은 내용인지 확인하는 중이에요… ${p.hashedFiles.toLocaleString('ko-KR')} / ${p.hashTargets.toLocaleString('ko-KR')}개`
+      : `폴더를 살펴보는 중이에요… 파일 ${p.files.toLocaleString('ko-KR')}개`);
+  };
+}
+
+/** 이/가 after a word: by the final consonant of a last Hangul syllable, '(이)가' when the word does not end in Hangul. */
+const subject = (word: string): string => {
+  const code = word.charCodeAt(word.length - 1) - 0xac00;
+  return code < 0 || code > 11171 ? '(이)가' : code % 28 ? '이' : '가';
+};
+
+/**
+ * Menu 5: suggests rules from a folder the user already keeps tidy (names and folders only, never contents), shows them with
+ * examples and saves them on yes, the same as `suggest-rules` + `rules save --select <all>`. Returns whether rules were saved.
+ */
+async function learnRules(ctx: ExecContext, options: { signal?: AbortSignal }, run: RunState): Promise<boolean> {
+  const say = ctx.warn;
+  say('잘 정리해 둔 폴더를 이 창으로 끌어다 놓아 주세요. 폴더 구조와 파일 이름만 보고(내용은 읽지 않아요) 같은 방식의 규칙을 찾아요.');
+  const folder = cleanDroppedPath(await ctx.ask('정리된 폴더(그냥 Enter는 돌아가기): '));
+  if (folder === '') return false;
+  let draft;
+  try { draft = suggestProfile(await readReference(await issueReferenceGrant(folder), options)); }
+  catch (error) { if (isCancel(error)) throw error; say(`이 폴더는 참고할 수 없어요: ${reasonOf(error)}`); return false; }
+  if (!draft.rules.length) { say('같은 방식으로 놓인 파일이 2개 이상인 곳을 찾지 못해 규칙을 만들지 않았어요. 기본 분류를 그대로 써요.'); return false; }
+  say(`찾은 정리 방식 ${draft.rules.length}개:`);
+  for (const r of draft.rules) say(`  ${r.keyword === null ? `모든 ${r.extension} 파일` : `이름에 '${r.keyword}'${subject(r.keyword)} 들어간 ${r.extension} 파일`} → ` +
+    `${r.targetDirectory}/ (예: ${r.evidence.slice(0, 2).map((e) => path.posix.basename(e)).join(', ')})`);
+  say('참고한 폴더의 파일은 옮기거나 지우지 않아요.');
+  if (!await askYesNo(ctx, '이 방식을 저장해서 이번 정리와 다음 정리에 쓸까요? (Y/n): ', true)) { say('저장하지 않았어요.'); return false; }
+  const { saved } = await saveDraft(draft, draft.rules.map((r) => r.id), ctx.stateDir(), say);
+  run.savedRule = true;
+  say(`저장했어요: 내 정리 규칙 ${saved.rules.length}개. (afo rules list로 보고 afo rules disable-all로 끌 수 있어요)`);
+  return true;
+}
+
+export async function guidedCommand(ctx: ExecContext, initialFolder?: string): Promise<CliResult> {
+  // Everything before applyCommand only reads files (and saves a plan, rules or prefs in the state folder): a cancel there changed nothing.
+  let prepared: Prepared | CliResult;
+  const run: RunState = { savedRule: false };
+  try { prepared = await prepare(ctx, run, initialFolder); }
+  catch (error) { if (isCancel(error)) throw stop(`그만뒀어요(Ctrl+C). ${unchanged(run)}`, 130); throw error; }
+  finally { ctx.progress?.(''); }
+  if (prepared instanceof CliResult) return prepared;
+  const { mode, ops, planId, code, folder, rules } = prepared;
+
+  let result: CliResult;
+  try { result = await applyCommand(planId, { mode, confirm: code }, { ...ctx, json: true }); }
+  catch (error) {
+    if (isAfoError(error, 'APPROVAL_INVALID')) throw stop(`승인을 확인하지 못해 실행하지 않았어요. ${unchanged(run)}`, 4);
+    throw error;
+  }
+  await rememberFolder(ctx, folder);
+  const { report } = JSON.parse(result.output) as { report: ExecutionReport };
+  return new CliResult(resultText(report, mode, new Map(ops.map((op) => [op.id, op])), rules), result.exitCode);
+}
+
+interface Prepared { mode: ApprovalMode; ops: PlanOperation[]; planId: string; code: string; folder: string; rules: boolean }
+async function prepare(ctx: ExecContext, run: RunState, initialFolder: string | undefined): Promise<Prepared | CliResult> {
   const say = ctx.warn;
   const options = ctx.signal ? { signal: ctx.signal } : {};
+  const scan = { ...options, ...(ctx.progress ? { onProgress: progressLine(ctx.progress) } : {}) };
   const quit = (): CliResult => new CliResult(`그만뒀어요. ${nothing}`, 0);
-  say('AFO 파일 정리 도우미예요. 파일을 실제로 옮기기 전에 꼭 확인 코드를 물어봐요. (Ctrl+C로 언제든 그만둘 수 있어요)');
+  say('AFO 파일 정리 도우미예요. 파일을 옮기기 전에 무엇을 할지 보여 주고 꼭 물어봐요. (Ctrl+C로 언제든 그만둘 수 있어요)');
 
+  const last = initialFolder === undefined ? await lastFolder(ctx) : null;
+  if (last !== null) say(`지난번에 정리한 폴더: ${last}`);
+  const question = last !== null ? '정리할 폴더를 이 창으로 끌어다 놓고 Enter를 누르세요(그냥 Enter는 지난번 폴더, q는 종료): '
+    : '정리할 폴더를 이 창으로 끌어다 놓고 Enter를 누르세요(경로를 붙여 넣어도 돼요, 그냥 Enter는 종료): ';
+  const analyze = async (folder: string): Promise<Target> => {
+    say('폴더를 살펴보는 중이에요…');
+    try {
+      const found = await analyzeTarget(folder, {}, { warn: say, stateDir: ctx.stateDir, options: scan, writesState: true });
+      if (found.analysis.preview.cancelled || found.analysis.scan.cancelled) throw new AfoError('CANCELLED', '분석을 취소했습니다.');
+      return found;
+    } finally { ctx.progress?.(''); }
+  };
   let folder = ''; let target: Target | undefined;
   for (let attempt = 1; target === undefined; attempt++) {
-    folder = cleanDroppedPath(await ctx.ask('정리할 폴더를 이 창으로 끌어다 놓고 Enter를 누르세요(경로를 붙여 넣어도 돼요, 그냥 Enter는 종료): '));
-    if (folder === '') return quit();
-    try {
-      say('폴더를 살펴보는 중이에요…');
-      target = await analyzeTarget(folder, {}, { warn: say, stateDir: ctx.stateDir, options, writesState: true });
-      if (target.analysis.preview.cancelled || target.analysis.scan.cancelled) throw new AfoError('CANCELLED', '분석을 취소했습니다.');
-    } catch (error) {
+    const typed = attempt === 1 && initialFolder !== undefined ? initialFolder : cleanDroppedPath(await ctx.ask(question));
+    if (typed === '' && last !== null) folder = last;
+    else if (typed === '' || typed.toLowerCase() === 'q') return quit();
+    else folder = typed;
+    try { target = await analyze(folder); }
+    catch (error) {
       if (isCancel(error)) throw error;
       target = undefined;
       say(`이 폴더는 정리할 수 없어요: ${reasonOf(error)}`);
@@ -352,15 +442,23 @@ async function prepare(ctx: ExecContext, run: RunState): Promise<Prepared | CliR
     }
   }
 
-  const { preview } = target.analysis;
-  for (const l of summaryLines(preview, target.info)) say(l);
-  const moving = new Set(preview.items.filter((i) => i.action === 'move').map((i) => i.source));
-  const groups = unknownGroups(preview);
-  const counts = { organize: moving.size, unknown: groups.reduce((n, g) => n + g.files.length, 0),
-    trash: preview.duplicates.reduce((n, g) => n + g.candidates.length, 0),
-    movedCopies: preview.duplicates.reduce((n, g) => n + g.candidates.filter((c) => moving.has(c)).length, 0) };
-  const choice = await menu(ctx, counts, () => { for (const l of detailLines(preview)) say(l); });
+  let choice: Choice;
+  for (let showSummary = true; ; ) {
+    const { preview } = target.analysis;
+    if (showSummary) for (const l of summaryLines(preview, target.info, path.basename(target.grant.canonicalPath))) say(l);
+    const moving = new Set(preview.items.filter((i) => i.action === 'move').map((i) => i.source));
+    const counts = { organize: moving.size, unknown: unknownGroups(preview).reduce((n, g) => n + g.files.length, 0),
+      trash: preview.duplicates.reduce((n, g) => n + g.candidates.length, 0),
+      movedCopies: preview.duplicates.reduce((n, g) => n + g.candidates.filter((c) => moving.has(c)).length, 0) };
+    choice = await menu(ctx, counts, () => { for (const l of detailLines(preview)) say(l); });
+    if (choice !== 'learn') break;
+    showSummary = await learnRules(ctx, options, run);
+    if (showSummary) { target = await analyze(folder); say('내 정리 규칙을 적용해 다시 살펴봤어요:'); }
+  }
   if (choice === 'quit') return quit();
+  const { preview } = target.analysis;
+  const groups = unknownGroups(preview);
+  const organizeCount = preview.items.filter((i) => i.action === 'move').length;
 
   // The plan is built (and saved in the state folder only) from a fresh analysis, exactly as `plan` does; files may have changed since.
   const mode: ApprovalMode = choice;
@@ -369,7 +467,7 @@ async function prepare(ctx: ExecContext, run: RunState): Promise<Prepared | CliR
     const incomplete = preview.items.filter((i) => i.reasonCode === 'INCOMPLETE_DOWNLOAD');
     if (incomplete.length) say(`다운로드 중일 수 있는 파일 ${incomplete.length}개(예: ${path.posix.basename(incomplete[0]!.source)})는 그대로 둬요.`);
     const chosen = groups.length ? await askUnknown(ctx, groups, target.saved, target.grant.canonicalPath, run) : [];
-    if (!chosen.length && !counts.organize) return new CliResult(`옮길 파일이 없어요. ${unchanged(run)}`, 0);
+    if (!chosen.length && !organizeCount) return new CliResult(`옮길 파일이 없어요. ${unchanged(run)}`, 0);
     if (chosen.length) values.overrides = chosen;
   }
   const created = await createPlan(folder, values, { warn: say, stateDir: ctx.stateDir, options });
@@ -393,10 +491,13 @@ async function prepare(ctx: ExecContext, run: RunState): Promise<Prepared | CliR
   say(mode === 'organize' ? `이렇게 정리할게요(파일 ${ops.length}개, 덮어쓰지 않아요):` : `이 사본들을 휴지통으로 보낼게요(${ops.length}개, 남길 파일은 그대로):`);
   for (const op of ops.slice(0, MAX_LIST)) say(opLine(op));
   for (const l of more(ops.length - MAX_LIST)) say(l);
-  say(`계속하려면 아래 코드를 입력하세요: ${approval.code}`);
-  const typed = (await ctx.ask('코드(그냥 Enter는 취소): ')).trim();
-  if (typed === '') throw stop(`코드를 입력하지 않아 실행하지 않았어요. ${unchanged(run)}`, 4);
-  return { mode, ops, planId: created.plan.id, typed };
+  // Undoable organizing defaults to yes; the trash (not undone by afo undo) needs an explicit y. Permanent delete is not offered here.
+  const go = mode === 'organize'
+    ? await askYesNo(ctx, '이대로 정리할까요? 나중에 afo undo로 되돌릴 수 있어요. (Y/n): ', true, unchanged(run))
+    : await askYesNo(ctx, `이 사본 ${ops.length}개를 휴지통으로 보낼까요? afo undo로는 되돌리지 않아요. (y/N): `, false, unchanged(run));
+  if (!go) throw stop(`${mode === 'organize' ? '정리하지' : '휴지통으로 보내지'} 않았어요. ${unchanged(run)}`, 4);
+  const rules = run.savedRule || (target.info.source === 'saved' && target.info.status !== 'disabled');
+  return { mode, ops, planId: created.plan.id, code: approval.code, folder: target.grant.canonicalPath, rules };
 }
 
 /** `undo` without a run ID: the most recent organize run that still has moved, not-yet-undone files, then the usual undoCommand. */

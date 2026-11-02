@@ -3,13 +3,15 @@
 ## 빠른 시작
 
 ```sh
-npm ci --ignore-scripts && npm run build && npm link   # 설치 1회(저장소 폴더에서)
+curl -fsSL https://raw.githubusercontent.com/fakeminjun7321/AFO/main/install.sh | sh     # 설치(macOS)
+irm https://raw.githubusercontent.com/fakeminjun7321/AFO/main/install.ps1 | iex         # 설치(Windows PowerShell)
 afo                                                   # 안내에 따라 폴더 정리
 afo undo                                              # 가장 최근 정리 되돌리기
-npm unlink -g afo                                     # 제거
+afo --version                                         # 설치된 버전
 ```
 
-- `npm link`는 이 저장소를 전역 `afo` 명령으로 연결합니다(사용자 컴퓨터의 npm 전역 폴더에 링크를 만드는 일이므로 사용자가 직접 실행합니다). 실행 권한(`chmod +x`)은 `npm link`가 `bin` 파일에 붙이므로 빌드 스크립트는 따로 바꾸지 않았습니다. 설치하지 않고 쓰려면 `node dist/apps/cli/src/index.js`가 `afo`와 같습니다. 코드를 고친 뒤에는 `npm run build`만 다시 하면 됩니다.
+- 설치 스크립트는 GitHub Releases의 단일 실행 파일(Node.js 내장)을 받아 `SHA256SUMS`와 대조한 뒤 macOS `~/.afo/bin/afo`, Windows `%LOCALAPPDATA%\Programs\AFO\afo.exe`에 두고 PATH에 추가합니다. 제거·업데이트는 [README](../README.md#업데이트와-제거)를 봅니다.
+- 소스에서 실행할 때는 `npm ci --ignore-scripts && npm run build` 뒤 `node dist/apps/cli/src/index.js`가 `afo`와 같습니다(`npm link`로 전역 연결도 가능). 코드를 고친 뒤에는 `npm run build`만 다시 하면 됩니다.
 - `afo`(인수 없음, 터미널에서): 정리할 폴더를 창으로 끌어다 놓거나 경로를 붙여 넣고 Enter → 짧은 분석 요약(파일 수, 분류별 개수(많은 순, 같으면 이름순), 그대로 둘 파일과 확인 필요 파일의 개수·이유의 짧은 이름(`참고 폴더 보호 4 · 이미 정리된 위치 2`, `확장자 없음 1 · 목적지 충돌 2`처럼 이유 코드별), 중복 묶음과 예시(남길 파일·휴지통으로 보낼 수 있는 사본), 개인 규칙 적용 여부) → 메뉴 `1) 폴더별로 정리하기(되돌릴 수 있어요)`(중복 사본도 함께 옮기게 되면 "같은 내용의 사본 N개도 함께 옮겨요. 먼저 2)로 정리할 수도 있어요." 한 줄) / `2) 중복 파일을 휴지통으로 보내기(휴지통에서 다시 꺼낼 수 있어요. afo undo로는 되돌리지 않아요)` / `3) 자세히 보기`(`[정리] 파일 → 목적지`, `[그대로]`·`[확인 필요] 파일 — 이유`) / `4) 그만두기` → 실행될 작업 목록(최대 20줄 + "외 N개") → 화면에 나온 코드를 직접 입력하면 실행 → 결과 요약(실행 ID는 앞 8자, 전체는 `afo runs`).
   - 폴더 입력은 앞뒤 공백, 감싼 따옴표, macOS 터미널 드래그의 `\ ` 같은 백슬래시 이스케이프(Windows 제외), 앞의 `~/`(홈)를 정리합니다. 빈 입력은 종료(0). 거부된 폴더는 이유를 한 줄로 보여 주고 다시 묻고, 3번 실패하면 1입니다.
   - 할 일이 없는 메뉴는 "할 일 없음"으로 표시하고 고를 수 없습니다. 알아듣지 못한 번호가 3번 이어지면 2. 빈 입력·`4`는 그만두기(0, 아무것도 바꾸지 않음).

@@ -9,3 +9,4 @@ __pycache__/
 dist/
 .afo/
 *.afo-profile.json
+release/

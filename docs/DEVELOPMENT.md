@@ -5,7 +5,7 @@
 ## 요구 환경
 
 - Node.js 24 (`package.json`의 `engines`: `>=24 <25`), npm. lockfile은 `package-lock.json` 하나입니다.
-- 의존성: `zod` 4.6.7, 개발용 `typescript` 5.9.3, `@types/node` 24.19.2. 테스트는 Node 내장 `node --test`를 씁니다.
+- 의존성: `zod` 4.6.7, 개발용 `typescript` 5.9.3, `@types/node` 24.19.2, 배포 실행 파일용 `esbuild` 0.28.2·`postject` 1.0.0-alpha.6. 테스트는 Node 내장 `node --test`를 씁니다.
 
 ## 새 checkout에서 설치·검사
 
@@ -27,7 +27,8 @@ npm test
 | `build` | `tsc -p tsconfig.json` | `dist/`에 JS 출력 | `npm test` 안에서 실행됨 |
 | `typecheck` | `tsc --noEmit` | 출력 없이 타입 검사 | 실행, 종료 0 |
 | `test` | `npm run build && node --test dist/tests/*.test.js` | 빌드 뒤 `tests/*.test.ts`의 컴파일 결과 실행 | 실행, 종료 0 |
-| `afo`, `preview`, `rules:suggest`, `rules:confirm` | `node dist/apps/cli/src/index.js ...` | 읽기 전용 CLI. 먼저 `npm run build` 필요. 종료 코드는 [CLI.md](CLI.md) | `tests/cli.test.ts`가 실제 프로세스로 실행 |
+| `afo`, `preview`, `rules:suggest`, `rules:confirm` | `node dist/apps/cli/src/index.js ...` | 소스에서 CLI 실행. 먼저 `npm run build` 필요. 종료 코드는 [CLI.md](CLI.md) | `tests/cli.test.ts`가 실제 프로세스로 실행 |
+| `release:build` | `node scripts/release/build-binaries.mjs [--targets …] [--out …]` | `apps/cli/src/sea.ts`를 묶어 Node 단일 실행 파일(SEA)로 만들고 `release/`에 `afo-darwin-arm64.tar.gz`·`afo-darwin-x64.tar.gz`·`afo-win-x64.zip`·`SHA256SUMS` 출력. Node 바이너리는 nodejs.org에서 받아 SHASUMS256.txt와 대조. macOS 대상은 macOS에서만(ad-hoc codesign) | 2026-11-02 이 Mac에서 darwin-arm64·win-x64 빌드, darwin-arm64를 install.sh로 설치해 preview·plan·apply·undo 실행 |
 
 `node --test`는 실패한 테스트가 있으면 0이 아닌 코드로 끝납니다. 테스트 파일은 `tests/` 바로 아래의 `*.test.ts`만 실행됩니다. `tests/fixtures/` 안의 파일은 도구이며 테스트 진입점이 아닙니다.
 
@@ -39,7 +40,7 @@ npm test
 - 없으면 macOS `~/Library/Application Support/AFO`, Windows `%LOCALAPPDATA%\AFO`, 그 밖에는 `$XDG_STATE_HOME/afo` 또는 `~/.local/state/afo`입니다.
 - `assertStateDirOutside(stateDir, root)`는 실제 경로 기준으로 상태 폴더가 작업 폴더 안이거나, 같거나, 작업 폴더를 포함하면 `STATE_DIR_CONFLICT`로 거부합니다.
 
-현재 CLI 명령은 상태 폴더를 읽거나 쓰지 않습니다. 상태 저장은 후속 이슈(#8 이후 서비스)에서 연결합니다.
+규칙·계획·승인·실행 기록을 이 폴더에 씁니다. 설치 스크립트가 만드는 실행 파일 폴더(`~/.afo/bin`, `%LOCALAPPDATA%\Programs\AFO`)와는 다른 위치입니다.
 테스트·수동 시험에서는 실제 사용자 앱 데이터 대신 temp 폴더를 지정합니다.
 
 ```sh

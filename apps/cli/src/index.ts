@@ -18,6 +18,7 @@ import type { ExecContext } from './apply.js';
 import { planCommand } from './plan.js';
 import { CliError, draftLines, expected, isCorrupt, rulesCommand, usage } from './rules.js';
 import { guidedCommand, undoLatestCommand } from './guided.js';
+import { AFO_VERSION } from './version.js';
 
 const help = `AFO 파일 정리 도우미
 
@@ -26,7 +27,9 @@ const help = `AFO 파일 정리 도우미
   afo undo     가장 최근 정리를 원래대로 되돌리기(확인 코드 입력)
   afo runs     지금까지 정리한 기록 보기
 대화형 afo도 아래 apply와 같은 승인·실행 경로만 쓰며, 확인 코드를 직접 입력해야 파일을 옮깁니다(영구 삭제는 메뉴에 없음).
-설치 1회: npm ci --ignore-scripts && npm run build && npm link (설치 없이: node dist/apps/cli/src/index.js)
+설치: macOS  curl -fsSL https://raw.githubusercontent.com/fakeminjun7321/AFO/main/install.sh | sh
+      Windows  irm https://raw.githubusercontent.com/fakeminjun7321/AFO/main/install.ps1 | iex
+afo --version  설치된 버전 보기
 
 세부 명령(미리보기·개인 규칙·정리 계획·실행):
 
@@ -97,6 +100,7 @@ async function dispatch(args: string[], signal: AbortSignal | undefined, io: Cli
     return guidedCommand({ json: false, warn: io.warn ?? ((line: string) => { console.error(line); }), signal, isTTY: true, ask: io.ask,
       stateDir: () => io.stateDir ?? resolveStateDir() });
   if (args.length === 0 || args[0] === '--help') return help;
+  if (args.length === 1 && args[0] === '--version') return `afo ${AFO_VERSION}`;
   let parsed;
   try {
     parsed = parseArgs({ args, allowPositionals: true, strict: true, options: {
@@ -216,7 +220,8 @@ function isEntryPoint(): boolean {
   try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; }
 }
 
-if (isEntryPoint()) {
+/** Runs the CLI for this process. The `afo` bin file and the single executable (apps/cli/src/sea.ts) both start here. */
+export async function main(): Promise<void> {
   const controller = new AbortController();
   process.once('SIGINT', () => controller.abort());
   const ask = async (question: string): Promise<string> => {
@@ -235,3 +240,5 @@ if (isEntryPoint()) {
     process.exitCode = exitCodeOf(error);
   }
 }
+
+if (isEntryPoint()) void main();

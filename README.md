@@ -17,11 +17,11 @@ curl -fsSL https://raw.githubusercontent.com/fakeminjun7321/AFO/main/install.sh 
 irm https://raw.githubusercontent.com/fakeminjun7321/AFO/main/install.ps1 | iex
 ```
 
-Node.js 등 다른 프로그램은 필요 없습니다. 설치 스크립트는 [GitHub Releases](https://github.com/fakeminjun7321/AFO/releases)에서 내 OS용 실행 파일 하나를 받아 `SHA256SUMS`와 대조한 뒤 설치하고 PATH에 추가합니다. 설치가 끝나면 새 터미널을 열어 `afo`를 입력하세요.
+Node.js 등 다른 프로그램은 필요 없습니다. 설치 스크립트는 [GitHub Releases](https://github.com/fakeminjun7321/AFO/releases)에서 내 OS용 실행 파일 하나를 받아 `SHA256SUMS`와 대조한 뒤 설치하고 PATH에 추가합니다. 설치가 끝나면 그 터미널에서 바로 `afo`를 입력하세요(macOS에서 아래 연결 폴더가 없을 때만 새 터미널이 필요합니다).
 
 | OS | 설치 위치 | PATH |
 | --- | --- | --- |
-| macOS (Apple Silicon·Intel) | `~/.afo/bin/afo` | `~/.zshrc`(bash는 `~/.bash_profile`)에 한 줄 추가 |
+| macOS (Apple Silicon·Intel) | `~/.afo/bin/afo` | 이미 PATH에 있는 `~/.local/bin`·`/opt/homebrew/bin`·`/usr/local/bin` 중 쓸 수 있는 곳에 `afo` 링크(바로 사용). 없으면 `~/.zshrc`(bash는 `~/.bash_profile`)에 한 줄 추가 |
 | Windows 10/11 (x64, Arm은 에뮬레이션) | `%LOCALAPPDATA%\Programs\AFO\afo.exe` | 사용자 PATH에 추가 |
 
 - 특정 버전: `curl -fsSL …/install.sh | AFO_VERSION=0.1.0 sh`. PATH를 직접 관리하려면 `AFO_NO_MODIFY_PATH=1`.
@@ -72,7 +72,7 @@ afo apply <계획 ID> --mode organize --confirm <승인 코드>
 
 업데이트는 설치 명령을 다시 실행하면 됩니다. `afo --version`으로 버전을 확인합니다.
 
-제거(macOS): `rm ~/.afo/bin/afo` 후 `~/.zshrc`의 `# AFO` 아래 PATH 줄을 지웁니다.
+제거(macOS): `rm ~/.afo/bin/afo`와 설치 때 안내된 링크(예: `rm ~/.local/bin/afo`)를 지우고, `~/.zshrc`에 `# AFO` PATH 줄이 있으면 지웁니다.
 제거(Windows): `Remove-Item "$env:LOCALAPPDATA\Programs\AFO" -Recurse` 후 사용자 환경 변수 PATH에서 그 폴더를 지웁니다.
 
 규칙·계획·실행 기록은 따로 저장됩니다. macOS는 `~/Library/Application Support/AFO`, Windows는 `%LOCALAPPDATA%\AFO`입니다. 이 폴더를 지우면 저장한 규칙과 `afo undo` 기록도 사라집니다.

@@ -74,3 +74,26 @@ test("home content stays within the viewport at desktop and mobile widths", asyn
     await expect(page.getByRole("link", { name: "내 폴더 분석하기" })).toBeVisible();
   }
 });
+
+test("beginner install guide walks through macOS and Windows steps with copyable commands", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/");
+  await page.getByRole("link", { name: "터미널이 처음이라면" }).click();
+  await expect(page).toHaveURL(/\/install#beginner$/);
+  const guide = page.locator("#beginner");
+  await expect(guide.getByRole("heading", { name: "터미널이 처음이라면" })).toBeInViewport();
+  await guide.getByRole("tab", { name: "macOS" }).click();
+  await expect(guide.getByRole("heading", { name: "터미널 열기" })).toBeVisible();
+  await expect(guide.getByText(/응용 프로그램 → 유틸리티 → 터미널/)).toBeVisible();
+  await expect(guide.locator(".beginner-steps > li")).toHaveCount(5);
+  await guide.getByRole("button", { name: "설치 명령 붙여 넣기: 명령 복사" }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("curl -fsSL https://raw.githubusercontent.com/fakeminjun7321/AFO/main/install.sh | sh");
+  await guide.getByRole("tab", { name: "Windows" }).click();
+  await expect(guide.getByRole("heading", { name: "PowerShell 열기" })).toBeVisible();
+  await expect(guide.getByText(/실제 Windows PC에서는 아직 검증하지 않았어요/)).toBeVisible();
+  await guide.getByRole("button", { name: "설치 명령 붙여 넣기: 명령 복사" }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("irm https://raw.githubusercontent.com/fakeminjun7321/AFO/main/install.ps1 | iex");
+  await guide.getByText("macOS: zsh: command not found: afo").click();
+  await expect(guide.getByText(/source ~\/\.zshrc/)).toBeVisible();
+  await expect(page.getByText(/v0\.2\.0 릴리스부터 들어 있어요/)).toBeVisible();
+});

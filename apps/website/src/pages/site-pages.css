@@ -56,3 +56,4 @@
   .remaining-list a { font-size: 16px; }
   .notes-page .notes-list h3 { font-size: 21px; }
 }
+.page-heading > .quiet-link { margin-top: 30px; }

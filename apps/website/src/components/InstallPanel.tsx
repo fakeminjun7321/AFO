@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { installCommands, type InstallOs } from "../data/project";
 import "./install.css";
 
-function detectOs(): InstallOs {
+export function detectOs(): InstallOs {
   if (typeof navigator === "undefined") return "mac";
   return /Windows/i.test(navigator.userAgent) ? "windows" : "mac";
 }

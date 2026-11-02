@@ -1,12 +1,10 @@
 import { useState } from "react";
 import { Arrow } from "./Icons";
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { useAuth } from "../auth/AuthProvider";
 
 export function Header() {
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
-  const { user, ready } = useAuth();
   const { pathname } = useLocation();
   return (
     <header className="header">
@@ -23,30 +21,36 @@ export function Header() {
         id="navigation"
         aria-label="주 메뉴"
       >
-        <NavLink to="/preview" onClick={close}>
-          내 폴더 분석
-        </NavLink>
-        <NavLink to="/rules" onClick={close}>
-          나의 규칙
+        <NavLink to="/install" onClick={close}>
+          설치
         </NavLink>
         <NavLink
-          to="/resources"
-          className={() =>
-            ["/resources", "/help", "/downloads", "/notes"].includes(pathname)
-              ? "nav-active"
-              : ""
-          }
+          to="/help"
+          className={() => (["/help", "/resources", "/downloads"].includes(pathname) ? "nav-active" : "")}
           onClick={close}
         >
-          안내와 자료
+          사용 방법
+        </NavLink>
+        <NavLink
+          to="/preview"
+          className={() => (["/preview", "/rules"].includes(pathname) ? "nav-active" : "")}
+          onClick={close}
+        >
+          웹 미리보기
+        </NavLink>
+        <NavLink to="/community" onClick={close}>
+          커뮤니티
+        </NavLink>
+        <NavLink to="/notes" onClick={close}>
+          개발 노트
         </NavLink>
       </nav>
       <Link
-        className="button button--outline header-cta"
-        to={user ? "/account" : "/login"}
+        className="button button--orange header-cta"
+        to="/install"
         onClick={close}
       >
-        {!ready ? "확인 중" : user ? "내 계정" : "로그인"} <Arrow diagonal />
+        설치하기 <Arrow />
       </Link>
       <button
         className="menu-toggle"

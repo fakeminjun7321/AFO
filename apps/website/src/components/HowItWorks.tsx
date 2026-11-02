@@ -1,15 +1,19 @@
 const steps = [
   {
-    title: "내 폴더 선택하기",
-    body: "내 폴더 분석에서 분석할 폴더를 선택합니다. 로그인이나 설치가 필요하지 않습니다.",
+    title: "afo 입력하고 폴더 끌어다 놓기",
+    body: "설치한 뒤 터미널(Windows는 PowerShell)에 afo를 입력하고, 정리할 폴더를 창으로 끌어다 놓은 뒤 Enter를 누릅니다.",
   },
   {
-    title: "분류 결과 확인하기",
-    body: "확장자와 브라우저에 저장한 활성 규칙으로 제안한 위치를 확인합니다. 파일은 이동하거나 삭제하지 않습니다.",
+    title: "요약 확인하기",
+    body: "분류별 파일 수, 확인이 필요한 파일, 그대로 둘 파일과 이유, 같은 내용의 사본을 보여 줍니다. 아직 파일은 그대로예요.",
   },
   {
-    title: "내 기준으로 조정하기",
-    body: "파일별 제안 폴더를 수정하거나, 나의 규칙에서 분류 기준을 저장한 뒤 다시 적용할 수 있습니다.",
+    title: "정리 방법 고르기",
+    body: "1) 폴더별로 정리하기 2) 중복 파일을 휴지통으로 보내기 3) 자세히 보기 4) 그만두기 중 번호를 입력합니다.",
+  },
+  {
+    title: "확인 코드 입력하기",
+    body: "화면에 나온 코드를 직접 입력해야 실행합니다. 폴더 정리는 afo undo로 되돌리고, 휴지통으로 보낸 파일은 OS 휴지통에서 꺼낼 수 있어요.",
   },
 ];
 export function HowItWorks() {
@@ -17,7 +21,7 @@ export function HowItWorks() {
     <section
       className="steps section-wrap"
       id="how-it-works"
-      aria-label="AFO 사용 방법"
+      aria-label="afo 사용 단계"
     >
       <ol>
         {steps.map((step, i) => (

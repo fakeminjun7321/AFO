@@ -1,12 +1,29 @@
 import { test, expect } from "@playwright/test";
 
-test("home explains the available features and links to their actual screens", async ({ page }) => {
+const macCommand = "curl -fsSL https://raw.githubusercontent.com/fakeminjun7321/AFO/main/install.sh | sh";
+const winCommand = "irm https://raw.githubusercontent.com/fakeminjun7321/AFO/main/install.ps1 | iex";
+
+test("home leads with the CLI install, copies the commands and links to the web tools", async ({ page, context }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: /쌓인 파일 정리/ })).toBeVisible();
-  await expect(page.getByText("클라우드에만 있는 규칙은 불러온 뒤 브라우저에 저장해 주세요.")).toBeVisible();
-  await expect(page.getByText(/승인 후 실행과 복구는 앞으로 개발할 기능/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /한 줄이면/ })).toBeVisible();
+  await page.locator(".hero").getByRole("link", { name: "설치하기" }).click();
+  await expect(page).toHaveURL(/#install$/);
+  const install = page.locator("#install");
+  await expect(install.getByRole("tab", { name: "macOS" })).toBeVisible();
+  await install.getByRole("tab", { name: "macOS" }).click();
+  await expect(install.locator("code").first()).toHaveText(macCommand);
+  await install.getByRole("button", { name: "macOS 설치 명령 복사" }).click();
+  await expect(install.getByRole("button", { name: "macOS 설치 명령 복사" })).toHaveText("복사했어요");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(macCommand);
+  await install.getByRole("tab", { name: "Windows" }).click();
+  await expect(install.locator("code").first()).toHaveText(winCommand);
+  await install.getByRole("button", { name: "Windows 설치 명령 복사" }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(winCommand);
+  await expect(page.getByRole("heading", { name: /네 단계면 정리 끝/ })).toBeVisible();
+  await expect(page.getByText(/웹 규칙은 CLI와 자동으로 연결되지 않아요/)).toBeVisible();
   await page.getByRole("link", { name: "내 폴더 분석하기" }).click();
   await expect(page).toHaveURL(/\/preview$/);
   await expect(page.getByRole("heading", { name: /폴더를 열고/ })).toBeVisible();
@@ -15,7 +32,7 @@ test("home explains the available features and links to their actual screens", a
   await expect(page).toHaveURL(/\/rules$/);
   await expect(page.getByRole("heading", { name: "나의 규칙", exact: true })).toBeVisible();
   await page.goto("/");
-  await page.getByRole("link", { name: "사용 방법과 샘플 예시" }).click();
+  await page.getByRole("link", { name: "사용 방법 자세히 보기" }).click();
   await expect(page).toHaveURL(/\/help$/);
   await page.getByRole("button", { name: "예시 결과 보기" }).click();
   await expect(page.getByText(/샘플 6개의 예시 결과/)).toBeVisible();
@@ -24,17 +41,36 @@ test("home explains the available features and links to their actual screens", a
   await page.goto("/faq");
   await page.getByText("저장한 규칙이 내 폴더 분석에 적용되나요?").click();
   await expect(page.getByText(/브라우저 보관함에 저장한 활성 규칙이 적용됩니다/)).toBeVisible();
-  await page.goto("/status");
-  await expect(page.getByRole("heading", { name: "지금 사용할 수 있어요" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "앞으로 만들고 검증할 일" })).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+test("install, community and notes pages show real project links and verification status", async ({ page }) => {
+  await page.goto("/install");
+  await expect(page.getByRole("heading", { name: "설치", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "코드 서명이 없어요" })).toBeVisible();
+  await page.goto("/community");
+  for (const href of ["https://github.com/fakeminjun7321/AFO", "https://github.com/fakeminjun7321/AFO/issues", "https://github.com/fakeminjun7321/AFO/releases", "https://github.com/fakeminjun7321/AFO/issues/new"]) {
+    await expect(page.locator(`main a[href="${href}"]`).first()).toBeVisible();
+  }
+  await expect(page.getByText(/별도 포럼이나 채팅방이 없습니다/)).toBeVisible();
+  await page.goto("/status");
+  await expect(page).toHaveURL(/\/notes$/);
+  await expect(page.getByRole("heading", { name: "검증 상태" })).toBeVisible();
+  await expect(page.getByText(/Windows 실제 PC에서는 아직 확인하지 않았고/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "남은 일" })).toBeVisible();
+  for (const n of [20, 47, 49, 48, 50, 53, 54, 55, 56]) {
+    await expect(page.locator(`a[href="https://github.com/fakeminjun7321/AFO/pull/${n}"]`).first()).toBeAttached();
+  }
 });
 
 test("home content stays within the viewport at desktop and mobile widths", async ({ page }) => {
   for (const width of [320, 390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 });
+    for (const path of ["/", "/install", "/community", "/notes"]) {
+      await page.goto(path);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${path} width ${width}`).toBeTruthy();
+    }
     await page.goto("/");
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `width ${width}`).toBeTruthy();
     await expect(page.getByRole("link", { name: "내 폴더 분석하기" })).toBeVisible();
   }
 });

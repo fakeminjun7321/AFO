@@ -30,7 +30,7 @@ test("downloaded synthetic pack imports rules and previews its duplicate files",
     await expect(page.getByLabel("규칙 1 폴더")).toHaveValue("학교/물리");
     await page.getByRole("button", { name: "브라우저에 저장" }).click();
     await expect(page.getByRole("status")).toContainText("이 브라우저에 저장했어요");
-    await page.getByRole("navigation", { name: "주 메뉴" }).getByRole("link", { name: "내 폴더 분석" }).click();
+    await page.getByRole("navigation", { name: "주 메뉴" }).getByRole("link", { name: "웹 미리보기" }).click();
     const chooser = page.waitForEvent("filechooser");
     await page.getByRole("button", { name: "폴더 선택하기" }).click();
     await (await chooser).setFiles(sample);

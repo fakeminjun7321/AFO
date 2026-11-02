@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { realpathSync } from 'node:fs';
+import { stat } from 'node:fs/promises';
 import { createInterface } from 'node:readline/promises';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
@@ -24,10 +25,13 @@ import { AFO_VERSION } from './version.js';
 const help = `AFO 파일 정리 도우미
 
 가장 쉬운 사용법: afo 를 입력하고 안내를 따르세요.
-  afo          폴더를 끌어다 놓기 → 분석 요약 → 정리 방법 고르기 → 확인 코드 입력 → 정리
-  afo undo     가장 최근 정리를 원래대로 되돌리기(확인 코드 입력)
+  afo          폴더를 끌어다 놓기 → 정리 후 모습 보기 → 정리 방법 고르기 → y로 확인 → 정리
+  afo <폴더>   그 폴더로 바로 시작(지난번 폴더는 afo 뒤 Enter만 눌러도 돼요)
+  afo undo     가장 최근 정리를 원래대로 되돌리기(y로 확인)
   afo runs     지금까지 정리한 기록 보기
-대화형 afo도 아래 apply와 같은 승인·실행 경로만 쓰며, 확인 코드를 직접 입력해야 파일을 옮깁니다(영구 삭제는 메뉴에 없음).
+대화형 afo도 아래 apply와 같은 승인·실행 경로만 쓰며, 무엇을 할지 보여 준 뒤 물어봅니다: 정리(되돌릴 수 있음)는 Enter·y,
+휴지통 보내기는 y를 직접 입력해야 실행합니다. 영구 삭제는 메뉴에 없습니다(apply의 코드와 확인 문구로만).
+터미널이 아니면(파이프·스크립트) afo <폴더>는 preview <폴더>와 같습니다.
 설치: macOS  curl -fsSL https://raw.githubusercontent.com/fakeminjun7321/AFO/main/install.sh | sh
       Windows  irm https://raw.githubusercontent.com/fakeminjun7321/AFO/main/install.ps1 | iex
 afo --version  설치된 버전 보기
@@ -77,7 +81,11 @@ export interface CliIo {
   ask?: (question: string) => Promise<string>;
   /** Defaults to resolveStateDir() (AFO_STATE_DIR or the OS app-data folder), resolved only when a command needs it. */
   stateDir?: string;
+  /** Rewrites one status line (scan progress in the guided flow); the process entry sets it when stderr is a TTY. */
+  progress?: (text: string) => void;
 }
+
+const isFolder = async (p: string): Promise<boolean> => { try { return (await stat(p)).isDirectory(); } catch { return false; } };
 
 /** Each command's accepted options; anything else is a usage error rather than being ignored. */
 const allowed: Record<string, readonly string[]> = {
@@ -102,7 +110,13 @@ async function dispatch(args: string[], signal: AbortSignal | undefined, io: Cli
   // No arguments on a TTY: the guided flow (guided.ts). Without a TTY (pipes, scripts, tests) it stays the help text.
   if (args.length === 0 && io.isTTY === true && io.ask !== undefined)
     return guidedCommand({ json: false, warn: io.warn ?? ((line: string) => { console.error(line); }), signal, isTTY: true, ask: io.ask,
-      stateDir: () => io.stateDir ?? resolveStateDir() });
+      progress: io.progress, stateDir: () => io.stateDir ?? resolveStateDir() });
+  // `afo <폴더>`: an existing folder that is not a command name starts the guided flow there (a preview outside a terminal).
+  if (args.length === 1 && !args[0]!.startsWith('-') && !(args[0]! in allowed) && await isFolder(args[0]!)) {
+    if (io.isTTY !== true || io.ask === undefined) return dispatch(['preview', args[0]!], signal, io);
+    return guidedCommand({ json: false, warn: io.warn ?? ((line: string) => { console.error(line); }), signal, isTTY: true, ask: io.ask,
+      progress: io.progress, stateDir: () => io.stateDir ?? resolveStateDir() }, args[0]!);
+  }
   if (args.length === 0 || args[0] === '--help') return help;
   if (args.length === 1 && args[0] === '--version') return `afo ${AFO_VERSION}`;
   let parsed;
@@ -240,7 +254,8 @@ export async function main(): Promise<void> {
     try { return await rl.question(question, { signal: controller.signal }); } finally { rl.close(); }
   };
   try {
-    const result = await runCli(process.argv.slice(2), controller.signal, { isTTY: process.stdin.isTTY === true, ask });
+    const progress = process.stderr.isTTY ? (text: string) => { process.stderr.write(`\r\x1b[2K${text}`); } : undefined;
+    const result = await runCli(process.argv.slice(2), controller.signal, { isTTY: process.stdin.isTTY === true, ask, ...(progress ? { progress } : {}) });
     console.log(result.output);
     process.exitCode = result.exitCode;
   }

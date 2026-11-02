@@ -1,7 +1,7 @@
 import { readFile, lstat } from 'node:fs/promises';
 import path from 'node:path';
 import { AfoError, TargetDirectorySchema } from '../../../packages/contracts/src/index.js';
-import type { ReferenceGrant, RootGrant } from '../../../packages/contracts/src/index.js';
+import type { ReferenceGrant, RootGrant, ScanProgress } from '../../../packages/contracts/src/index.js';
 import { parseProfile, pathKey } from '../../../packages/engine/src/index.js';
 import type { AnyProfile } from '../../../packages/engine/src/index.js';
 import { analyzeRoot, issueReferenceGrant, issueRootGrant, scanRoot } from '../../../packages/filesystem/src/index.js';
@@ -26,7 +26,8 @@ export interface AnalyzeValues { profile?: string | undefined; reference?: strin
   move?: string[] | undefined; remember?: boolean | undefined;
   /** One-off corrections chosen by file ID (the guided flow); the same path as --move without parsing "<path>=<folder>" text. */
   overrides?: { fileId: string; target: string }[] | undefined }
-export interface AnalyzeContext { warn: (line: string) => void; stateDir: () => string; options: { signal?: AbortSignal };
+export interface AnalyzeContext { warn: (line: string) => void; stateDir: () => string;
+  options: { signal?: AbortSignal; onProgress?: (progress: ScanProgress) => void };
   /** The command will write the state folder: it must not overlap the work or reference folder. */
   writesState: boolean }
 export interface Target { grant: RootGrant; referenceGrant: ReferenceGrant | undefined; analysis: Analysis; info: ProfileInfo; saved: Stored;

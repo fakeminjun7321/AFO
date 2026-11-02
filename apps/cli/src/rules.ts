@@ -56,6 +56,19 @@ export interface RulesIo { json: boolean; stateDir: () => string; draft: (file: 
   select?: string | undefined; confirm?: string | undefined; isTTY: boolean; ask: (question: string) => Promise<string>;
   warn: (line: string) => void }
 
+/** Confirms the chosen draft rules and saves them as the profile, keeping saved corrections (`rules save` and the guided flow). */
+export async function saveDraft(draft: RuleProfile, ids: string[], stateDir: string, warn: (line: string) => void):
+  Promise<{ saved: RuleProfileV2; before: Stored; kept: Correction[] }> {
+  const confirmed = confirmProfile(draft, ids);
+  const before = await loadProfile({ stateDir });
+  if (isCorrupt(before)) warn(`경고: 손상된 기존 프로필(${before.reason})은 따로 보관하고 새로 저장합니다.`);
+  // Saved corrections are explicit user choices; replacing the reference rules does not silently drop them.
+  const kept = before !== null && !isCorrupt(before) ? before.corrections : [];
+  let next = await profileFromConfirmed(confirmed);
+  for (const c of kept) next = withCorrection(next, c);
+  return { saved: await saveConfirmedProfile(next, { stateDir, ...expected(before) }), before, kept };
+}
+
 const out = (io: RulesIo, data: unknown, lines: string[]): string => io.json ? JSON.stringify(data, null, 2) : lines.join('\n');
 
 export async function rulesCommand(sub: string | undefined, arg: string | undefined, io: RulesIo): Promise<string> {
@@ -81,14 +94,7 @@ export async function rulesCommand(sub: string | undefined, arg: string | undefi
       if (io.select === undefined || ids.some((id) => id === '')) throw usage('--select로 저장할 규칙 ID를 하나 이상 쉼표로 명시하세요(빈 선택 거부).');
       const draft = await io.draft(arg);
       if (draft.status === 'disabled') throw new Error('비활성(disabled) 규칙 파일은 저장하지 않습니다.');
-      const confirmed = confirmProfile(draft, ids);
-      const before = await loadProfile({ stateDir });
-      if (isCorrupt(before)) io.warn(`경고: 손상된 기존 프로필(${before.reason})은 따로 보관하고 새로 저장합니다.`);
-      // Saved corrections are explicit user choices; replacing the reference rules does not silently drop them.
-      const kept = before !== null && !isCorrupt(before) ? before.corrections : [];
-      let next = await profileFromConfirmed(confirmed);
-      for (const c of kept) next = withCorrection(next, c);
-      const saved = await saveConfirmedProfile(next, { stateDir, ...expected(before) });
+      const { saved, before, kept } = await saveDraft(draft, ids, stateDir, io.warn);
       const replaced = before !== null && !isCorrupt(before)
         ? [`기존 프로필(revision ${before.revision}, 규칙 ${before.rules.length}개)을 대체했습니다. 저장한 수정 ${kept.length}개는 유지했습니다.`] : [];
       return out(io, { action: 'save', profile: saved, keptCorrections: kept.length },

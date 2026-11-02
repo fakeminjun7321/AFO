@@ -21,6 +21,8 @@ export class CliResult {
 export interface ExecContext {
   json: boolean; warn: (line: string) => void; stateDir: () => string; signal?: AbortSignal | undefined;
   isTTY: boolean; ask: (question: string) => Promise<string>;
+  /** One status line rewritten in place (a TTY's stderr): scan progress in the guided flow. Absent in tests and pipes. */
+  progress?: ((text: string) => void) | undefined;
 }
 export interface ApplyValues { mode?: string | undefined; only?: string | undefined; confirm?: string | undefined; phrase?: string | undefined }
 
@@ -109,6 +111,24 @@ async function runOfApproval(stateDir: string, approvalId: string): Promise<stri
     for (const runId of await listRuns(stateDir)) if ((await readRun(stateDir, runId))?.run.approvalId === approvalId) return runId;
   } catch { /* reported as unknown below */ }
   return null;
+}
+
+const YES = new Set(['y', 'yes', '예', '네', '응', 'ㅛ', 'ㅇ']);
+const NO = new Set(['n', 'no', '아니', '아니요', '아뇨', 'ㅜ']);
+/**
+ * A yes/no question for the guided screens (`afo`, `afo undo`); Enter takes the default. Three answers that are neither stop with
+ * exit 2 and nothing changed. Approvals are still issued with the plan's code: this only replaces typing the code in a terminal.
+ */
+export async function askYesNo(ctx: Pick<ExecContext, 'ask' | 'warn'>, question: string, defaultYes: boolean,
+  unchanged = '아무것도 바꾸지 않았어요.'): Promise<boolean> {
+  for (let tries = 1; ; tries++) {
+    const answer = (await ctx.ask(question)).trim().toLowerCase();
+    if (answer === '') return defaultYes;
+    if (YES.has(answer)) return true;
+    if (NO.has(answer)) return false;
+    if (tries >= 3) throw new CliError(`답을 알아듣지 못해 그만둘게요. ${unchanged}`, 2, true);
+    ctx.warn('y(네) 또는 n(아니요)으로 답해 주세요.');
+  }
 }
 
 async function prompt(ctx: ExecContext, given: string | undefined, question: string, missing: string): Promise<string> {
@@ -213,7 +233,9 @@ export async function undoCommand(runId: string, values: { confirm?: string | un
     return new CliResult(ctx.json ? JSON.stringify({ runId: run.runId, report: null, message: text }, null, 2) : text, 0);
   }
   const code = run.runId.slice(0, 8);
-  const summary = simple ? simpleUndoSummary(run.startedAt, candidates.map((r) => ops?.get(r.opId)), unclear, code) : [`AFO 되돌리기 확인 — 실행 ${run.runId} (${run.startedAt})`,
+  // `afo undo` in a terminal: a yes/no (moving files back is itself repeatable); scripts and `undo <ID>` keep the typed code.
+  const yesNo = simple && values.confirm === undefined && ctx.isTTY;
+  const summary = simple ? simpleUndoSummary(run.startedAt, candidates.map((r) => ops?.get(r.opId)), unclear, yesNo ? null : code) : [`AFO 되돌리기 확인 — 실행 ${run.runId} (${run.startedAt})`,
     `되돌릴 후보 ${candidates.length}개(정리한 위치 → 원래 위치):`,
     ...candidates.map((r) => `  ${r.opId} ${where(ops?.get(r.opId), true)}`),
     ...(unclear ? ['이 실행에는 결과가 확인되지 않은 항목이 있습니다. 그런 항목은 추측해 옮기지 않고 결과 불명으로 보고합니다(recover로 확인).'] : []),
@@ -222,7 +244,8 @@ export async function undoCommand(runId: string, values: { confirm?: string | un
     `확인 코드: ${code} (실행 ID 앞 8자)`];
   const needs = values.confirm === undefined;
   if (!ctx.json || needs) for (const line of summary) ctx.warn(line);
-  const typed = await prompt(ctx, values.confirm, simple ? '코드(그냥 Enter는 취소): ' : '확인 코드 8자를 입력하세요(빈 입력은 취소): ',
+  if (yesNo && !await askYesNo(ctx, '되돌릴까요? (Y/n): ', true)) throw new CliError('되돌리지 않았어요. 아무것도 바꾸지 않았어요.', 4, true);
+  const typed = yesNo ? code : await prompt(ctx, values.confirm, simple ? '코드(그냥 Enter는 취소): ' : '확인 코드 8자를 입력하세요(빈 입력은 취소): ',
     '비대화형 되돌리기에는 --confirm <실행 ID 앞 8자>가 필요합니다. 아무것도 바꾸지 않았습니다.');
   if (typed !== code) throw simple ? new CliError(`${typed === '' ? '코드를 입력하지 않아' : '코드가 맞지 않아'} 되돌리지 않았어요. ` +
       '아무것도 바꾸지 않았어요.', 4, true)
@@ -251,13 +274,13 @@ export async function undoCommand(runId: string, values: { confirm?: string | un
 const localTime = (iso: string): string => new Intl.DateTimeFormat('ko-KR',
   { month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
 const MAX_UNDO_LIST = 20;
-function simpleUndoSummary(startedAt: string, ops: (PlanOperation | undefined)[], unclear: boolean, code: string): string[] {
+function simpleUndoSummary(startedAt: string, ops: (PlanOperation | undefined)[], unclear: boolean, code: string | null): string[] {
   return [`${localTime(startedAt)}에 정리한 파일 ${ops.length}개를 원래 자리로 되돌릴까요?`,
     ...ops.slice(0, MAX_UNDO_LIST).map((op) => `  ${op === undefined ? '(계획 파일이 없어 이름을 표시하지 못함)' : where(op, true)}`),
     ...(ops.length > MAX_UNDO_LIST ? [`  … 외 ${ops.length - MAX_UNDO_LIST}개`] : []),
     ...(unclear ? ['결과가 확인되지 않은 파일은 건드리지 않아요(afo recover로 확인).'] : []),
     '원래 자리에 다른 파일이 있거나 정리한 뒤 바뀐 파일은 덮어쓰지 않고 건너뛰어요.',
-    `계속하려면 아래 코드를 입력하세요: ${code}`];
+    ...(code === null ? [] : [`계속하려면 아래 코드를 입력하세요: ${code}`])];
 }
 function simpleUndoLines(report: ExecutionReport, ops: Map<string, PlanOperation> | null): string[] {
   const back = report.results.filter((r) => r.status === 'moved').length;

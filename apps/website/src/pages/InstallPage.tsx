@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Arrow } from "../components/Icons";
 import { CopyButton, InstallPanel } from "../components/InstallPanel";
+import { BeginnerGuide } from "../components/BeginnerGuide";
 import { links } from "../data/project";
 import "./site-pages.css";
 
@@ -9,6 +10,8 @@ const usage = [
   { command: "afo undo", body: "가장 최근 정리를 원래대로 되돌립니다." },
   { command: "afo runs", body: "정리 기록을 봅니다." },
   { command: "afo --version", body: "설치된 버전을 확인합니다." },
+  { command: "afo gui", body: "이 컴퓨터에서만 열리는 브라우저 화면으로 미리보기·정리 계획·규칙·실행 기록을 봅니다. 화면은 보기 전용이라 파일을 옮기거나 지우지 않아요." },
+  { command: "afo gui \"<폴더 경로>\"", body: "처음부터 그 폴더를 열어 둔 화면을 띄웁니다. 경로 자리에 폴더를 끌어다 놓아도 돼요." },
 ];
 
 export function InstallPage() {
@@ -17,12 +20,15 @@ export function InstallPage() {
       <div className="page-heading">
         <h1 id="install-title">설치</h1>
         <p>명령 한 줄로 설치하고, 터미널에 afo를 입력하세요. macOS와 Windows를 지원합니다.</p>
+        <a className="quiet-link" href="#beginner">터미널이 처음이라면 단계별 안내 보기 <Arrow /></a>
       </div>
       <InstallPanel />
       <p className="site-note">
         설치 스크립트는 <a href={links.releases} target="_blank" rel="noreferrer">GitHub Releases</a>에서 내 OS용 실행 파일 하나를 받아
         SHA256SUMS와 대조하고, 다르면 설치하지 않습니다. Node.js 같은 다른 프로그램은 필요 없어요. Linux용 실행 파일은 없습니다.
       </p>
+
+      <BeginnerGuide />
 
       <section className="site-block" aria-labelledby="install-where">
         <h2 id="install-where">어디에 설치되나요?</h2>
@@ -40,6 +46,9 @@ export function InstallPage() {
             <li key={u.command}><div className="install-line"><code>{u.command}</code><CopyButton text={u.command} label={`${u.command} 복사`} /></div><p>{u.body}</p></li>
           ))}
         </ul>
+        <p className="site-note">
+          <code>afo gui</code>는 v0.2.0 릴리스부터 들어 있어요. 2026-11-02 현재 최신 릴리스는 v0.1.0이라 아직 없으며, v0.2.0이 나오면 설치 명령을 다시 실행해 업데이트하세요.
+        </p>
         <p className="site-note">
           단계별로 쓰고 싶다면 <code>preview</code> → <code>plan</code> → <code>apply</code> → <code>undo</code>, 개인 규칙은 <code>suggest-rules</code>·<code>rules</code>를 씁니다.
           모든 명령과 종료 코드는 <a href={links.cliDocs} target="_blank" rel="noreferrer">CLI 문서</a>에 있어요.

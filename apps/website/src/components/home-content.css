@@ -94,3 +94,4 @@
 .home-trust-details > .home-light-link { margin-top: 26px; }
 @media (max-width: 1100px) { .home-install { grid-template-columns: 1fr; } .home-flow { grid-template-columns: 1fr; } .home-features { grid-template-columns: 1fr 1fr; } .home-other-features--three { grid-template-columns: 1fr; } }
 @media (max-width: 700px) { .home-install, .home-web { padding-block: 90px; } .home-install h2 { font-size: clamp(37px, 9.5vw, 52px); } .home-flow { margin-top: 50px; } .home-steps li { grid-template-columns: 40px 1fr; } .home-steps h3 { font-size: 20px; } .home-terminal pre { font-size: 12px; padding: 18px; } .home-commands { grid-template-columns: 1fr; } .home-features { grid-template-columns: 1fr; margin-top: 55px; gap: 34px; } .home-features h3 { margin-top: 16px; } }
+.home-install-links { display: flex; flex-wrap: wrap; gap: 18px 32px; }

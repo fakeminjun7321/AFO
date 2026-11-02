@@ -7,6 +7,12 @@ export type Note = { date: string; title: string; body: string; links: NoteLink[
 export const notes: Note[] = [
   {
     date: "2026.11.02",
+    title: "afo gui: 이 컴퓨터에서만 열리는 보기 화면",
+    body: "afo gui로 미리보기·정리 계획·개인 규칙·실행 기록·복구 점검을 브라우저 화면에서 봅니다. 127.0.0.1에서만 열리고, 화면은 파일을 옮기거나 지우지 않으며 실행은 화면이 알려 주는 apply 명령으로 터미널에서 합니다. main에 병합됐고 v0.2.0 릴리스부터 들어갑니다.",
+    links: [{ label: "PR #51", href: pr(51) }],
+  },
+  {
+    date: "2026.11.02",
     title: "설치한 터미널에서 바로 afo",
     body: "curl로 설치한 바로 그 터미널에서 afo가 \"command not found\"로 실패하던 문제를 고쳤습니다. 이미 PATH에 있는 폴더에 링크를 두고, 다른 프로그램의 afo는 건드리지 않습니다. 공개 v0.1.0 릴리스에서 내려받아 같은 셸에서 실행되는 것을 실제 Mac에서 확인했습니다.",
     links: [{ label: "PR #56", href: pr(56) }],
@@ -93,13 +99,13 @@ export const statusRows: StatusRow[] = [
   { feature: "폴더 정리·되돌리기, 휴지통, 선택 영구 삭제", mac: "실제 Mac 검증", windows: "CI VM만" },
   { feature: "중단 복구 보고·동시 실행 잠금", mac: "실제 Mac 검증", windows: "CI VM만" },
   { feature: "curl / PowerShell 한 줄 설치", mac: "실제 Mac 설치·실행", windows: "릴리스 CI에서 설치 확인" },
-  { feature: "로컬 GUI (afo gui)", mac: "개발 중", windows: "개발 중" },
+  { feature: "로컬 화면 afo gui (보기 전용, v0.2.0부터)", mac: "실제 Mac 검증", windows: "CI VM만" },
 ];
 
 export const remaining: NoteLink[] = [
   { label: "Windows 실제 PC에서 설치·정리·되돌리기 검증", href: issue(14) },
   { label: "출품 방식(설치형 CLI·URL 인정 여부) 확인", href: issue(2) },
   { label: "외부 사용자 테스트·5분 소개 영상·최종 제출", href: issue(16) },
-  { label: "CLI에서 여는 로컬 GUI(보기 전용) 마무리", href: pr(51) },
+  { label: "afo gui를 담은 v0.2.0 릴리스, 화면에서 실행하기(후속)", href: issue(9) },
   { label: "실행 파일 코드 서명·공증(현재 미적용)", href: issue(15) },
 ];

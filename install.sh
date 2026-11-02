@@ -53,6 +53,18 @@ if [ "${AFO_NO_MODIFY_PATH:-}" = "1" ]; then
   say "  $line"
   exit 0
 fi
+# 이미 PATH에 있는 쓰기 가능한 폴더에 링크를 두면 설치한 그 터미널에서도 바로 afo를 쓸 수 있습니다.
+for dir in "$HOME/.local/bin" /opt/homebrew/bin /usr/local/bin; do
+  case ":$PATH:" in *":$dir:"*) ;; *) continue ;; esac
+  [ -d "$dir" ] && [ -w "$dir" ] || continue
+  # 다른 프로그램의 afo는 건드리지 않습니다.
+  if [ -e "$dir/afo" ] || [ -L "$dir/afo" ]; then
+    [ "$(readlink "$dir/afo")" = "$bin_dir/afo" ] || continue
+  fi
+  ln -sf "$bin_dir/afo" "$dir/afo"
+  say "$dir/afo 에 연결했습니다. 이 터미널에서 바로 afo 를 입력하세요."
+  exit 0
+done
 case "$(basename "${SHELL:-zsh}")" in
   bash) rc="$HOME/.bash_profile" ;;
   *) rc="${ZDOTDIR:-$HOME}/.zshrc" ;;

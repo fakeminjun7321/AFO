@@ -39,7 +39,7 @@ export function HomeContent() {
         <p className="home-overline">설치</p>
         <h2 id="home-install-title">한 줄이면<br />설치 끝.</h2>
         <p>명령을 복사해 터미널(Windows는 PowerShell)에 붙여 넣으세요. Node.js 같은 다른 프로그램은 필요 없습니다. 설치 스크립트가 GitHub Releases에서 내 OS용 실행 파일을 받아 SHA256SUMS와 대조한 뒤 설치해요.</p>
-        <Link className="home-light-link" to="/install">설치 위치·업데이트·제거 <Arrow /></Link>
+        <div className="home-install-links"><Link className="home-light-link" to="/install#beginner">터미널이 처음이라면 <Arrow /></Link><Link className="home-light-link" to="/install">설치 위치·업데이트·제거 <Arrow /></Link></div>
       </div>
       <InstallPanel />
     </section>

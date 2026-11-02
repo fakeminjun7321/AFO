@@ -1,0 +1,40 @@
+.beginner { padding-top: 80px; max-width: 1000px; scroll-margin-top: 20px; }
+.beginner > h2 { font-size: clamp(32px, 3.4vw, 46px); letter-spacing: -.045em; line-height: 1.2; }
+.beginner-intro { font-size: 18px; line-height: 1.8; color: var(--muted); margin: 18px 0 30px; max-width: 760px; word-break: keep-all; }
+.beginner-os-intro { margin-top: 26px; font-size: 16px; color: #d6d6d2; line-height: 1.7; word-break: keep-all; }
+.beginner-caution { margin-top: 16px; padding: 16px 20px; border: 1px solid #5a3226; background: #1d1310; border-radius: 14px; font-size: 15px; line-height: 1.75; color: #f0c7b8; word-break: keep-all; }
+.beginner-caution b { color: #fff; }
+.beginner-caution a { text-decoration: underline; text-underline-offset: 4px; }
+.beginner-steps { list-style: none; padding: 0; margin: 28px 0 0; display: grid; gap: 16px; }
+.beginner-steps > li { background: #121211; border: 1px solid #2a2a27; border-radius: 20px; padding: 26px 28px; }
+.beginner-step-head { display: flex; align-items: center; gap: 16px; }
+.step-icon { flex-shrink: 0; color: #8f8f8a; }
+.beginner-step-number { color: #ff8a69; font-size: 14px; font-weight: 700; }
+.beginner-step-head h3 { font-size: 22px; letter-spacing: -.03em; }
+.beginner-keys { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; font-size: 14px; color: var(--muted); }
+.beginner-keys i { font-style: normal; margin: 0 8px; color: #6d6d68; }
+.beginner kbd { display: inline-block; min-width: 28px; padding: 3px 9px; border: 1px solid #4a4a45; border-bottom-width: 3px; border-radius: 8px; background: #1d1d1b; color: #fff; font-family: inherit; font-size: .9em; font-weight: 650; line-height: 1.5; text-align: center; white-space: nowrap; }
+.beginner-keys kbd { font-size: 15px; padding: 6px 12px; }
+.beginner-steps > li > p { margin-top: 16px; font-size: 16px; line-height: 1.85; color: #c9c9c4; word-break: keep-all; }
+.beginner-steps > li > p b { color: #fff; }
+.beginner-copy { margin-top: 18px; background: #0b0b0a; border: 1px solid #2a2a27; border-radius: 14px; padding: 12px 12px 12px 18px; }
+.beginner-output { margin-top: 18px; border-left: 3px solid #4f6b3a; padding: 4px 0 4px 16px; }
+.beginner-output span { display: block; font-size: 12px; color: #8f8f8a; margin-bottom: 8px; }
+.beginner-output pre { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.7; color: #cfe3bd; white-space: pre-wrap; overflow-wrap: anywhere; }
+.beginner-trouble { margin-top: 60px; }
+.beginner-trouble > h3 { font-size: 26px; letter-spacing: -.035em; margin-bottom: 10px; }
+.beginner-trouble .questions summary { font-size: 18px; }
+.beginner-trouble .questions p { font-size: 16px; }
+.beginner-trouble a { text-decoration: underline; text-underline-offset: 4px; }
+@media (max-width: 700px) {
+  .beginner { padding-top: 60px; }
+  .beginner-intro { font-size: 16px; }
+  .beginner-steps > li { padding: 20px 18px; border-radius: 16px; }
+  .step-icon { width: 44px; height: 44px; }
+  .beginner-step-head { gap: 12px; }
+  .beginner-step-head h3 { font-size: 19px; }
+  .beginner-steps > li > p { font-size: 15px; }
+  .beginner-copy { padding: 14px; }
+  .beginner-output pre { font-size: 12px; }
+  .beginner-trouble .questions summary { font-size: 16px; }
+}

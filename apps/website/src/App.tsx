@@ -49,16 +49,21 @@ const titles: Record<string, string> = {
   "/notes": "개발 노트",
 };
 function Shell() {
-  const { pathname } = useLocation();
+  const { pathname, hash } = useLocation();
   const previous = useRef(pathname);
   useEffect(() => {
     document.title = `AFO — ${titles[pathname] || "페이지를 찾을 수 없어요"}`;
-    if (previous.current !== pathname) {
+    // Links such as /install#beginner land on the section instead of the page top.
+    const target = hash ? document.getElementById(decodeURIComponent(hash.slice(1))) : null;
+    if (target) {
+      target.scrollIntoView({ behavior: "instant", block: "start" });
+      previous.current = pathname;
+    } else if (previous.current !== pathname) {
       window.scrollTo({ top: 0, behavior: "instant" });
       document.getElementById("main")?.focus({ preventScroll: true });
       previous.current = pathname;
     }
-  }, [pathname]);
+  }, [pathname, hash]);
   return (
     <div className={`site-shell${pathname === "/" ? " home-route" : ""}`}>
       <a className="skip-link" href="#main">

@@ -74,11 +74,34 @@ test('corrupt profiles and directory inputs are rejected', async (t) => {
   assert.deepEqual(await manifest(root), before);
 });
 test('help needs no implicit filesystem target', async () => {
-  assert.match(await run([]), /사용자 파일을 바꾸지 않습니다/u);
-  assert.match(await run(['--help']), /사용자 파일을 옮기거나 지우는 명령은\napply와 undo뿐/u);
+  assert.match(await run([]), /확인해야만 파일을 옮깁니다/u);
+  assert.equal(await run(['help']), await run([]));
+  assert.equal(await run(['--help']), await run(['help']), '--help and -h stay as aliases');
+  assert.equal(await run(['-h']), await run(['help']));
+  assert.match(await run(['help', '--all']), /사용자 파일을 옮기거나 지우는 명령은 apply와 undo뿐/u);
+  assert.equal(await run(['--help', '--all']), await run(['help', '--all']));
+});
+test('help shows the everyday commands; help --all adds every detailed command and option', async () => {
+  const basic = await run(['help']); const all = await run(['help', '--all']);
+  for (const line of ['afo undo', 'afo runs', 'afo gui', 'afo help --all']) assert.ok(basic.includes(line), line);
+  for (const detail of ['--reference', 'plan <폴더>', 'apply <계획 ID>', 'recover', 'suggest-rules', 'rules reset', 'confirm-rules',
+    '--delete-mode', '--delete-last-copy', '--phrase', '--exit-when-closed', 'AFO_STATE_DIR', '종료 코드']) {
+    assert.ok(!basic.includes(detail), `basic help leaves out ${detail}`);
+    assert.ok(all.includes(detail), `help --all has ${detail}`);
+  }
+  assert.ok(all.includes(basic.split('\n').find((l) => l.includes('afo help --all'))!), 'help --all repeats the everyday commands');
+});
+test('help accepts only --all', () => {
+  for (const args of [['help', 'preview'], ['help', '--all', 'x'], ['help', '--json']]) {
+    const r = invoke(...args);
+    assert.equal(r.status, 2, args.join(' '));
+    assert.match(String(r.stderr), /help 뒤에는 --all만 쓸 수 있습니다/u);
+  }
+  assert.equal(invoke('help', '--all').status, 0);
 });
 test('documented exit codes: 0 for help and success, 2 for usage errors, 1 for refused input (docs/CLI.md)', async (t) => {
   const root = await fixture(t, { 'a.pdf': 'x' }); const before = await manifest(root);
+  assert.equal(invoke('help').status, 0);
   assert.equal(invoke('--help').status, 0);
   assert.equal(invoke().status, 0);
   assert.equal(invoke('preview', root).status, 0);

@@ -20,61 +20,8 @@ import { guiCommand } from './gui.js';
 import { planCommand } from './plan.js';
 import { CliError, draftLines, expected, isCorrupt, rulesCommand, usage } from './rules.js';
 import { guidedCommand, undoLatestCommand } from './guided.js';
+import { helpText } from './help.js';
 import { AFO_VERSION } from './version.js';
-
-const help = `AFO 파일 정리 도우미
-
-가장 쉬운 사용법: afo 를 입력하고 안내를 따르세요.
-  afo          폴더를 끌어다 놓기 → 정리 후 모습 보기 → 정리 방법 고르기 → y로 확인 → 정리
-  afo <폴더>   그 폴더로 바로 시작(지난번 폴더는 afo 뒤 Enter만 눌러도 돼요)
-  afo undo     가장 최근 정리를 원래대로 되돌리기(y로 확인)
-  afo runs     지금까지 정리한 기록 보기
-  afo gui      브라우저 화면에서 보고 버튼으로 정리·되돌리기(macOS Finder·Windows 탐색기의 폴더 메뉴 'AFO로 정리'와 같아요)
-대화형 afo도 아래 apply와 같은 승인·실행 경로만 쓰며, 무엇을 할지 보여 준 뒤 물어봅니다: 정리(되돌릴 수 있음)는 Enter·y,
-휴지통 보내기는 y를 직접 입력해야 실행합니다. 영구 삭제는 메뉴에 없습니다(apply의 코드와 확인 문구로만).
-터미널이 아니면(파이프·스크립트) afo <폴더>는 preview <폴더>와 같습니다.
-설치: macOS  curl -fsSL https://raw.githubusercontent.com/fakeminjun7321/AFO/main/install.sh | sh
-      Windows  irm https://raw.githubusercontent.com/fakeminjun7321/AFO/main/install.ps1 | iex
-afo --version  설치된 버전 보기
-
-세부 명령(미리보기·개인 규칙·정리 계획·실행):
-
-preview <폴더> [--reference <참고 폴더>] [--profile <JSON>] [--no-saved-rules]
-        [--move <상대 경로>=<목적지 폴더>]... [--remember] [--json]
-plan <폴더> [preview와 같은 분석 옵션, --remember 제외] [--delete-mode trash|permanent]
-     [--delete-duplicates all|<그룹 해시,...>] [--delete-file <상대 경로>]... [--delete-last-copy] [--json]
-     정리 계획을 상태 폴더에 저장하고 작업 ID·이유·방식별 승인 코드를 출력(파일은 바꾸지 않음)
-apply <계획 ID> --mode organize|trash|permanent-delete [--only <작업ID,...>]
-      [--confirm <승인 코드>] [--phrase <확인 문구>] [--json]
-     저장된 계획의 한 방식 작업을 보여 주고 승인 코드(영구 삭제는 문구 "영구 삭제"도)를 확인한 뒤 실제로 실행
-undo [<실행 ID>] [--confirm <실행 ID 앞 8자>] [--json]   이동(organize) 실행만 원래 위치로 되돌림(ID를 빼면 가장 최근의 되돌릴 수 있는 실행)
-runs [<실행 ID>] [--json]                실행 기록 요약 또는 한 실행의 항목별 결과
-recover [--json]                         끝나지 않은 실행·결과 불명 항목 보고(자동 재실행·원복·삭제 없음)
-gui [<폴더>] [--port <번호>] [--no-open] [--exit-when-closed]
-     이 컴퓨터에서만 열리는 브라우저 화면으로 미리보기·계획·규칙·실행 기록·복구 점검을 보고, 목록을 확인한 뒤
-     정리(이동)·중복 사본 휴지통 보내기·되돌리기를 실행(영구 삭제는 apply로만). Ctrl+C로 종료.
-     --exit-when-closed: 브라우저 화면을 닫으면 잠시 뒤 저절로 종료(Finder 빠른 동작·Windows 보내기 메뉴용)
-suggest-rules <참고 폴더> [--json]       규칙 후보(초안) JSON을 stdout에, 요약을 stderr에 출력
-rules save <초안 JSON> --select <규칙ID,...>
-rules list [--json]
-rules enable|disable <규칙ID>
-rules enable-all|disable-all
-rules forget <수정ID>
-rules reset [--confirm reset]
-confirm-rules <규칙 JSON> --select <규칙ID,...>   (이전 방식: 확인한 JSON만 출력)
-
-preview는 저장된 개인 규칙을 자동 적용합니다. --move는 이번 미리보기에만 적용하고,
---remember를 붙이면 그 수정을 이후에도 적용하도록 저장합니다.
-plan의 --delete-mode 기본값은 trash(휴지통)입니다. permanent(영구 삭제)는 되돌릴 수 없습니다.
---delete-file로 같은 내용의 사본을 모두 고르면 거부합니다. 마지막 사본까지 지우려면 --delete-last-copy를 붙입니다.
-preview·plan·suggest-rules·rules·runs·recover는 사용자 파일을 바꾸지 않습니다. 사용자 파일을 옮기거나 지우는 명령은
-apply와 undo뿐이며, 둘 다 확인 코드를 직접 입력해야 합니다(TTY가 아니면 --confirm 필수, 없으면 종료 코드 4).
-gui 화면은 목록을 보여 주고 확인 버튼을 눌러야 같은 apply·undo 경로로 실행합니다(영구 삭제 제외).
-apply는 승인 한 번에 한 번만 실행하고 실행 직전 파일을 다시 확인해 바뀐 파일은 건너뜁니다. 덮어쓰지 않습니다.
-휴지통으로 보낸 파일은 OS 휴지통에서 직접 복원하고, 영구 삭제는 되돌릴 수 없습니다.
-상태(규칙·계획·승인·실행 기록)는 앱 로컬 상태 폴더(AFO_STATE_DIR)에 씁니다.
-종료 코드: 0 성공, 1 오류, 2 사용법 오류, 3 일부 실패·결과 불명, 4 승인 거부·무효, 130 취소.
-`;
 
 const readDraft = async (file: string): Promise<RuleProfile> => ProfileSchema.parse(await readJsonFile(file));
 
@@ -111,6 +58,12 @@ export async function runCli(args: string[], signal?: AbortSignal, io: CliIo = {
 }
 
 async function dispatch(args: string[], signal: AbortSignal | undefined, io: CliIo): Promise<string | CliResult> {
+  // `afo help [--all]` (before the folder shortcut, so a folder named help needs ./help); --help and -h stay as aliases.
+  if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') {
+    const rest = args.slice(1);
+    if (rest.length > 1 || (rest.length === 1 && rest[0] !== '--all')) throw usage('help 뒤에는 --all만 쓸 수 있습니다. 예: afo help --all');
+    return helpText(rest.length === 1);
+  }
   // No arguments on a TTY: the guided flow (guided.ts). Without a TTY (pipes, scripts, tests) it stays the help text.
   if (args.length === 0 && io.isTTY === true && io.ask !== undefined)
     return guidedCommand({ json: false, warn: io.warn ?? ((line: string) => { console.error(line); }), signal, isTTY: true, ask: io.ask,
@@ -121,7 +74,7 @@ async function dispatch(args: string[], signal: AbortSignal | undefined, io: Cli
     return guidedCommand({ json: false, warn: io.warn ?? ((line: string) => { console.error(line); }), signal, isTTY: true, ask: io.ask,
       progress: io.progress, stateDir: () => io.stateDir ?? resolveStateDir() }, args[0]!);
   }
-  if (args.length === 0 || args[0] === '--help') return help;
+  if (args.length === 0) return helpText(false);
   if (args.length === 1 && args[0] === '--version') return `afo ${AFO_VERSION}`;
   let parsed;
   try {
@@ -134,11 +87,11 @@ async function dispatch(args: string[], signal: AbortSignal | undefined, io: Cli
       port: { type: 'string' }, 'no-open': { type: 'boolean' }, 'exit-when-closed': { type: 'boolean' },
     } });
   } catch (error) {
-    throw usage(`옵션을 해석할 수 없습니다(${error instanceof Error ? error.message : String(error)}). --help 참고`);
+    throw usage(`옵션을 해석할 수 없습니다(${error instanceof Error ? error.message : String(error)}). afo help 참고`);
   }
   const { values, positionals } = parsed;
   const [command, target, extra, more] = positionals;
-  if (command === undefined || !(command in allowed)) throw usage('지원하지 않는 명령입니다. --help 참고');
+  if (command === undefined || !(command in allowed)) throw usage('지원하지 않는 명령입니다. afo help 참고');
   const bad = Object.keys(values).filter((k) => !allowed[command]!.includes(k));
   if (bad.length) throw usage(`${command}에는 ${bad.map((k) => `--${k}`).join(', ')} 옵션을 쓸 수 없습니다.`);
   const warn = io.warn ?? ((line: string) => { console.error(line); });
@@ -162,7 +115,7 @@ async function dispatch(args: string[], signal: AbortSignal | undefined, io: Cli
     if (positionals.length > 2) throw usage('gui에는 작업 폴더를 하나만 지정할 수 있습니다(생략 가능).');
     return guiCommand(target, values, { warn, stateDir, signal });
   }
-  if (positionals.length !== 2 || !target) throw usage('명령과 대상(폴더, 규칙 파일, 계획 ID 또는 실행 ID)을 하나 명시하세요. --help 참고');
+  if (positionals.length !== 2 || !target) throw usage('명령과 대상(폴더, 규칙 파일, 계획 ID 또는 실행 ID)을 하나 명시하세요. afo help --all 참고');
   if (command === 'apply') return applyCommand(target, values, exec);
   if (command === 'undo') return undoCommand(target, values, exec);
   if (command === 'suggest-rules') {

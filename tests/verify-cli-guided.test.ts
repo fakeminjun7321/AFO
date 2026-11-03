@@ -433,12 +433,12 @@ test('pty: real symlink to the entry point (as npm link installs it) runs direct
   await symlink(CLI, link);
   await chmod(link, 0o755); // follows the link: the built entry file becomes executable, as npm link does
   assert.match((await readFile(CLI, 'utf8')).split('\n')[0]!, /^#!\/usr\/bin\/env node$/u, 'shebang');
-  const help = plain(['--help'], [link]);
+  const help = plain(['help'], [link]);
   assert.equal(help.status, 0, help.stderr);
-  assert.match(help.stdout, /가장 쉬운 사용법: afo 를 입력하고 안내를 따르세요/u);
+  assert.match(help.stdout, /afo {2,}안내를 따라 폴더 정리하기/u);
   const noArgs = plain([], [link]);
   assert.equal(noArgs.status, 0);
-  assert.match(noArgs.stdout, /세부 명령/u, 'no TTY and no arguments: help, never questions');
+  assert.match(noArgs.stdout, /자주 쓰는 명령/u, 'no TTY and no arguments: help, never questions');
   assert.ok(!noArgs.stderr.includes('끌어다'));
   const before = await snap(work);
   const r = await pty([{ expect: 'AFO 파일 정리 도우미예요' }, { expect: FOLDER, send: `${work}${ENTER}` }, { expect: MENU, send: `4${ENTER}` }], [], [link]);

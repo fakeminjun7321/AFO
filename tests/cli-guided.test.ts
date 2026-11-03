@@ -228,11 +228,11 @@ test('guided: Ctrl+C at a question cancels with 130 and changes nothing; no TTY 
   const help = await runCli([], undefined, { stateDir: dirs.state, isTTY: false, warn: () => {},
     ask: () => assert.fail('no question without a TTY') });
   assert.equal(help.exitCode, 0);
-  assert.match(help.output, /가장 쉬운 사용법: afo 를 입력하고 안내를 따르세요/u);
+  assert.match(help.output, /afo {2,}안내를 따라 폴더 정리하기/u);
   const child = invoke([]);
   assert.equal(child.status, 0);
-  assert.match(child.stdout, /가장 쉬운 사용법/u);
-  assert.match(child.stdout, /세부 명령/u);
+  assert.match(child.stdout, /자주 쓰는 명령/u);
+  assert.match(child.stdout, /afo help --all/u);
 });
 
 test('undo without an ID: no TTY needs --confirm of the latest undoable run (else 4); nothing to undo is 0', async (t) => {
@@ -258,10 +258,10 @@ test('entry point works through a symlink, as `npm link` installs it (no global 
   const { root, dirs } = await setup(t);
   const link = path.join(root, 'afo');
   await symlink(cli, link);
-  const r = spawnSync(process.execPath, [link, '--help'], { encoding: 'utf8', timeout: 30_000,
+  const r = spawnSync(process.execPath, [link, 'help'], { encoding: 'utf8', timeout: 30_000,
     env: { ...process.env, AFO_STATE_DIR: dirs.state } });
   assert.equal(r.status, 0, String(r.stderr));
-  assert.match(String(r.stdout), /가장 쉬운 사용법/u);
+  assert.match(String(r.stdout), /자주 쓰는 명령/u);
   const undo = spawnSync(process.execPath, [link, 'undo'], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, AFO_STATE_DIR: dirs.state } });
   assert.equal(undo.status, 0, String(undo.stderr));
   assert.match(String(undo.stdout), /되돌릴 수 있는 정리 기록이 없어요/u);

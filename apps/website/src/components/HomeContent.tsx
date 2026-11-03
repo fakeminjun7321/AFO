@@ -58,7 +58,7 @@ export function HomeContent() {
         <div className="home-commands">
           <div><code>afo undo</code><span>가장 최근 정리 되돌리기</span></div>
           <div><code>afo runs</code><span>정리 기록 보기</span></div>
-          <div><code>afo --help</code><span>모든 명령 보기</span></div>
+          <div><code>afo help --all</code><span>모든 명령 보기</span></div>
         </div>
         <Link className="home-text-link" to="/help">사용 방법 자세히 보기 <Arrow /></Link>
       </div>

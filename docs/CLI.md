@@ -65,7 +65,8 @@ afo --version                                         # 설치된 버전
 
 | 명령 | 하는 일 | 쓰는 곳 |
 | --- | --- | --- |
-| `... --help` (터미널이 아닐 때 인수 없음도 같음) | 도움말(맨 위에 가장 쉬운 사용법) | 없음 |
+| `... help` (`--help`·`-h`도 같음, 터미널이 아닐 때 인수 없음도 같음) | 자주 쓰는 명령과 안전 안내만 보여 주는 짧은 도움말 | 없음 |
+| `... help --all` | 모든 세부 명령·옵션·안전 규칙·종료 코드 | 없음 |
 | `afo` (인수 없음, 터미널) | 위 "빠른 시작"의 안내형 정리. 내부적으로 plan과 apply의 같은 함수를 씀 | 작업 폴더(코드를 입력한 이동·휴지통), 상태 폴더 |
 | `... preview <폴더> [옵션]` | 스캔·분류·중복 후보·미리보기 출력. **저장된 개인 규칙을 자동 적용** | 없음(`--remember`일 때만 상태 폴더) |
 | `... plan <폴더> [옵션]` | preview와 같은 분석 → 정리 계획(작업 ID·종류·원본→목적지·이유, 삭제는 남길 파일과 논리 크기) → 상태 폴더에 저장 → 방식별 승인 코드 출력. 승인을 발급하거나 파일을 바꾸지 않음 | 상태 폴더(`plans/`) |
@@ -179,7 +180,7 @@ JSON을 파일로 받을 때는 npm 배너가 섞이지 않도록 `node dist/app
 
 | 코드 | 의미 | 예 |
 | --- | --- | --- |
-| 0 | 성공. 결과를 stdout에 출력 | `--help`, 정상 `preview`. **스캔이 일부 미완료여도 0**이며 출력의 "스캔 일부 미완료"와 JSON `scanComplete: false`로 구분합니다 |
+| 0 | 성공. 결과를 stdout에 출력 | `help`, 정상 `preview`. **스캔이 일부 미완료여도 0**이며 출력의 "스캔 일부 미완료"와 JSON `scanComplete: false`로 구분합니다 |
 | 1 | 입력 거부 또는 오류 | 실행 잠금 `LOCKED_BY_OTHER`(apply·undo), 잠금 해제·결과 저장 실패, 없는 실행 ID, 휴지통·영구 삭제 실행의 undo, 없는 폴더, 홈·디스크 루트 같은 거부 대상, 손상된 규칙 JSON, 모르는 규칙/수정 ID, 손상 프로필 편집, `PROFILE_CHANGED`, plan의 모르는 중복 그룹·keeper 오류·`--delete-last-copy` 없이 모든 사본 선택(`KEEPER_INVALID`)·없는 파일(`SOURCE_MISSING`)·참고 파일 삭제(`ROOT_FORBIDDEN`)·`STATE_DIR_CONFLICT`, 프로필 잠금 대기 초과 `LOCKED_BY_OTHER` |
 | 2 | 사용법 오류. 아무것도 바꾸지 않음 | 모르는 명령·옵션(`--execute`·`--yes` 등), apply의 `--mode` 없음·잘못된 값, 64자가 아닌 계획 ID, 실행 ID 형식 아님, organize/trash에 `--phrase`, 명령에 맞지 않는 옵션, 인수 개수, `--select` 없음·빈 선택, `--move` 형식, 비TTY `rules reset`에 `--confirm` 없음, plan의 `--delete-mode` 값·`--delete-duplicates` 형식·`--remember`·`--delete-file` 없는 `--delete-last-copy` |
 | 3 | 일부 실패·결과 불명 | apply·undo에서 하나라도 `moved/trashed/deleted`(undo는 되돌림)가 아닌 항목, recover에서 확인이 필요한 실행. 결과는 stdout에 출력 |

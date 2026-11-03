@@ -23,7 +23,7 @@ GUI는 CLI의 한국어 출력이나 shell 문자열을 파싱하지 않습니�
 
 ```sh
 npm run build
-npm run afo -- --help
+npm run afo -- help --all
 npm run afo -- preview "/path/to/test-folder"
 npm run afo -- suggest-rules "/path/to/reference"
 npm run afo -- confirm-rules draft.afo-profile.json --select "실제규칙ID"

@@ -39,6 +39,7 @@ afo            # 폴더를 터미널에 끌어다 놓고 안내를 따름(다음
 afo ~/Downloads  # 그 폴더로 바로 시작
 afo undo       # 가장 최근 정리를 원래대로 되돌리기(y로 확인)
 afo runs       # 정리 기록 보기
+afo update     # 최신 정식 버전으로 업데이트
 afo help       # 자주 쓰는 명령
 afo help --all # 모든 세부 명령과 옵션
 ```
@@ -86,7 +87,14 @@ afo gui "/정리할/테스트 폴더"
 
 ## 업데이트와 제거
 
-업데이트는 설치 명령을 다시 실행하면 됩니다. `afo --version`으로 버전을 확인합니다.
+```sh
+afo update
+afo --version
+```
+
+`afo update`는 GitHub의 최신 정식 릴리스를 확인하고, 이미 최신이거나 더 새 버전이면 그대로 둡니다. 새 버전은 내 OS·CPU용 파일의 SHA-256과 `--version` 실행 결과를 확인한 뒤 **지금 실행한 AFO 실행 파일만** 교체합니다. PATH 링크, 오른쪽 클릭 메뉴, 개인 규칙·계획·실행 기록은 유지합니다. 다운로드·검증 실패 시 기존 설치본을 유지합니다. Windows에서는 실행 중인 이전 파일을 바로 지울 수 없으면 해당 백업 경로를 안내합니다.
+
+소스에서 실행한 AFO는 `git pull` → `npm ci --ignore-scripts` → `npm run build`로 업데이트합니다. `update`가 없는 이전 설치본은 위 설치 명령을 한 번 다시 실행해야 합니다. 새 릴리스에 이 명령이 포함되기 전에는 기존 배포본에서 쓸 수 없습니다.
 
 제거(macOS): `rm ~/.afo/bin/afo`와 설치 때 안내된 링크(예: `rm ~/.local/bin/afo`)를 지우고, `~/.zshrc`에 `# AFO` PATH 줄이 있으면 지웁니다. 빠른 동작은 `rm -r ~/Library/Services/"AFO로 정리.workflow"`로 지웁니다.
 제거(Windows): `Remove-Item "$env:LOCALAPPDATA\Programs\AFO" -Recurse` 후 사용자 환경 변수 PATH에서 그 폴더를 지웁니다. 보내기 메뉴는 `Remove-Item "$env:APPDATA\Microsoft\Windows\SendTo\AFO로 정리.lnk"`로 지웁니다.

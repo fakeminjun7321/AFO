@@ -11,6 +11,8 @@ on:
       - 'scripts/release/**'
       - 'apps/cli/src/sea.ts'
       - 'apps/cli/src/index.ts'
+      - 'apps/cli/src/update.ts'
+      - 'apps/cli/src/help.ts'
       - 'package*.json'
       - '.github/workflows/release.yml'
   workflow_dispatch:

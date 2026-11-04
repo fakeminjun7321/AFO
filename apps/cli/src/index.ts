@@ -22,6 +22,7 @@ import { CliError, draftLines, expected, isCorrupt, rulesCommand, usage } from '
 import { guidedCommand, undoLatestCommand } from './guided.js';
 import { helpText } from './help.js';
 import { AFO_VERSION } from './version.js';
+import { updateCommand } from './update.js';
 
 const readDraft = async (file: string): Promise<RuleProfile> => ProfileSchema.parse(await readJsonFile(file));
 
@@ -45,6 +46,7 @@ const allowed: Record<string, readonly string[]> = {
   'suggest-rules': ['json'], 'confirm-rules': ['select'], rules: ['json', 'select', 'confirm'],
   apply: ['mode', 'only', 'confirm', 'phrase', 'json'], undo: ['confirm', 'json'], runs: ['json'], recover: ['json'],
   gui: ['port', 'no-open', 'exit-when-closed'],
+  update: [],
 };
 
 /** Output only; exit codes of apply/undo/recover are lost here. The process entry point uses runCli. */
@@ -98,6 +100,11 @@ async function dispatch(args: string[], signal: AbortSignal | undefined, io: Cli
   const stateDir = (): string => io.stateDir ?? resolveStateDir();
   const options = signal ? { signal } : {};
   const json = values.json === true;
+
+  if (command === 'update') {
+    if (positionals.length !== 1) throw usage('update에는 추가 인수 없이 afo update로 실행하세요.');
+    return updateCommand(signal, warn);
+  }
 
   if (command === 'rules') {
     if (more !== undefined) throw usage('rules 명령의 인수가 너무 많습니다.');

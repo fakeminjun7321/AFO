@@ -8,6 +8,7 @@ irm https://raw.githubusercontent.com/fakeminjun7321/AFO/main/install.ps1 | iex 
 afo                                                   # 안내에 따라 폴더 정리
 afo undo                                              # 가장 최근 정리 되돌리기
 afo --version                                         # 설치된 버전
+afo update                                            # 최신 정식 릴리스로 업데이트
 ```
 
 - 설치 스크립트는 GitHub Releases의 단일 실행 파일(Node.js 내장)을 받아 `SHA256SUMS`와 대조한 뒤 macOS `~/.afo/bin/afo`, Windows `%LOCALAPPDATA%\Programs\AFO\afo.exe`에 두고 PATH에 추가합니다. 제거·업데이트는 [README](../README.md#업데이트와-제거)를 봅니다.
@@ -56,8 +57,18 @@ afo --version                                         # 설치된 버전
 - `.part`·`.crdownload`·`.download`는 다운로드가 끝나지 않았을 수 있어 옮기지 않습니다(`INCOMPLETE_DOWNLOAD`, `movie.mp4.part`처럼 안쪽 확장자가 알려져 있어도). 참고 폴더에서 배운 개인 규칙도 적용하지 않고, 사용자가 명시한 `--move`·저장 수정만 적용합니다.
 - 바깥 확장자가 순수 압축 형식이 아닌데 안쪽에 알려진 확장자가 있으면(`report.pdf.exe`, `invoice.pdf.scr`, `photo.jpg.exe`, `a.tar.tgz`) 바깥 확장자를 알든 모르든 위장일 수 있어 확인 필요(`COMPOUND_EXTENSION`)입니다.
 
-이 문서는 `apps/cli/src/`(`index.ts`·`analyze.ts`·`rules.ts`·`plan.ts`·`apply.ts`·`guided.ts`)에 **구현된** 동작만 적습니다.
-사용자 파일을 옮기거나 지우는 명령은 `apply`와 `undo`뿐입니다(인수 없는 대화형 `afo`도 내부적으로 같은 `applyCommand`를 부릅니다). 둘 다 확인 코드를 직접 입력해야 하고, 실제 파일 변경은 공용 실행 서비스(`packages/filesystem/src/approvals.ts`·`executor.ts`)만 합니다. 나머지 명령은 사용자 파일을 읽기만 합니다.
+이 문서는 `apps/cli/src/`에 **구현된** 동작만 적습니다.
+정리 대상 파일을 옮기거나 지우는 명령은 `apply`와 `undo`뿐입니다(인수 없는 대화형 `afo`도 내부적으로 같은 `applyCommand`를 부릅니다). 둘 다 확인 코드를 직접 입력해야 하고, 실제 정리 작업은 공용 실행 서비스(`packages/filesystem/src/approvals.ts`·`executor.ts`)만 합니다. `update`는 설치된 AFO 실행 파일을 교체합니다.
+
+## 업데이트
+
+`afo update`(추가 인수·옵션 없음)는 단일 실행 파일 설치본용입니다. GitHub Releases의 최신 정식 버전과 숫자 순서로 비교해 새 버전이 있을 때만 내 OS·CPU용 압축 파일을 받습니다. `SHA256SUMS`와 SHA-256 대조 → 임시 폴더에 실행 파일만 추출 → `--version` 결과 대조 → 설치 파일 교체 순서로 진행합니다. 네트워크·검증 실패는 오류(1), 사용법 오류는 2, Ctrl+C 취소는 130입니다. 이미 최신이거나 더 새 버전이면 설치본을 보존하고 성공(0)으로 끝납니다. API 인증은 필요 없으며 GitHub가 요청 한도를 거부하면 자동 재시도하지 않습니다.
+
+macOS의 PATH 심볼릭 링크는 실제 설치 파일로 해석해 링크를 보존합니다. Windows는 실행 중인 이전 파일을 다른 이름으로 옮긴 뒤 새 파일을 놓고, 교체 실패 시 원래 이름으로 복원합니다. 이전 파일이 실행 중이라 삭제되지 않으면 백업 경로를 안내합니다. 개인 규칙·계획·실행 기록, PATH, Finder/탐색기 메뉴는 변경하지 않습니다. 실행 중인 다른 AFO 세션은 종료 후 다시 시작해야 새 버전을 사용합니다.
+
+소스 실행본에서는 Node.js 자체를 교체하지 않고 오류와 업데이트 안내를 출력합니다. 저장소에서 `git pull`, `npm ci --ignore-scripts`, `npm run build`를 사용합니다. `update`가 없는 기존 설치본은 설치 스크립트를 한 번 다시 실행해야 합니다. 이 기능은 새 릴리스에 포함된 뒤 배포본에서 사용할 수 있습니다.
+
+검증 시에만 `AFO_UPDATE_BASE=http://127.0.0.1:<포트>`로 `latest.json`·압축 파일·`SHA256SUMS`를 제공할 수 있습니다. 외부 HTTP 주소는 거부합니다. 중단된 업데이트의 `<실행 파일>.update-lock`이 남으면 실행 중인 업데이트가 없는지 먼저 확인해야 합니다. 잠금을 자동 제거하거나 실패한 업데이트를 재실행하지 않습니다.
 
 ## 명령
 

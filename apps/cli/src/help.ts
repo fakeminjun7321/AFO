@@ -28,6 +28,7 @@ const basicRows: Row[] = [
   ['afo runs', '지금까지 정리한 기록 보기'],
   ['afo help --all', '모든 세부 명령과 옵션 보기'],
   ['afo --version', '설치된 버전 보기'],
+  ['afo update', '최신 정식 버전으로 업데이트'],
 ];
 
 const basic = [
@@ -124,6 +125,8 @@ const all = [
   ])),
 
   ...section('설치 · 상태 폴더', [
+    '  afo update: 최신 정식 릴리스 확인 → SHA-256·실행 확인 → 실행 파일만 교체합니다.',
+    '  이미 최신이면 유지합니다. 소스 실행본은 git pull 후 의존성 설치·빌드가 필요합니다.',
     ...table([
       ['macOS', 'curl -fsSL https://raw.githubusercontent.com/fakeminjun7321/AFO/main/install.sh | sh'],
       ['Windows', 'irm https://raw.githubusercontent.com/fakeminjun7321/AFO/main/install.ps1 | iex'],

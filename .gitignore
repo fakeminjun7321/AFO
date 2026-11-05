@@ -10,3 +10,4 @@ dist/
 .afo/
 *.afo-profile.json
 /release/
+/update-fixture/

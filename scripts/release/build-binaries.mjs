@@ -21,14 +21,17 @@ const targets = {
 };
 const hostTarget = `${process.platform === 'win32' ? 'win' : process.platform}-${process.arch}`;
 
-const { values } = parseArgs({ options: { targets: { type: 'string' }, out: { type: 'string' } } });
+const { values } = parseArgs({ options: { targets: { type: 'string' }, out: { type: 'string' }, 'update-fixture': { type: 'boolean' } } });
 const out = path.resolve(root, values.out ?? 'release');
+if (values['update-fixture'] && (!values.out || out === path.join(root, 'release')))
+  throw new Error('업데이트 검증 빌드는 공개 release 폴더 밖의 별도 --out 경로가 필요합니다.');
 const wanted = (values.targets ?? Object.keys(targets).join(',')).split(',');
 for (const name of wanted) if (!(name in targets)) throw new Error(`알 수 없는 대상: ${name} (가능: ${Object.keys(targets).join(', ')})`);
 if (wanted.some((name) => name.startsWith('darwin-')) && process.platform !== 'darwin')
   throw new Error('macOS 실행 파일은 codesign이 필요해 macOS에서만 만들 수 있습니다.');
 
-const { version } = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
+const { version: packageVersion } = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
+const version = values['update-fixture'] ? '0.0.0' : packageVersion;
 const sha256 = (data) => createHash('sha256').update(data).digest('hex');
 const run = (file, args) => execFileSync(file, args, { stdio: ['ignore', 'pipe', 'inherit'] }).toString();
 
@@ -41,6 +44,12 @@ const bundle = path.join(work, 'afo.cjs');
 await build({
   entryPoints: [path.join(root, 'apps/cli/src/sea.ts')], outfile: bundle, bundle: true,
   platform: 'node', format: 'cjs', target: 'node24', define: { 'import.meta.url': 'undefined' }, logLevel: 'warning',
+  // A synthetic older updater exercises self-replacement on every runner, without editing the checkout or publishing it.
+  plugins: values['update-fixture'] ? [{ name: 'update-fixture-version', setup(builder) {
+    builder.onLoad({ filter: /[/\\]apps[/\\]cli[/\\]src[/\\]version\.ts$/ }, () => ({
+      contents: "export const AFO_VERSION = '0.0.0';", loader: 'ts',
+    }));
+  } }] : [],
 });
 const seaConfig = path.join(work, 'sea-config.json');
 const blob = path.join(work, 'sea-prep.blob');

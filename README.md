@@ -94,7 +94,7 @@ afo --version
 
 `afo update`는 GitHub의 최신 정식 릴리스를 확인하고, 이미 최신이거나 더 새 버전이면 그대로 둡니다. 새 버전은 내 OS·CPU용 파일의 SHA-256과 `--version` 실행 결과를 확인한 뒤 **지금 실행한 AFO 실행 파일만** 교체합니다. PATH 링크, 오른쪽 클릭 메뉴, 개인 규칙·계획·실행 기록은 유지합니다. 다운로드·검증 실패 시 기존 설치본을 유지합니다. Windows에서는 실행 중인 이전 파일을 바로 지울 수 없으면 해당 백업 경로를 안내합니다.
 
-소스에서 실행한 AFO는 `git pull` → `npm ci --ignore-scripts` → `npm run build`로 업데이트합니다. `update`가 없는 이전 설치본은 위 설치 명령을 한 번 다시 실행해야 합니다. 새 릴리스에 이 명령이 포함되기 전에는 기존 배포본에서 쓸 수 없습니다.
+`afo update`는 v0.4.0부터 제공됩니다. 소스에서 실행한 AFO는 `git pull` → `npm ci --ignore-scripts` → `npm run build`로 업데이트합니다. `update`가 없는 이전 설치본은 위 설치 명령을 한 번 다시 실행해야 합니다.
 
 제거(macOS): `rm ~/.afo/bin/afo`와 설치 때 안내된 링크(예: `rm ~/.local/bin/afo`)를 지우고, `~/.zshrc`에 `# AFO` PATH 줄이 있으면 지웁니다. 빠른 동작은 `rm -r ~/Library/Services/"AFO로 정리.workflow"`로 지웁니다.
 제거(Windows): `Remove-Item "$env:LOCALAPPDATA\Programs\AFO" -Recurse` 후 사용자 환경 변수 PATH에서 그 폴더를 지웁니다. 보내기 메뉴는 `Remove-Item "$env:APPDATA\Microsoft\Windows\SendTo\AFO로 정리.lnk"`로 지웁니다.
@@ -112,7 +112,11 @@ npm run afo -- preview "/path/to/test-folder"
 npm run release:build -- --targets darwin-arm64   # 단일 실행 파일 만들기(release/)
 ```
 
-`v*` 태그를 올리면 [릴리스 워크플로](.github/workflows/release.yml)가 macOS(arm64·x64)·Windows(x64) 실행 파일을 만들고, 세 OS에서 설치 스크립트로 설치·실행을 확인한 뒤 GitHub Release에 올립니다. 태그는 `package.json`의 버전과 같아야 합니다.
+main에 변경을 병합하거나 push하면 [자동 릴리스](.github/workflows/auto-release.yml)가 버전을 정하고 태그를 만듭니다. `package.json` 버전이 기존 정식 태그보다 높으면 그 버전을 쓰고, 같거나 낮으면 가장 높은 정식 태그의 패치 버전을 한 단계 올립니다(예: 0.4.0 → 0.4.1). 버전 상수·package.json·lockfile은 함께 맞춥니다.
+
+이어 [릴리스 워크플로](.github/workflows/release.yml)가 전체 테스트 → macOS(arm64·x64)·Windows(x64) 빌드 → 세 대상의 설치·실제 자체 업데이트·최신 버전 건너뛰기·체크섬 거부 검사를 수행한 뒤 GitHub 정식 릴리스를 게시합니다. 검사에 실패하면 게시하지 않습니다. 검증용 0.0.0 실행 파일은 별도 CI 아티팩트로만 만들고 공개 릴리스에는 넣지 않습니다. 변경별 노트가 `docs/releases/v<버전>.md`에 있으면 사용하고, 없으면 GitHub가 병합 내역으로 작성합니다.
+
+버전 커밋과 태그는 저장소의 `GITHUB_TOKEN`으로 만들어 재귀 push 실행을 막고, 검증·게시 workflow를 명시적으로 dispatch합니다([GitHub의 토큰 동작](https://docs.github.com/en/actions/concepts/security/github_token)). 별도 개인 토큰은 필요 없습니다. 수동 `v*` 태그 게시도 유지하며 태그와 `package.json` 버전은 같아야 합니다. 수동 workflow 실행의 `publish`는 기본 false이며, 정식 게시를 선택할 때는 v 태그에서만 실행할 수 있습니다.
 
 | 문서 | 내용 |
 | --- | --- |

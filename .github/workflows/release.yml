@@ -1,6 +1,6 @@
 name: 릴리스
 # v* 태그: 실행 파일 빌드 → 세 OS에서 설치 스크립트로 설치·실행 확인 → GitHub Release에 올림.
-# PR과 수동 실행(workflow_dispatch)은 빌드·설치 확인만 하고 릴리스는 만들지 않습니다.
+# PR과 기본 수동 실행은 빌드·설치 확인만 합니다. v 태그에서 publish=true로 dispatch하면 검증 후 게시합니다.
 on:
   push:
     tags: ['v*']
@@ -15,11 +15,17 @@ on:
       - 'apps/cli/src/help.ts'
       - 'package*.json'
       - '.github/workflows/release.yml'
+      - '.github/workflows/auto-release.yml'
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 검증 통과 후 정식 게시 (v 태그에서만 허용)
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event_name == 'pull_request' && github.ref || 'publication' }}
   cancel-in-progress: false
 jobs:
   build:
@@ -33,16 +39,27 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: 게시 실행은 v 태그에서만 허용
+        if: inputs.publish
+        run: test "${GITHUB_REF#refs/tags/v}" != "$GITHUB_REF"
       - name: 태그와 package.json 버전 일치 확인
         if: startsWith(github.ref, 'refs/tags/')
         run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
       - run: npm test
       - run: npm run release:build
+      - name: 업데이트 검증 전용 구버전 빌드 (공개하지 않음)
+        run: npm run release:build -- --update-fixture --out update-fixture
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: afo-release
           path: release/
           if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: afo-update-fixture
+          path: update-fixture/
+          if-no-files-found: error
+          retention-days: 3
 
   install:
     needs: build
@@ -58,6 +75,15 @@ jobs:
         with:
           name: afo-release
           path: release
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: afo-update-fixture
+          path: update-fixture
+      - name: 단일 실행 파일 자체 업데이트·최신 건너뛰기·체크섬 거부 검증
+        shell: bash
+        run: |
+          target=$(node -p 'process.platform === "win32" ? "win-x64.zip" : "darwin-" + process.arch + ".tar.gz"')
+          node scripts/release/verify-update.mjs --old "update-fixture/afo-$target" --new "release/afo-$target"
       # 설치 스크립트가 실제로 쓰는 경로(HTTP 다운로드 → SHA256SUMS 대조 → 압축 해제 → 실행 확인)를 로컬 서버로 확인합니다.
       - name: install.sh로 설치하고 합성 폴더 미리보기(macOS)
         if: runner.os == 'macOS'
@@ -108,13 +134,14 @@ jobs:
           Stop-Process -Id $server.Id
 
   release:
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') && (github.event_name == 'push' || inputs.publish)
     needs: install
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: afo-release
@@ -122,4 +149,10 @@ jobs:
       - name: GitHub Release 만들기
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --title "AFO $GITHUB_REF_NAME" --generate-notes
+        run: |
+          notes="docs/releases/$GITHUB_REF_NAME.md"
+          if [ -f "$notes" ]; then
+            gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --verify-tag --title "AFO $GITHUB_REF_NAME" --notes-file "$notes"
+          else
+            gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --verify-tag --title "AFO $GITHUB_REF_NAME" --generate-notes
+          fi

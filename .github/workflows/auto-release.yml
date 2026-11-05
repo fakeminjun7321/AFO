@@ -1,0 +1,33 @@
+name: main 자동 릴리스
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: afo-auto-release-main
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+      - name: 버전·태그 준비 (오래된 main 이벤트는 건너뜀)
+        id: version
+        run: node scripts/release/prepare-auto-release.mjs
+      # GITHUB_TOKEN으로 만든 push/tag는 후속 workflow를 자동 실행하지 않으므로 명시적으로 dispatch합니다.
+      # 버전 커밋도 같은 토큰으로 써서 main 자동 릴리스의 재귀 실행을 막습니다.
+      - name: 태그의 검증·정식 게시 파이프라인 실행
+        if: steps.version.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: gh workflow run release.yml --ref "$RELEASE_TAG" -f publish=true

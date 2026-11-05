@@ -280,7 +280,7 @@ export interface AnalyzeOptions extends ScanOptions { profile?: unknown; referen
 export interface Analysis { preview: Preview; scan: ScanResult; suggestedProfile: ReturnType<typeof suggestProfile> | null;
   reference: ReferenceScan | null; protected: ProtectedEntry[] }
 
-/** scan → reference metadata → hash size candidates (protected excluded) → preview. No filesystem writes. */
+/** scan → reference metadata → hashes/optional inspection → preview. Work/reference roots stay unchanged; inspection owns temporary copies. */
 export async function analyzeRoot(grant: RootGrant, options: AnalyzeOptions = {}): Promise<Analysis> {
   // The app's own state (profiles, plans, journal) must never become a work or reference file (STATE_DIR_CONFLICT).
   const stateDir = options.stateDir ?? resolveStateDir();

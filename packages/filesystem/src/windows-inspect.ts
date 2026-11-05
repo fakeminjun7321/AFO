@@ -92,10 +92,10 @@ try {
       foreach ($value in $values) { $averageBits += $(if ($value -ge $mean) { '1' } else { '0' }); $variance += [Math]::Pow($value-$mean,2) }
       $result = @{ width=$bitmap.Width; height=$bitmap.Height; hash=[Convert]::ToUInt64($bits,2).ToString('x16'); averageHash=[Convert]::ToUInt64($averageBits,2).ToString('x16');
         variance=$variance/64; color=@(($colors[0]/64),($colors[1]/64),($colors[2]/64)); text=''; method='windows-gdi' }
-      $scale = [Math]::Min(96.0/$bitmap.Width,96.0/$bitmap.Height)
+      $scale = [Math]::Min(360.0/$bitmap.Width,360.0/$bitmap.Height)
       $thumb = New-Object Drawing.Bitmap($bitmap, (New-Object Drawing.Size([Math]::Max(1,[int]($scale*$bitmap.Width)),[Math]::Max(1,[int]($scale*$bitmap.Height)))))
       $memory = New-Object IO.MemoryStream
-      try { $thumb.Save($memory,[Drawing.Imaging.ImageFormat]::Png); if ($memory.Length -le 29000) { $result.thumbnail='data:image/png;base64,'+[Convert]::ToBase64String($memory.ToArray()) } }
+      try { $thumb.Save($memory,[Drawing.Imaging.ImageFormat]::Jpeg); if ($memory.Length -le 29000) { $result.thumbnail='data:image/jpeg;base64,'+[Convert]::ToBase64String($memory.ToArray()) } }
       finally { $thumb.Dispose(); $memory.Dispose() }
       if ($request.ocr) {
         try {

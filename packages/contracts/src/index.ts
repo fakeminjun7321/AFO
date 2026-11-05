@@ -148,7 +148,7 @@ export const PhotoInsightSchema = z.strictObject({
   capturedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).nullable(), width: z.number().int().positive().nullable(), height: z.number().int().positive().nullable(),
   hash: z.string().regex(/^[a-f0-9]{16}$/u).nullable(), averageHash: z.string().regex(/^[a-f0-9]{16}$/u).nullable(),
   variance: z.number().nonnegative().nullable(), color: z.array(z.number().min(0).max(255)).length(3).nullable(),
-  thumbnail: z.string().max(40_000).regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/u).nullable(),
+  thumbnail: z.string().max(40_000).regex(/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/u).nullable(),
 });
 export const SmartReportSchema = z.strictObject({
   options: SmartOptionsSchema, documents: z.array(TextInsightSchema).max(300), photos: z.array(PhotoInsightSchema).max(1000),

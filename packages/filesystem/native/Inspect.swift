@@ -86,13 +86,20 @@ func inspect(_ input: Input) throws -> [String: Any] {
     var result: [String: Any] = ["width": orientation >= 5 ? height : width, "height": orientation >= 5 ? width : height, "hash": hex(dHash), "averageHash": hex(aHash),
         "variance": variance, "color": color, "text": "", "method": input.ocr ? "apple-vision-image-ocr" : "imageio"]
     if input.ocr { do { result["text"] = try recognize(image) } catch { result["ocrError"] = error.localizedDescription } }
-    if let small = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true,
-        kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 96] as CFDictionary) {
+    for size in [360, 180] {
+      if result["thumbnail"] != nil { break }
+      if let small = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: size] as CFDictionary) {
+        guard let canvas = CGContext(data: nil, width: small.width, height: small.height, bitsPerComponent: 8, bytesPerRow: small.width * 4,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { continue }
+        canvas.setFillColor(CGColor(gray: 1, alpha: 1)); canvas.fill(CGRect(x: 0, y: 0, width: small.width, height: small.height))
+        canvas.draw(small, in: CGRect(x: 0, y: 0, width: small.width, height: small.height))
         let data = NSMutableData()
-        if let destination = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil) {
-            CGImageDestinationAddImage(destination, small, nil)
-            if CGImageDestinationFinalize(destination) && data.length <= 29_000 { result["thumbnail"] = "data:image/png;base64," + (data as Data).base64EncodedString() }
+        if let image = canvas.makeImage(), let destination = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil) {
+            CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.75] as CFDictionary)
+            if CGImageDestinationFinalize(destination) && data.length <= 29_000 { result["thumbnail"] = "data:image/jpeg;base64," + (data as Data).base64EncodedString() }
         }
+      }
     }
     return result
 }

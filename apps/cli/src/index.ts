@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { AfoError, ProfileSchema } from '../../../packages/contracts/src/index.js';
 import type { CorrectionMatch, RuleProfile } from '../../../packages/contracts/src/index.js';
-import { confirmProfile, pathKey, suggestProfile } from '../../../packages/engine/src/index.js';
+import { categoryExtensions, confirmProfile, pathKey, suggestProfile } from '../../../packages/engine/src/index.js';
 import { issueReferenceGrant, readReference } from '../../../packages/filesystem/src/index.js';
 import { addCorrection } from '../../../packages/filesystem/src/profiles.js';
 import { resolveStateDir } from '../../../packages/filesystem/src/state.js';
@@ -23,6 +23,7 @@ import { guidedCommand, undoLatestCommand } from './guided.js';
 import { helpText } from './help.js';
 import { AFO_VERSION } from './version.js';
 import { updateCommand } from './update.js';
+import { readerFormats } from '../../../packages/engine/src/formats.js';
 
 const readDraft = async (file: string): Promise<RuleProfile> => ProfileSchema.parse(await readJsonFile(file));
 
@@ -41,12 +42,13 @@ const isFolder = async (p: string): Promise<boolean> => { try { return (await st
 
 /** Each command's accepted options; anything else is a usage error rather than being ignored. */
 const allowed: Record<string, readonly string[]> = {
-  preview: ['profile', 'reference', 'json', 'no-saved-rules', 'move', 'remember'],
-  plan: ['profile', 'reference', 'json', 'no-saved-rules', 'move', 'delete-mode', 'delete-duplicates', 'delete-file', 'delete-last-copy'],
-  'suggest-rules': ['json'], 'confirm-rules': ['select'], rules: ['json', 'select', 'confirm'],
+  preview: ['profile', 'reference', 'json', 'no-saved-rules', 'move', 'remember', 'rename', 'skip', 'conflicts', 'content', 'ocr', 'photo-dates', 'similar-photos', 'similar-threshold', 'ai-model', 'ai-url'],
+  plan: ['profile', 'reference', 'json', 'no-saved-rules', 'move', 'delete-mode', 'delete-duplicates', 'delete-file', 'delete-last-copy', 'rename', 'skip', 'conflicts', 'content', 'ocr', 'photo-dates', 'similar-photos', 'similar-threshold', 'ai-model', 'ai-url'],
+  'suggest-rules': ['json'], 'confirm-rules': ['select'], rules: ['json', 'select', 'confirm', 'size', 'modified'],
   apply: ['mode', 'only', 'confirm', 'phrase', 'json'], undo: ['confirm', 'json'], runs: ['json'], recover: ['json'],
   gui: ['port', 'no-open', 'exit-when-closed'],
   update: [],
+  formats: ['json', 'categories'],
 };
 
 /** Output only; exit codes of apply/undo/recover are lost here. The process entry point uses runCli. */
@@ -87,6 +89,11 @@ async function dispatch(args: string[], signal: AbortSignal | undefined, io: Cli
       'delete-file': { type: 'string', multiple: true }, 'delete-last-copy': { type: 'boolean' },
       mode: { type: 'string' }, only: { type: 'string' }, phrase: { type: 'string' },
       port: { type: 'string' }, 'no-open': { type: 'boolean' }, 'exit-when-closed': { type: 'boolean' },
+      rename: { type: 'string', multiple: true }, skip: { type: 'string', multiple: true }, conflicts: { type: 'string' }, content: { type: 'boolean' }, ocr: { type: 'boolean' },
+      'photo-dates': { type: 'string' }, 'similar-photos': { type: 'boolean' }, 'similar-threshold': { type: 'string' },
+      'ai-model': { type: 'string' }, 'ai-url': { type: 'string' },
+      size: { type: 'string' }, modified: { type: 'string' },
+      categories: { type: 'boolean' },
     } });
   } catch (error) {
     throw usage(`옵션을 해석할 수 없습니다(${error instanceof Error ? error.message : String(error)}). afo help 참고`);
@@ -100,6 +107,13 @@ async function dispatch(args: string[], signal: AbortSignal | undefined, io: Cli
   const stateDir = (): string => io.stateDir ?? resolveStateDir();
   const options = signal ? { signal } : {};
   const json = values.json === true;
+  if (command === 'formats') {
+    if (positionals.length !== 1) throw usage('formats에는 대상 경로가 필요하지 않습니다.');
+    if (values.categories) return json ? JSON.stringify(categoryExtensions, null, 2) : Object.entries(categoryExtensions).map(([category, extensions]) => `${category}: ${extensions.join(' ')}`).join('\n');
+    return json ? JSON.stringify(readerFormats(), null, 2) : ['AFO 본문·이미지 분석 지원 형식 (분류 가능한 확장자 목록과는 별도)',
+      ...readerFormats().map((format) => `${format.extensions.join(' ')}\n  ${format.method}: ${format.note}`),
+      '구형 바이너리 HWP·DOC·XLS·PPT는 종류별 분류만 지원하며 본문 추출은 지원하지 않습니다.'].join('\n');
+  }
 
   if (command === 'update') {
     if (positionals.length !== 1) throw usage('update에는 추가 인수 없이 afo update로 실행하세요.');
@@ -108,7 +122,7 @@ async function dispatch(args: string[], signal: AbortSignal | undefined, io: Cli
 
   if (command === 'rules') {
     if (more !== undefined) throw usage('rules 명령의 인수가 너무 많습니다.');
-    return rulesCommand(target, extra, { json, stateDir, draft: readDraft, select: values.select, confirm: values.confirm,
+    return rulesCommand(target, extra, { json, stateDir, draft: readDraft, input: readJsonFile, sampleSize: values.size, sampleModified: values.modified, select: values.select, confirm: values.confirm,
       isTTY: io.isTTY ?? false, ask: io.ask ?? (() => Promise.reject(new Error('대화형 입력을 사용할 수 없습니다.'))), warn });
   }
   const exec: ExecContext = { json, warn, stateDir, signal, isTTY: io.isTTY ?? false,
@@ -172,6 +186,10 @@ async function preview(target: string, values: AnalyzeValues, ctx: { json: boole
   return ['AFO 정리 미리보기 — 실제 파일은 변경하지 않았습니다.',
     `분석: ${result.items.length}개 / 스캔 ${result.scanComplete ? '완료' : '일부 미완료'} / 제외·오류 ${result.skipped.length}개`,
     profileLine(info, analysis.preview.profileNotice?.code === 'PROFILE_STALE'),
+    ...(result.smart ? [`추가 분석: 본문 ${result.smart.documents.length}개 / 사진 ${result.smart.photos.length}개 / 유사 사진 쌍 ${result.smart.similar.length}개${result.smart.complete ? '' : ' (일부 미완료)'}`,
+      ...result.smart.documents.map((d) => `[본문 ${d.status}] ${d.source} (${d.method}, ${d.characters}자)\n  ${d.reason}${d.suggestedDirectory ? ` → ${d.suggestedDirectory}` : ''}`),
+      ...result.smart.similar.map((pair) => `[유사 사진·수동 비교] ${pair.left} ↔ ${pair.right} (형태 차이 ${pair.distance}/64, 자동 삭제 후보 아님)`),
+      ...result.smart.notices.map((notice) => `추가 분석 참고: ${notice}`)] : []),
     ...(result.profileNotice ? [`경고: ${result.profileNotice.reason} 'rules list'로 확인한 뒤 suggest-rules → rules save로 다시 저장하세요.`] : []),
     ...result.items.map((item) => `[${labels[item.action]}] ${item.source}${item.destination ? ` → ${item.destination}` : ''}` +
       `${once.has(item.fileId) ? values.remember ? ' (사용자 수정, 이후에도 적용 저장)' : ' (이번만 적용)' : ''}\n  ${item.reason}`),

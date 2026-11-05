@@ -4,15 +4,19 @@ import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import { z } from 'zod';
-import { AfoError, OpaqueIdSchema } from '../../../packages/contracts/src/index.js';
+import { AfoError, ComplexRuleSchema, OpaqueIdSchema, RelativePathSchema, SmartOptionsSchema } from '../../../packages/contracts/src/index.js';
 import { approvalChoices } from '../../../packages/engine/src/index.js';
 import { loadSavedPlan } from '../../../packages/filesystem/src/approvals.js';
 import { readRun } from '../../../packages/filesystem/src/executor.js';
-import { loadProfile } from '../../../packages/filesystem/src/profiles.js';
+import { disableProfile, enableProfile, loadProfile, removeComplexRule, setRuleEnabled, upsertComplexRule } from '../../../packages/filesystem/src/profiles.js';
+import { aiModels } from '../../../packages/filesystem/src/features.js';
+import { readerFormats } from '../../../packages/engine/src/formats.js';
+import { complexMatches, conditionMatches } from '../../../packages/engine/src/smart.js';
+import { AFO_VERSION } from './version.js';
 import { analyzeTarget } from './analyze.js';
 import { applyCommand, recoverReport, runSummaries, undoCommand } from './apply.js';
 import type { CliResult, ExecContext } from './apply.js';
-import { appCss, appJs, pageHtml } from './gui-assets.js';
+import { appCss, smartCss, appJs, pageHtml } from './gui-assets.js';
 import { createPlan } from './plan.js';
 import { CliError, isCorrupt, usage } from './rules.js';
 
@@ -31,9 +35,20 @@ export interface GuiContext { warn: (line: string) => void; stateDir: () => stri
 
 const MAX_BODY = 64 * 1024;
 const FolderSchema = z.string().trim().min(1).max(4096);
-const PreviewRequest = z.strictObject({ folder: FolderSchema, reference: FolderSchema.optional(), noSavedRules: z.boolean().optional() });
+const RenameSchema = z.strictObject({ fileId: z.string().regex(/^[a-f0-9]{64}$/u), name: RelativePathSchema.refine((name) => !name.includes('/') && !name.includes('\\') && !name.startsWith('.'), '파일 이름 하나가 필요합니다.') });
+const PreviewRequest = z.strictObject({ folder: FolderSchema, reference: FolderSchema.optional(), noSavedRules: z.boolean().optional(),
+  smart: SmartOptionsSchema.optional(), skips: z.array(z.string().regex(/^[a-f0-9]{64}$/u)).max(1000).optional(), renames: z.array(RenameSchema).max(1000).optional(),
+  overrides: z.array(z.strictObject({ fileId: z.string().regex(/^[a-f0-9]{64}$/u), target: RelativePathSchema })).max(1000).optional() });
 const PlanRequest = z.strictObject({ folder: FolderSchema, reference: FolderSchema.optional(), noSavedRules: z.boolean().optional(),
-  deleteMode: z.enum(['trash', 'permanent']).optional(), deleteDuplicates: z.enum(['none', 'all']).optional() });
+  deleteMode: z.enum(['trash', 'permanent']).optional(), deleteDuplicates: z.enum(['none', 'all']).optional(),
+  smart: SmartOptionsSchema.optional(), skips: z.array(z.string().regex(/^[a-f0-9]{64}$/u)).max(1000).optional(), renames: z.array(RenameSchema).max(1000).optional(),
+  overrides: z.array(z.strictObject({ fileId: z.string().regex(/^[a-f0-9]{64}$/u), target: RelativePathSchema })).max(1000).optional() });
+const ManualRuleInput = ComplexRuleSchema.omit({ id: true }).extend({ id: z.string().regex(/^[a-f0-9]{16}$/u).optional() });
+const SaveRuleRequest = z.strictObject({ rule: ManualRuleInput, expectedRevision: z.number().int().positive().nullable() });
+const DeleteRuleRequest = z.strictObject({ id: z.string().regex(/^[a-f0-9]{16}$/u), expectedRevision: z.number().int().positive() });
+const ToggleRuleRequest = z.strictObject({ id: z.string().min(1).max(128), enabled: z.boolean(), expectedRevision: z.number().int().positive() });
+const ProfileStatusRequest = z.strictObject({ enabled: z.boolean(), expectedRevision: z.number().int().positive() });
+const TestRuleRequest = z.strictObject({ rule: ManualRuleInput, name: RelativePathSchema, size: z.number().int().nonnegative().optional(), modified: z.string().datetime().optional() });
 /** permanent-delete is not offered here: it stays in the terminal with its typed phrase. */
 const ApplyRequest = z.strictObject({ planId: z.string().regex(/^[a-f0-9]{64}$/u), mode: z.enum(['organize', 'trash']) });
 const UndoRequest = z.strictObject({ runId: OpaqueIdSchema });
@@ -163,7 +178,7 @@ export async function guiCommand(folder: string | undefined, values: GuiValues, 
 
   const api = async (req: IncomingMessage, res: ServerResponse, route: string): Promise<unknown> => {
     if (req.method === 'GET' && route === '/api/info')
-      return { initialFolder, stateDir, platform: process.platform, executes: ['organize', 'trash'], undo: true,
+      return { initialFolder, stateDir, version: AFO_VERSION, platform: process.platform, executes: ['organize', 'trash'], undo: true,
         exitWhenClosed: values['exit-when-closed'] === true, cli: cliPrefix() };
     if (req.method === 'POST' && route === '/api/ping') { parse(PingRequest, await readBody(req)); return { ok: true }; }
     if (req.method === 'POST' && route === '/api/preview') {
@@ -171,6 +186,7 @@ export async function guiCommand(folder: string | undefined, values: GuiValues, 
       return exclusive(res, async (signal) => {
         const { analysis, info } = await analyzeTarget(folderOf(body.folder, '폴더'), {
           ...(body.reference ? { reference: folderOf(body.reference, '참고 폴더') } : {}), 'no-saved-rules': body.noSavedRules === true,
+          smart: body.smart, skips: body.skips, renames: body.renames, overrides: body.overrides,
         }, { ...analyzeContext(signal), writesState: false });
         return { preview: analysis.preview, suggestedProfile: analysis.suggestedProfile, profile: info };
       });
@@ -180,6 +196,7 @@ export async function guiCommand(folder: string | undefined, values: GuiValues, 
       return exclusive(res, async (signal) => {
         const created = await createPlan(folderOf(body.folder, '폴더'), {
           ...(body.reference ? { reference: folderOf(body.reference, '참고 폴더') } : {}), 'no-saved-rules': body.noSavedRules === true,
+          smart: body.smart, skips: body.skips, renames: body.renames, overrides: body.overrides,
           'delete-mode': body.deleteMode ?? 'trash', ...(body.deleteDuplicates === 'all' ? { 'delete-duplicates': 'all' } : {}),
         }, analyzeContext(signal));
         return { planId: created.plan.id, plan: created.plan, approvalChoices: created.choices, preview: created.preview, profile: created.info };
@@ -210,6 +227,35 @@ export async function guiCommand(folder: string | undefined, values: GuiValues, 
     if (req.method === 'GET' && route === '/api/rules') {
       const p = await loadProfile({ stateDir });
       return p === null ? { state: 'none' } : isCorrupt(p) ? { state: 'corrupt', reason: p.reason } : { state: 'active', profile: p };
+    }
+    if (req.method === 'GET' && route === '/api/formats') return { formats: readerFormats() };
+    if (req.method === 'POST' && route === '/api/ai-models') {
+      const body = parse(z.strictObject({ url: z.string().optional() }), await readBody(req));
+      return { models: await aiModels(body.url) };
+    }
+    if (req.method === 'POST' && route === '/api/rules/complex') {
+      const body = parse(SaveRuleRequest, await readBody(req));
+      const rule = ComplexRuleSchema.parse({ ...body.rule, id: body.rule.id ?? randomBytes(8).toString('hex') });
+      return { profile: await upsertComplexRule(rule, { stateDir, expectedRevision: body.expectedRevision }) };
+    }
+    if (req.method === 'POST' && route === '/api/rules/complex/delete') {
+      const body = parse(DeleteRuleRequest, await readBody(req));
+      return { profile: await removeComplexRule(body.id, { stateDir, expectedRevision: body.expectedRevision }) };
+    }
+    if (req.method === 'POST' && route === '/api/rules/toggle') {
+      const body = parse(ToggleRuleRequest, await readBody(req));
+      return { profile: await setRuleEnabled(body.id, body.enabled, { stateDir, expectedRevision: body.expectedRevision }) };
+    }
+    if (req.method === 'POST' && route === '/api/rules/status') {
+      const body = parse(ProfileStatusRequest, await readBody(req));
+      return { profile: await (body.enabled ? enableProfile : disableProfile)({ stateDir, expectedRevision: body.expectedRevision }) };
+    }
+    if (req.method === 'POST' && route === '/api/rules/test') {
+      const body = parse(TestRuleRequest, await readBody(req));
+      const rule = ComplexRuleSchema.parse({ ...body.rule, id: body.rule.id ?? '0'.repeat(16) });
+      const metadata = { ...(body.size !== undefined ? { size: body.size } : {}), ...(body.modified !== undefined ? { modifiedNs: String(BigInt(Date.parse(body.modified)) * 1_000_000n) } : {}) };
+      return { matched: complexMatches(rule, body.name, metadata), virtualInput: true,
+        conditions: rule.conditions.map((condition) => ({ condition, matched: conditionMatches(condition, body.name, metadata) })) };
     }
     if (req.method === 'GET' && route === '/api/runs') return { runs: await runSummaries(stateDir) };
     const runMatch = /^\/api\/runs\/([^/]+)$/u.exec(route);
@@ -259,7 +305,7 @@ export async function guiCommand(folder: string | undefined, values: GuiValues, 
     if (req.method !== 'GET' || !allowedHosts().has(req.headers.host ?? '')) return send(res, 403, 'text/plain; charset=utf-8', 'forbidden');
     if (route === '/') return send(res, 200, 'text/html; charset=utf-8', pageHtml);
     if (route === '/app.js') return send(res, 200, 'text/javascript; charset=utf-8', appJs);
-    if (route === '/app.css') return send(res, 200, 'text/css; charset=utf-8', appCss);
+    if (route === '/app.css') return send(res, 200, 'text/css; charset=utf-8', appCss + smartCss);
     return send(res, 404, 'text/plain; charset=utf-8', 'not found');
   });
 

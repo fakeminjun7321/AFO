@@ -1,9 +1,10 @@
 import path from 'node:path';
 import { CorrectionMatchSchema, CorrectionSchema, PROFILE_EVIDENCE_LIMIT, ProfileSchema, RelativePathSchema, RuleProfileV2Schema,
   TargetDirectorySchema, correctionMatchKey } from '../../contracts/src/index.js';
-import type { Correction, CorrectionMatch, RuleProfile, RuleProfileV2 } from '../../contracts/src/index.js';
+import type { ComplexRule, Correction, CorrectionMatch, FileSnapshot, RuleProfile, RuleProfileV2 } from '../../contracts/src/index.js';
 import type { Classification } from './classify.js';
 import { compare, digest, pathKey } from './util.js';
+import { complexMatches } from './smart.js';
 
 /**
  * Personal rules (#18): pure functions shared by the profile store, CLI and later GUI.
@@ -43,6 +44,8 @@ const next = (profile: RuleProfileV2, change: Partial<RuleProfileV2>, now: Date)
 export function withRuleEnabled(input: RuleProfileV2, ruleId: string, enabled: boolean, now: Date = new Date()): RuleProfileV2 {
   const profile = RuleProfileV2Schema.parse(input);
   const rule = profile.rules.find((r) => r.id === ruleId);
+  const complex = profile.complexRules?.find((r) => r.id === ruleId);
+  if (complex) return complex.enabled === enabled ? input : next(profile, { complexRules: profile.complexRules!.map((r) => r.id === ruleId ? { ...r, enabled } : r) }, now);
   if (!rule) throw new Error('해당 ID의 저장 규칙이 없습니다.');
   if (rule.enabled === enabled) return input;
   return next(profile, { rules: profile.rules.map((r) => r.id === ruleId ? { ...r, enabled } : r) }, now);
@@ -85,12 +88,13 @@ export function emptyProfile(id: string, revision: number, now: Date = new Date(
 
 /** Rules and corrections that may apply, or null when the profile is a draft or disabled. */
 interface Active { id: string; revision: number; rules: { id: string; extension: string; keyword: string | null; targetDirectory: string }[];
-  corrections: Correction[] }
+  corrections: Correction[]; complexRules: ComplexRule[] }
 export function activeRules(profile: AnyProfile): Active | null {
   if (profile.status !== 'confirmed') return null;
   return profile.formatVersion === 1
-    ? { id: profile.id, revision: profile.revision, rules: profile.rules, corrections: [] }
-    : { id: profile.id, revision: profile.revision, rules: profile.rules.filter((r) => r.enabled), corrections: profile.corrections };
+    ? { id: profile.id, revision: profile.revision, rules: profile.rules, corrections: [], complexRules: [] }
+    : { id: profile.id, revision: profile.revision, rules: profile.rules.filter((r) => r.enabled), corrections: profile.corrections,
+      complexRules: (profile.complexRules ?? []).filter((r) => r.enabled) };
 }
 
 const review = (reason: string): Classification =>
@@ -103,7 +107,7 @@ const inside = (folder: string, dir: string): boolean => pathKey(dir) === pathKe
  * Order: saved correction (exact name before keyword) → file already inside a personal folder (kept) → confirmed, enabled rule.
  * Matches with different destinations are RULE_CONFLICT (review), never an arbitrary pick. Uses names only.
  */
-export function classifyPersonal(relativePath: string, input: AnyProfile): Classification | null {
+export function classifyPersonal(relativePath: string, input: AnyProfile, file?: Pick<FileSnapshot, 'size' | 'modifiedNs'>): Classification | null {
   const active = activeRules(input);
   if (!active) return null;
   const rel = RelativePathSchema.parse(relativePath);
@@ -120,11 +124,19 @@ export function classifyPersonal(relativePath: string, input: AnyProfile): Class
     reasonCode: 'SAVED_CORRECTION', reason: '이후에도 적용하기로 저장한 사용자 수정입니다.' };
   const dir = path.posix.dirname(rel);
   if (dir !== '.') {
-    const home = [...active.rules.map((r) => r.targetDirectory), ...active.corrections.map((c) => c.targetDirectory)]
+    const home = [...active.rules.map((r) => r.targetDirectory), ...active.corrections.map((c) => c.targetDirectory), ...active.complexRules.map((r) => r.targetDirectory)]
       .filter((folder) => inside(folder, dir)).sort((a, b) => b.length - a.length || compare(a, b))[0];
     // A file the user (or the reference folder) already placed in a personal folder is not moved elsewhere.
     if (home) return { targetDirectory: dir, category: null, ruleId: null, source: 'personal', reasonCode: 'ALREADY_PLACED',
       reason: `이미 개인 정리 폴더(${home})에 있어 옮기지 않습니다.` };
+  }
+  const complex = active.complexRules.filter((r) => complexMatches(r, rel, file)).sort((a, b) => b.priority - a.priority || compare(a.id, b.id));
+  if (complex.length) {
+    const highest = complex.filter((r) => r.priority === complex[0]!.priority);
+    if (distinct(highest.map((r) => r.targetDirectory)) > 1) return review('같은 우선순위의 복합 규칙 목적지가 충돌합니다.');
+    const rule = highest[0]!;
+    return { targetDirectory: rule.targetDirectory, category: null, ruleId: rule.id, source: 'personal', reasonCode: 'COMPLEX_RULE',
+      reason: `사용자 복합 규칙 '${rule.name}' (${rule.match === 'all' ? '모든 조건' : '하나 이상의 조건'}, 우선순위 ${rule.priority})` };
   }
   const matches = active.rules.filter((r) => r.extension === ext && (r.keyword === null || nameKey.includes(pathKey(r.keyword))));
   if (distinct(matches.map((r) => r.targetDirectory)) > 1) return review('개인 규칙의 목적지가 충돌합니다.');

@@ -11,6 +11,8 @@ import { buildPreview, digest, extensionOf, parseProfile, pathKey, suggestProfil
 import { storedReferenceCheck } from './profiles.js';
 import { assertStateDirOutside, resolveStateDir } from './state.js';
 import { bundlePattern, issueReferenceGrant, issueRootGrant, projectMarkers, verifyGrant, within } from './grants.js';
+import { inspectFeatures } from './features.js';
+import type { SmartOptions } from '../../contracts/src/index.js';
 
 export { currentSessionId, issueReferenceGrant, issueRootGrant, revokeGrant, verifyGrant } from './grants.js';
 
@@ -272,7 +274,7 @@ export function protectedReferencePaths(workRoot: string, sources: { root: strin
 
 /** profile: v1 JSON or a saved v2 profile (#18). overrides: one-off corrections by file ID, never stored. */
 /** stateDir: the app state folder in use (default resolveStateDir()); a work or reference root overlapping it is refused. */
-export interface AnalyzeOptions extends ScanOptions { profile?: unknown; reference?: ReferenceGrant; overrides?: Record<string, string>;
+export interface AnalyzeOptions extends ScanOptions { profile?: unknown; reference?: ReferenceGrant; overrides?: Record<string, string>; renames?: Record<string, string>; smart?: SmartOptions; skips?: string[];
   stateDir?: string }
 /** scan: the hashed snapshot the preview was built from (same files and hashes). Pass it to buildPlan instead of scanning again. */
 export interface Analysis { preview: Preview; scan: ScanResult; suggestedProfile: ReturnType<typeof suggestProfile> | null;
@@ -297,12 +299,25 @@ export async function analyzeRoot(grant: RootGrant, options: AnalyzeOptions = {}
     .map((entry) => [pathKey(entry.relativePath), entry] as const));
   const protectedEntries = [...merged.values()].sort((a, b) => a.relativePath < b.relativePath ? -1 : a.relativePath > b.relativePath ? 1 : 0);
   const protectedPaths = protectedEntries.map((p) => p.relativePath);
-  const hashed = scan.cancelled ? scan : await hashCandidates(grant, scan, { ...options, exclude: protectedPaths });
+  const skippedIds = new Set(options.skips ?? []);
+  if (!scan.cancelled) for (const id of skippedIds) if (!scan.files.some((file) => file.id === id)) throw new AfoError('FILE_CHANGED', '건너뛸 파일이 분석 중 변경되었습니다.');
+  const skippedPaths = scan.files.filter((file) => skippedIds.has(file.id)).map((file) => file.relativePath);
+  const hashed = scan.cancelled ? scan : await hashCandidates(grant, scan, { ...options, exclude: [...protectedPaths, ...skippedPaths] });
   // A stale profile (reference folder moved/renamed/copied) is not applied until re-confirmed; protection above still holds.
   const applied = stored.stale === null ? profile : undefined;
-  const built = buildPreview(hashed, { protectedPaths, ...(applied ? { profile: applied } : {}), ...(options.overrides ? { overrides: options.overrides } : {}) });
+  const wantsFeatures = options.smart && (options.smart.content || options.smart.ocr || options.smart.photoDates || options.smart.similarPhotos || options.smart.aiModel);
+  const excluded = new Set([...protectedPaths, ...skippedPaths, ...hashed.skipped.map((entry) => entry.relativePath)].map(pathKey));
+  const folders = applied?.status === 'confirmed' ? [...(applied.formatVersion === 2 ? applied.rules.filter((rule) => rule.enabled) : applied.rules).map((rule) => rule.targetDirectory),
+    ...(applied.formatVersion === 2 ? (applied.complexRules ?? []).filter((rule) => rule.enabled).map((rule) => rule.targetDirectory) : [])] : [];
+  const contentHashes = new Map<string, string>();
+  const smart = wantsFeatures && !scan.cancelled ? await inspectFeatures(grant, hashed.files.filter((file) => !excluded.has(pathKey(file.relativePath))), options.smart!, folders, options.signal,
+    (id, sha256) => contentHashes.set(id, sha256)) : undefined;
+  const analyzedScan = contentHashes.size ? ScanSchema.parse({ ...hashed, files: hashed.files.map((file) => ({ ...file, sha256: contentHashes.get(file.id) ?? file.sha256 })) }) : hashed;
+  const built = buildPreview(analyzedScan, { protectedPaths, ...(applied ? { profile: applied } : {}), ...(options.overrides ? { overrides: options.overrides } : {}),
+    ...(options.renames ? { renames: options.renames } : {}), ...(options.skips ? { skips: options.skips } : {}),
+    ...(options.smart?.conflicts ? { conflicts: options.smart.conflicts } : {}), ...(smart ? { smart } : {}) });
   const preview = stored.stale === null ? built : PreviewSchema.parse({ ...built, profileNotice: { code: 'PROFILE_STALE', reason: stored.stale } });
-  return { preview, scan: hashed,
+  return { preview, scan: analyzedScan,
     suggestedProfile: reference ? suggestProfile(reference) : null, reference, protected: protectedEntries };
 }
 

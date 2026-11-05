@@ -7,7 +7,7 @@ import { buildPreview, classifyFile, confirmProfile, suggestProfile } from '../p
 import { scanFixture } from './helpers.js';
 
 /**
- * default-3 table, written out by hand (not derived from defaults.ts): every new category has at least two examples,
+ * default-4 table, written out by hand (not derived from defaults.ts): every new category has at least two examples,
  * ambiguous extensions stay "확인 필요", ".tar.<x>" is one archive, two known extensions stay ambiguous, unfinished downloads are kept.
  */
 const oracle: [string, string | null, string][] = [
@@ -56,8 +56,8 @@ const oracle: [string, string | null, string][] = [
   ['file.part', null, 'INCOMPLETE_DOWNLOAD'], ['archive.zip.download', null, 'INCOMPLETE_DOWNLOAD'], ['backup.sql.gz.part', null, 'INCOMPLETE_DOWNLOAD'],
 ];
 
-test('default-3: hand-written extension table for every category, ambiguous exclusions, .tar.<x>, compound and unfinished downloads', () => {
-  assert.equal(CLASSIFICATION_VERSION, 'default-3');
+test('default-4: hand-written extension table for every category, ambiguous exclusions, .tar.<x>, compound and unfinished downloads', () => {
+  assert.equal(CLASSIFICATION_VERSION, 'default-4');
   for (const [name, category, reason] of oracle) {
     const c = classifyFile(name);
     assert.deepEqual([c.category, c.targetDirectory, c.reasonCode], [category, category, reason], name);
@@ -66,11 +66,11 @@ test('default-3: hand-written extension table for every category, ambiguous excl
     assert.equal(extensionOfName(name), path.posix.extname(name).toLowerCase(), name);
   }
   assert.match(classifyFile('movie.mp4.part').reason, /다운로드가 끝나지 않은 파일일 수 있어/u);
-  assert.match(classifyFile('hw1.py').reason, /default-3/u);
+  assert.match(classifyFile('hw1.py').reason, /default-4/u);
   assert.ok(ClassificationReasonSchema.safeParse('INCOMPLETE_DOWNLOAD').success);
 });
 
-test('default-3 table: one category per extension, lower-case contract-valid extensions, old category names kept, no ambiguous ones', () => {
+test('default-4 table: one category per extension, lower-case contract-valid extensions, old category names kept, no ambiguous ones', () => {
   const all = Object.values(categoryExtensions).flat();
   assert.equal(new Set(all).size, all.length, 'no extension in two categories');
   for (const ext of [...all, ...incompleteDownloadExtensions]) assert.match(`.${ext}`, /^\.[a-z0-9]{1,16}$/u, ext);

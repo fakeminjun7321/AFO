@@ -1,5 +1,5 @@
 /*
- * Verifier: default classification table default-3 and the guided "종류를 모르는 파일" question (origin/feat/unknown-files @ 153abe2).
+ * Verifier: default classification table default-4 and the guided "종류를 모르는 파일" question (origin/feat/unknown-files @ 153abe2).
  * - The expected table below is written by hand from docs/CLI.md and the work packet. The product table (categoryExtensions) is NOT imported.
  * - Interactive paths run the built CLI in a REAL pseudo-terminal (Python pty.fork): Enter "\r", Ctrl+C byte 0x03.
  *   Only NUL/very long folder names go through runCli's io (a pty line discipline would not deliver a NUL byte as typed).
@@ -288,7 +288,7 @@ test('U2 CLI `preview --json` on a folder holding every table name: destinations
   assert.equal(r.status, 0, r.stderr);
   const preview = (JSON.parse(r.stdout) as { preview: { classificationVersion: string; items: { source: string; destination: string | null;
     action: string; reasonCode: string }[]; skipped: { relativePath: string; code: string }[] } }).preview;
-  assert.equal(preview.classificationVersion, 'default-3');
+  assert.equal(preview.classificationVersion, 'default-4');
   const got = Object.fromEntries(preview.items.map((i) => [i.source, [i.action, i.destination, i.reasonCode]]));
   const want = Object.fromEntries(TABLE.map(([n, c, reason]) => [n, c === null ? ['review', null, reason] : ['move', `${c}/${n}`, reason]]));
   assert.deepEqual(got, want);

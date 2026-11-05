@@ -86,10 +86,11 @@ export const ProfileSchema = z.strictObject({
     ctx.addIssue({ code: 'custom', message: '참고 파일에 없는 규칙 근거입니다.' });
 });
 /** Classification rule set version. Changing default rules must change this value. */
-export const CLASSIFICATION_VERSION = 'default-3';
+export const CLASSIFICATION_VERSION = 'default-4';
 export const ClassificationReasonSchema = z.enum(['USER_OVERRIDE', 'PERSONAL_RULE', 'DEFAULT_EXTENSION', 'ALREADY_PLACED',
   'PROTECTED_REFERENCE', 'READ_FAILED', 'RULE_CONFLICT', 'COMPOUND_EXTENSION', 'NO_EXTENSION', 'UNKNOWN_EXTENSION',
-  'DEST_CONFLICT', 'DEST_COLLISION', 'PARENT_CONFLICT', 'SAVED_CORRECTION', 'DEST_INVALID', 'INCOMPLETE_DOWNLOAD']);
+  'DEST_CONFLICT', 'DEST_COLLISION', 'PARENT_CONFLICT', 'SAVED_CORRECTION', 'DEST_INVALID', 'INCOMPLETE_DOWNLOAD',
+  'COMPLEX_RULE', 'CONTENT_RULE', 'AI_CONTENT', 'PHOTO_DATE', 'RENAMED_CONFLICT', 'USER_RENAME', 'USER_SKIP']);
 export type ClassificationReason = z.infer<typeof ClassificationReasonSchema>;
 export const PreviewItemSchema = z.strictObject({
   fileId: z.string(), source: RelativePathSchema, destination: RelativePathSchema.nullable(),
@@ -127,6 +128,38 @@ export const SpaceEstimateSchema = z.strictObject({
   logicalCandidateBytes: OptionalBytesSchema, allocatedCandidateBytes: OptionalBytesSchema.nullable(),
   reclaimableEstimateBytes: OptionalBytesSchema, note: z.string().min(1),
 });
+export const SmartOptionsSchema = z.strictObject({
+  conflicts: z.enum(['review', 'keep-both']).optional(), content: z.boolean().optional(), ocr: z.boolean().optional(),
+  photoDates: z.enum(['year', 'month']).optional(), similarPhotos: z.boolean().optional(),
+  similarThreshold: z.number().int().min(0).max(16).optional(), aiModel: z.string().trim().min(1).max(200).optional(),
+  aiUrl: z.string().url().max(200).refine((s) => {
+    try { const u = new URL(s); return u.protocol === 'http:' && ['127.0.0.1', '[::1]'].includes(u.hostname) && !u.username && !u.password && u.pathname === '/' && !u.search && !u.hash; }
+    catch { return false; }
+  }, 'AI 주소는 인증 정보 없는 로컬 HTTP 루트 주소여야 합니다.').optional(),
+});
+export const TextInsightSchema = z.strictObject({
+  fileId: z.string(), source: RelativePathSchema, format: z.string(), status: z.enum(['read', 'empty', 'unsupported', 'failed', 'limited']),
+  method: z.string(), characters: z.number().int().nonnegative(), excerpt: z.string().max(400), reason: z.string().max(800),
+  suggestedDirectory: RelativePathSchema.nullable(), confidence: z.number().min(0).max(1).nullable(),
+  model: z.string().nullable(),
+});
+export const PhotoInsightSchema = z.strictObject({
+  fileId: z.string(), source: RelativePathSchema, status: z.enum(['read', 'unsupported', 'failed', 'limited']), reason: z.string().max(800),
+  capturedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).nullable(), width: z.number().int().positive().nullable(), height: z.number().int().positive().nullable(),
+  hash: z.string().regex(/^[a-f0-9]{16}$/u).nullable(), averageHash: z.string().regex(/^[a-f0-9]{16}$/u).nullable(),
+  variance: z.number().nonnegative().nullable(), color: z.array(z.number().min(0).max(255)).length(3).nullable(),
+  thumbnail: z.string().max(40_000).regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/u).nullable(),
+});
+export const SmartReportSchema = z.strictObject({
+  options: SmartOptionsSchema, documents: z.array(TextInsightSchema).max(300), photos: z.array(PhotoInsightSchema).max(1000),
+  similar: z.array(z.strictObject({ left: RelativePathSchema, right: RelativePathSchema,
+    distance: z.number().int().min(0).max(64), averageDistance: z.number().int().min(0).max(64) })).max(200),
+  notices: z.array(z.string().max(800)).max(30), complete: z.boolean(),
+});
+export type SmartOptions = z.infer<typeof SmartOptionsSchema>;
+export type SmartReport = z.infer<typeof SmartReportSchema>;
+export type TextInsight = z.infer<typeof TextInsightSchema>;
+export type PhotoInsight = z.infer<typeof PhotoInsightSchema>;
 export const PreviewSchema = z.strictObject({
   formatVersion: z.literal(1), mode: z.literal('preview-only'), id: z.string(), root: RootSchema,
   profileRevision: z.number().int().positive().nullable(), items: z.array(PreviewItemSchema),
@@ -139,6 +172,7 @@ export const PreviewSchema = z.strictObject({
   space: SpaceEstimateSchema.optional(), cancelled: z.boolean().optional(),
   /** Saved profile not applied because its reference folder looks moved/renamed (#18). Reference files stay protected. */
   profileNotice: z.strictObject({ code: z.literal('PROFILE_STALE'), reason: z.string().min(1) }).optional(),
+  smart: SmartReportSchema.optional(),
 });
 export type FileSnapshot = z.infer<typeof FileSchema>;
 export type ScanResult = z.infer<typeof ScanSchema>;
@@ -338,6 +372,20 @@ export const TargetDirectorySchema = RelativePathSchema.refine((value) => value.
 const FileNameSchema = z.string().min(1).max(255).refine((value) => !value.includes('/') && RelativePathSchema.safeParse(value).success,
   '파일 이름 하나가 필요합니다.');
 const ExtensionSchema = z.string().regex(/^\.[a-z0-9]{1,16}$/u);
+export const RuleConditionSchema = z.discriminatedUnion('field', [
+  z.strictObject({ field: z.enum(['name', 'path', 'extension']), operator: z.enum(['contains', 'not-contains', 'equals', 'starts-with', 'ends-with']), value: z.string().min(1).max(200) }),
+  z.strictObject({ field: z.literal('size'), operator: z.enum(['at-least', 'at-most']), value: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) }),
+  z.strictObject({ field: z.literal('modified'), operator: z.enum(['before', 'after']), value: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).refine((v) => {
+    const date = new Date(`${v}T12:00:00Z`); return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === v;
+  }, '유효한 날짜가 필요합니다.') }),
+]);
+export const ComplexRuleSchema = z.strictObject({
+  id: z.string().regex(/^[a-f0-9]{16}$/u), name: z.string().trim().min(1).max(80), enabled: z.boolean(),
+  match: z.enum(['all', 'any']), conditions: z.array(RuleConditionSchema).min(1).max(16),
+  priority: z.number().int().min(-1000).max(1000), targetDirectory: TargetDirectorySchema,
+});
+export type ComplexRule = z.infer<typeof ComplexRuleSchema>;
+export type RuleCondition = z.infer<typeof RuleConditionSchema>;
 export const SavedRuleSchema = z.strictObject({
   id: z.string().min(1).max(128), extension: ExtensionSchema, keyword: z.string().min(2).max(80).nullable(),
   targetDirectory: TargetDirectorySchema,
@@ -371,8 +419,11 @@ export const RuleProfileV2Schema = z.strictObject({
   referenceRootIdentity: z.strictObject({ device: DigitsSchema, inode: DigitsSchema }).nullable().optional(),
   referenceRootLabel: z.string().min(1).max(255).refine((v) => !/[\\/\u0000]/u.test(v), '폴더 이름만 저장합니다.').nullable(),
   rules: z.array(SavedRuleSchema).max(1000), corrections: z.array(CorrectionSchema).max(1000), updatedAt: InstantSchema,
+  complexRules: z.array(ComplexRuleSchema).max(500).optional(),
 }).superRefine((p, ctx) => {
   if (duplicated(p.rules.map((r) => r.id))) issue(ctx, '중복 규칙 ID입니다.');
+  if (duplicated((p.complexRules ?? []).map((r) => r.id))) issue(ctx, '중복 복합 규칙 ID입니다.');
+  if (duplicated([...p.rules.map((r) => r.id), ...(p.complexRules ?? []).map((r) => r.id)])) issue(ctx, '일반·복합 규칙 ID가 겹칩니다.');
   if (duplicated(p.corrections.map((c) => c.id))) issue(ctx, '중복 수정 ID입니다.');
   if (duplicated(p.corrections.map((c) => correctionMatchKey(c.match)))) issue(ctx, '같은 조건의 저장 수정이 둘 이상입니다.');
 });

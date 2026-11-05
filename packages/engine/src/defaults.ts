@@ -2,7 +2,8 @@
  * Default rules for CLASSIFICATION_VERSION. Edit together with the version. One extension belongs to one category only.
  * Left out on purpose (still "확인 필요"): ts (TypeScript or MPEG-TS), m (Objective-C or MATLAB), bin, dat, tmp, lnk, url, webloc, alias.
  */
-export const categoryExtensions: Readonly<Record<string, readonly string[]>> = {
+import { additionalExtensions } from './formats.js';
+const baseCategoryExtensions: Readonly<Record<string, readonly string[]>> = {
   '문서': ['pdf', 'hwp', 'hwpx', 'doc', 'docx', 'txt', 'md', 'odt', 'ppt', 'pptx', 'xls', 'xlsx', 'csv', 'rtf', 'key', 'pages', 'numbers',
     'odp', 'ods', 'tex', 'hwt', 'show', 'cell', 'xlsm', 'docm', 'pptm', 'keynote', 'one', 'xps'],
   '이미지': ['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'svg', 'tif', 'tiff', 'bmp', 'ico', 'avif', 'jfif', 'raw', 'cr2', 'cr3', 'nef',
@@ -19,13 +20,15 @@ export const categoryExtensions: Readonly<Record<string, readonly string[]>> = {
     'htm', 'css', 'scss', 'sh', 'bat', 'ps1', 'r'],
   '데이터': ['json', 'xml', 'yaml', 'yml', 'toml', 'sql', 'db', 'sqlite', 'sqlite3', 'parquet', 'tsv', 'log'],
 };
+export const categoryExtensions: Readonly<Record<string, readonly string[]>> = Object.fromEntries(Object.entries(baseCategoryExtensions)
+  .map(([category, extensions]) => [category, [...new Set([...extensions, ...(additionalExtensions[category] ?? [])])]]));
 /** Browser download in progress (or left unfinished): never moved by default, whatever the inner extension says. */
 export const incompleteDownloadExtensions: readonly string[] = ['part', 'crdownload', 'download'];
 /**
  * Pure compression/archive formats: "dump.sql.gz", "photos.jpg.zip" and ".tar.<x>" are archives whatever is inside.
  * Only these outer extensions override an inner known one; "report.pdf.exe" stays ambiguous.
  */
-export const archiveOuterExtensions: readonly string[] = ['gz', 'bz2', 'xz', 'zst', 'lz', 'lzma', '7z', 'zip', 'rar'];
+export const archiveOuterExtensions: readonly string[] = ['gz', 'bz2', 'xz', 'zst', 'lz', 'lzma', '7z', 'zip', 'rar', 'lz4', 'br', 'z'];
 const archiveOuter = new Set(archiveOuterExtensions);
 const known = new Map(Object.entries(categoryExtensions).flatMap(([category, exts]) => exts.map((ext) => [ext, category] as const)));
 const incomplete = new Set(incompleteDownloadExtensions);

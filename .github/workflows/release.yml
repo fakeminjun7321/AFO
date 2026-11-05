@@ -9,6 +9,8 @@ on:
       - 'install.sh'
       - 'install.ps1'
       - 'scripts/release/**'
+      - 'scripts/build-resources.mjs'
+      - 'packages/filesystem/native/**'
       - 'apps/cli/src/sea.ts'
       - 'apps/cli/src/index.ts'
       - 'apps/cli/src/update.ts'
@@ -84,6 +86,11 @@ jobs:
         run: |
           target=$(node -p 'process.platform === "win32" ? "win-x64.zip" : "darwin-" + process.arch + ".tar.gz"')
           node scripts/release/verify-update.mjs --old "update-fixture/afo-$target" --new "release/afo-$target"
+      - name: 배포 실행 파일의 본문·촬영일·유사 사진 분석 검증
+        shell: bash
+        run: |
+          target=$(node -p 'process.platform === "win32" ? "win-x64.zip" : "darwin-" + process.arch + ".tar.gz"')
+          node scripts/release/verify-smart.mjs --archive "release/afo-$target"
       # 설치 스크립트가 실제로 쓰는 경로(HTTP 다운로드 → SHA256SUMS 대조 → 압축 해제 → 실행 확인)를 로컬 서버로 확인합니다.
       - name: install.sh로 설치하고 합성 폴더 미리보기(macOS)
         if: runner.os == 'macOS'

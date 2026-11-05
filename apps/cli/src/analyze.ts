@@ -1,7 +1,7 @@
 import { readFile, lstat } from 'node:fs/promises';
 import path from 'node:path';
-import { AfoError, TargetDirectorySchema } from '../../../packages/contracts/src/index.js';
-import type { ReferenceGrant, RootGrant, ScanProgress } from '../../../packages/contracts/src/index.js';
+import { AfoError, RelativePathSchema, SmartOptionsSchema, TargetDirectorySchema } from '../../../packages/contracts/src/index.js';
+import type { ReferenceGrant, RootGrant, ScanProgress, SmartOptions } from '../../../packages/contracts/src/index.js';
 import { parseProfile, pathKey } from '../../../packages/engine/src/index.js';
 import type { AnyProfile } from '../../../packages/engine/src/index.js';
 import { analyzeRoot, issueReferenceGrant, issueRootGrant, scanRoot } from '../../../packages/filesystem/src/index.js';
@@ -24,6 +24,10 @@ export interface ProfileInfo { source: 'saved' | 'stale' | 'file' | 'none' | 'sk
   status: string | null; warning?: string }
 export interface AnalyzeValues { profile?: string | undefined; reference?: string | undefined; 'no-saved-rules'?: boolean | undefined;
   move?: string[] | undefined; remember?: boolean | undefined;
+  rename?: string[] | undefined; renames?: { fileId: string; name: string }[] | undefined; smart?: SmartOptions | undefined;
+  skip?: string[] | undefined; skips?: string[] | undefined;
+  conflicts?: string | undefined; content?: boolean | undefined; ocr?: boolean | undefined; 'photo-dates'?: string | undefined;
+  'similar-photos'?: boolean | undefined; 'similar-threshold'?: string | undefined; 'ai-model'?: string | undefined; 'ai-url'?: string | undefined;
   /** One-off corrections chosen by file ID (the guided flow); the same path as --move without parsing "<path>=<folder>" text. */
   overrides?: { fileId: string; target: string }[] | undefined }
 export interface AnalyzeContext { warn: (line: string) => void; stateDir: () => string;
@@ -47,6 +51,14 @@ export function profileLine(info: ProfileInfo, stale = info.source === 'stale'):
 
 export async function analyzeTarget(target: string, values: AnalyzeValues, ctx: AnalyzeContext): Promise<Target> {
   const moves = values.move ?? [];
+  const parsedSmart = SmartOptionsSchema.safeParse({ ...(values.smart ?? {}),
+    ...(values.conflicts !== undefined ? { conflicts: values.conflicts } : {}), ...(values.content !== undefined ? { content: values.content } : {}),
+    ...(values.ocr !== undefined ? { ocr: values.ocr } : {}), ...(values['photo-dates'] !== undefined ? { photoDates: values['photo-dates'] } : {}),
+    ...(values['similar-photos'] !== undefined ? { similarPhotos: values['similar-photos'] } : {}),
+    ...(values['similar-threshold'] !== undefined ? { similarThreshold: Number(values['similar-threshold']) } : {}),
+    ...(values['ai-model'] !== undefined ? { aiModel: values['ai-model'] } : {}), ...(values['ai-url'] !== undefined ? { aiUrl: values['ai-url'] } : {}) });
+  if (!parsedSmart.success) throw usage(`분석 옵션이 올바르지 않습니다: ${parsedSmart.error.issues[0]?.message ?? ''}`);
+  const smart = parsedSmart.data;
   if (values.profile !== undefined && values['no-saved-rules']) throw usage('--profile과 --no-saved-rules 중 하나만 쓰세요.');
   // Profile: an explicit file, else the saved one (damaged → warn and fall back to default rules), unless skipped.
   let profile: AnyProfile | undefined; let info: ProfileInfo;
@@ -75,8 +87,10 @@ export async function analyzeTarget(target: string, values: AnalyzeValues, ctx: 
   }
   // One-off corrections: "<relative path>=<folder>", resolved to file IDs of the current scan.
   const overrides: Record<string, string> = {};
+  const renames: Record<string, string> = {};
+  const skips = new Set(values.skips ?? []);
   const picked: Target['picked'] = [];
-  if (moves.length) {
+  if (moves.length || values.rename?.length || values.skip?.length) {
     const files = (await scanRoot(grant, ctx.options)).files;
     for (const spec of moves) {
       if (!spec.includes('=')) throw usage(`--move는 <상대 경로>=<목적지 폴더> 형식입니다: ${spec}`);
@@ -96,7 +110,22 @@ export async function analyzeTarget(target: string, values: AnalyzeValues, ctx: 
       const names = picked.map((p) => pathKey(path.posix.basename(p.relativePath)));
       if (new Set(names).size !== names.length) throw usage('--remember는 파일 이름으로 저장하므로 같은 이름의 파일을 두 번 지정할 수 없습니다.');
     }
+    for (const spec of values.rename ?? []) {
+      const choices = [...spec.matchAll(/=/gu)].map((match) => match.index).map((i) => [files.find((file) => pathKey(file.relativePath) === pathKey(spec.slice(0, i))), spec.slice(i + 1)] as const).filter(([file]) => file);
+      if (choices.length !== 1) throw usage('--rename는 <상대 경로>=<새 파일 이름> 형식이며 현재 파일 하나와 일치해야 합니다.');
+      const [file, name] = choices[0]!;
+      if (renames[file!.id]) throw usage('같은 파일에 이름 변경을 두 번 지정했습니다.');
+      renames[file!.id] = name;
+    }
+    for (const name of values.skip ?? []) { const file = files.find((file) => pathKey(file.relativePath) === pathKey(name));
+      if (!file) throw usage('--skip에는 현재 작업 폴더에 있는 파일의 상대 경로를 지정하세요.'); skips.add(file.id); }
   }
+  for (const value of values.renames ?? []) {
+    if (renames[value.fileId]) throw usage('같은 파일에 이름 변경을 두 번 지정했습니다.');
+    renames[value.fileId] = value.name;
+  }
+  for (const name of Object.values(renames)) if (!RelativePathSchema.safeParse(name).success || name.includes('/') || name.includes('\\') || name.startsWith('.'))
+    throw usage('새 파일 이름은 경로 구분자·숨김·예약 이름 없는 파일 이름 하나여야 합니다.');
 
   const byId: { fileId: string; target: string }[] = [];
   for (const o of values.overrides ?? []) {
@@ -108,7 +137,13 @@ export async function analyzeTarget(target: string, values: AnalyzeValues, ctx: 
   }
 
   const analysis = await analyzeRoot(grant, { ...ctx.options, stateDir: ctx.stateDir(), ...(profile ? { profile } : {}),
-    ...(referenceGrant ? { reference: referenceGrant } : {}), ...(Object.keys(overrides).length ? { overrides } : {}) });
+    ...(referenceGrant ? { reference: referenceGrant } : {}), ...(Object.keys(overrides).length ? { overrides } : {}),
+    ...(Object.keys(renames).length ? { renames } : {}), ...(skips.size ? { skips: [...skips] } : {}), ...(Object.keys(smart).length ? { smart } : {}) });
+  for (const fileId of Object.keys(renames)) {
+    const item = analysis.preview.items.find((item) => item.fileId === fileId);
+    if (!item) throw new AfoError('FILE_CHANGED', '이름을 변경할 파일이 분석 중 바뀌었습니다.');
+    if (item.reasonCode === 'PROTECTED_REFERENCE' || item.reasonCode === 'READ_FAILED') throw usage('보호되거나 읽지 못한 파일의 이름은 변경하지 않습니다.');
+  }
   for (const o of byId) {
     // File IDs hash the root, relative path and inode: a missing ID means the file was renamed, replaced or removed since.
     const item = analysis.preview.items.find((i) => i.fileId === o.fileId);

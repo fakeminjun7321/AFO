@@ -126,7 +126,9 @@ export async function updateCommand(signal: AbortSignal | undefined, warn: (line
     await writeFile(archivePath, data, { mode: 0o600 });
     const name = runtime.platform === 'win32' ? 'afo.exe' : 'afo';
     const unpacked = path.join(stage, name);
-    await execute(runtime.platform === 'win32' ? 'tar.exe' : '/usr/bin/tar', ['-xf', archivePath, '-C', stage, name], { signal: cancelled, timeout: 30_000, windowsHide: true });
+    // Git for Windows also supplies a GNU tar.exe, which treats C: as a remote host. Use Windows' built-in bsdtar.
+    const tar = runtime.platform === 'win32' ? path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : '/usr/bin/tar';
+    await execute(tar, ['-xf', archivePath, '-C', stage, name], { signal: cancelled, timeout: 30_000, windowsHide: true });
     const candidate = await lstat(unpacked);
     if (!candidate.isFile() || candidate.nlink !== 1) throw new Error('압축 파일에 일반 실행 파일이 없습니다.');
     if (runtime.platform !== 'win32') await chmod(unpacked, 0o755);

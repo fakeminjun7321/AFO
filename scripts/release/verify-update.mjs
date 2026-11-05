@@ -21,7 +21,7 @@ let badChecksum = false;
 let server;
 try {
   const name = process.platform === 'win32' ? 'afo.exe' : 'afo';
-  const tar = process.platform === 'win32' ? 'tar.exe' : '/usr/bin/tar';
+  const tar = process.platform === 'win32' ? path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : '/usr/bin/tar';
   for (const [kind, archive] of [['old', values.old], ['new', values.new]]) {
     const dir = path.join(root, kind); await mkdir(dir);
     await execute(tar, ['-xf', path.resolve(archive), '-C', dir, name]);

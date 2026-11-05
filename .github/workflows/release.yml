@@ -88,8 +88,16 @@ jobs:
       - name: install.sh로 설치하고 합성 폴더 미리보기(macOS)
         if: runner.os == 'macOS'
         run: |
-          (cd release && python3 -m http.server 8765 --bind 127.0.0.1 >/dev/null 2>&1 &)
-          sleep 2
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory release >"$RUNNER_TEMP/afo-http.log" 2>&1 &
+          afo_server_pid=$!
+          trap 'kill "$afo_server_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in {1..30}; do
+            if curl -fsS --max-time 1 http://127.0.0.1:8765/SHA256SUMS >/dev/null 2>&1; then ready=1; break; fi
+            if ! kill -0 "$afo_server_pid" 2>/dev/null; then cat "$RUNNER_TEMP/afo-http.log"; exit 1; fi
+            sleep 1
+          done
+          if [ "$ready" != 1 ]; then cat "$RUNNER_TEMP/afo-http.log"; exit 1; fi
           # 빠른 동작은 temp HOME에 만들어 러너 프로필과 상관없이 확인합니다.
           qa_home="$RUNNER_TEMP/qa-home"; mkdir -p "$qa_home"
           HOME="$qa_home" AFO_DOWNLOAD_BASE=http://127.0.0.1:8765 AFO_INSTALL="$RUNNER_TEMP/afo" AFO_NO_MODIFY_PATH=1 sh install.sh
@@ -107,7 +115,12 @@ jobs:
         shell: powershell
         run: |
           $server = Start-Process python -ArgumentList '-m','http.server','8765','--bind','127.0.0.1' -WorkingDirectory release -PassThru -WindowStyle Hidden
-          Start-Sleep -Seconds 2
+          $ready = $false
+          for ($attempt = 0; $attempt -lt 30; $attempt++) {
+            try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 1 http://127.0.0.1:8765/SHA256SUMS | Out-Null; $ready = $true; break }
+            catch { if ($server.HasExited) { throw 'Local artifact server exited before becoming ready.' }; Start-Sleep -Seconds 1 }
+          }
+          if (-not $ready) { Stop-Process -Id $server.Id; throw 'Local artifact server did not become ready.' }
           $env:AFO_DOWNLOAD_BASE = 'http://127.0.0.1:8765'; $env:AFO_INSTALL = "$env:RUNNER_TEMP\afo"; $env:AFO_NO_MODIFY_PATH = '1'
           # 보내기 메뉴는 temp APPDATA에 만들어 러너 프로필과 상관없이 확인합니다.
           $env:APPDATA = Join-Path $env:RUNNER_TEMP 'appdata'

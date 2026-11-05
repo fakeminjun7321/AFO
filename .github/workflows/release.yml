@@ -92,7 +92,7 @@ jobs:
           afo_server_pid=$!
           trap 'kill "$afo_server_pid" 2>/dev/null || true' EXIT
           ready=0
-          for attempt in {1..30}; do
+          for _ in {1..30}; do
             if curl -fsS --max-time 1 http://127.0.0.1:8765/SHA256SUMS >/dev/null 2>&1; then ready=1; break; fi
             if ! kill -0 "$afo_server_pid" 2>/dev/null; then cat "$RUNNER_TEMP/afo-http.log"; exit 1; fi
             sleep 1

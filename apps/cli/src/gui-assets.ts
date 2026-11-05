@@ -29,7 +29,7 @@ export const pageHtml = String.raw`<!doctype html>
       <label class="check"><input id="keepBoth" type="checkbox"> 이름이 겹치면 두 파일 모두 보관할 새 이름 제안</label>
       <label class="check"><input id="content" type="checkbox"> 문서 본문으로 과목·종류 분류 제안</label>
       <label class="check"><input id="ocr" type="checkbox"> 이미지·스캔 PDF의 글자 읽기(OCR)</label>
-      <label class="field"><span>사진 촬영일로 모으기</span><select id="photoDates"><option value="">사용하지 않음</option><option value="year">촬영 연도</option><option value="month">촬영 연도·월</option></select></label>
+      <label class="field"><span>사진 촬영일로 모으기</span><select id="photoDates" aria-label="사진 촬영일로 모으기"><option value="">사용하지 않음</option><option value="year">촬영 연도</option><option value="month">촬영 연도·월</option></select></label>
       <label class="check"><input id="similarPhotos" type="checkbox"> 유사 사진 비교 후보 찾기(자동 삭제 안 함)</label>
       <label class="field"><span>유사 사진 형태 차이 허용(낮을수록 엄격)</span><input id="similarThreshold" type="number" min="0" max="16" value="6"></label>
       <label class="check"><input id="useAi" type="checkbox"> 로컬 AI도 사용(Ollama, 선택)</label>

@@ -91,7 +91,7 @@ try {
       $mean = ($values | Measure-Object -Average).Average; $variance = 0.0; $averageBits = ''
       foreach ($value in $values) { $averageBits += $(if ($value -ge $mean) { '1' } else { '0' }); $variance += [Math]::Pow($value-$mean,2) }
       $result = @{ width=$bitmap.Width; height=$bitmap.Height; hash=[Convert]::ToUInt64($bits,2).ToString('x16'); averageHash=[Convert]::ToUInt64($averageBits,2).ToString('x16');
-        variance=$variance/64; color=@($colors[0]/64,$colors[1]/64,$colors[2]/64); text=''; method='windows-gdi' }
+        variance=$variance/64; color=@(($colors[0]/64),($colors[1]/64),($colors[2]/64)); text=''; method='windows-gdi' }
       $scale = [Math]::Min(96.0/$bitmap.Width,96.0/$bitmap.Height)
       $thumb = New-Object Drawing.Bitmap($bitmap, (New-Object Drawing.Size([Math]::Max(1,[int]($scale*$bitmap.Width)),[Math]::Max(1,[int]($scale*$bitmap.Height)))))
       $memory = New-Object IO.MemoryStream

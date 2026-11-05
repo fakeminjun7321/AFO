@@ -3,7 +3,7 @@ import { lstat, mkdir, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { z } from 'zod';
-import { AfoError, ProfileSchema, ProfileStoreSchema, RuleProfileV2Schema, isAfoError } from '../../contracts/src/index.js';
+import { AfoError, ComplexRuleSchema, ProfileSchema, ProfileStoreSchema, RuleProfileV2Schema, isAfoError } from '../../contracts/src/index.js';
 import type { CorrectionMatch, ProfileStore, ProtectedEntry, RuleProfile, RuleProfileV2, ScanResult } from '../../contracts/src/index.js';
 import { digest, emptyProfile, makeCorrection, pathKey, profileFromV1, withCorrection, withRuleEnabled, withStatus, withoutCorrection }
   from '../../engine/src/index.js';
@@ -265,6 +265,29 @@ export const addCorrection = (match: CorrectionMatch, targetDirectory: string, o
     const profile = withCorrection(emptyProfile(`local-${randomUUID()}`, state.lastRevision + 1, now),
       makeCorrection(match, targetDirectory, now), now);
     return { result: profile, apply: (file) => write(file, { formatVersion: 2, state: 'active', profile }) };
+  });
+
+/** Explicit manual rule editing uses the same revision guards and profile lock as saved reference rules. */
+export const upsertComplexRule = (input: unknown, options: ProfileStoreOptions = {}): Promise<RuleProfileV2> => {
+  const rule = ComplexRuleSchema.parse(input);
+  return transact(options, (state) => {
+    const change = (p: RuleProfileV2, now: Date): RuleProfileV2 => {
+      const current = (p.complexRules ?? []).find((r) => r.id === rule.id);
+      if (current && JSON.stringify(current) === JSON.stringify(rule)) return p;
+      return RuleProfileV2Schema.parse({ ...p, revision: p.revision + 1, updatedAt: now.toISOString(),
+        complexRules: [...(p.complexRules ?? []).filter((r) => r.id !== rule.id), rule] });
+    };
+    if (state.kind !== 'empty') return changeActive(state, options, change);
+    checkExpected(state, options);
+    const now = clock(options);
+    const profile = change(emptyProfile(`local-${randomUUID()}`, state.lastRevision + 1, now), now);
+    return { result: profile, apply: (file) => write(file, { formatVersion: 2, state: 'active', profile }) };
+  });
+};
+export const removeComplexRule = (id: string, options: ProfileStoreOptions = {}): Promise<RuleProfileV2> =>
+  mutate(options, (p, now) => {
+    if (!(p.complexRules ?? []).some((r) => r.id === id)) throw new Error('복합 규칙 ID를 찾을 수 없습니다.');
+    return RuleProfileV2Schema.parse({ ...p, revision: p.revision + 1, updatedAt: now.toISOString(), complexRules: p.complexRules!.filter((r) => r.id !== id) });
   });
 
 /**

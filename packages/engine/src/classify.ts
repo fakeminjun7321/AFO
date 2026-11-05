@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { CLASSIFICATION_VERSION, RelativePathSchema, TargetDirectorySchema } from '../../contracts/src/index.js';
-import type { ClassificationReason } from '../../contracts/src/index.js';
+import type { ClassificationReason, FileSnapshot } from '../../contracts/src/index.js';
 import { classifyPersonal, parseProfile } from './rules.js';
 import type { AnyProfile } from './rules.js';
 
@@ -21,7 +21,7 @@ const review = (reasonCode: ClassificationReason, reason: string): Classificatio
  * One file's classification. Priority: one-off user override → saved correction → confirmed, enabled personal rule → default rule.
  * Draft/disabled profiles and disabled rules are ignored. Uses the name only; contents, size and age are never used.
  */
-export function classifyFile(relativePath: string, options: { profile?: AnyProfile; override?: string } = {}): Classification {
+export function classifyFile(relativePath: string, options: { profile?: AnyProfile; override?: string; file?: Pick<FileSnapshot, 'size' | 'modifiedNs'> } = {}): Classification {
   const name = path.posix.basename(RelativePathSchema.parse(relativePath));
   const ext = extensionOf(name);
   if (options.override !== undefined)
@@ -30,10 +30,10 @@ export function classifyFile(relativePath: string, options: { profile?: AnyProfi
   const result = defaultCategory(name);
   const ambiguous = result.reason === 'COMPOUND_EXTENSION' || result.reason === 'INCOMPLETE_DOWNLOAD';
   if (options.profile !== undefined) {
-    const personal = classifyPersonal(relativePath, parseProfile(options.profile));
+    const personal = classifyPersonal(relativePath, parseProfile(options.profile), options.file);
     // A rule learned from extensions is not trusted for an ambiguous double extension or an unfinished download;
     // explicit saved corrections are.
-    if (personal && !(ambiguous && personal.reasonCode === 'PERSONAL_RULE')) return personal;
+    if (personal && !(ambiguous && ['PERSONAL_RULE', 'COMPLEX_RULE'].includes(personal.reasonCode))) return personal;
   }
   if (result.reason === 'INCOMPLETE_DOWNLOAD')
     return review(result.reason, '다운로드가 끝나지 않은 파일일 수 있어 그대로 둡니다. 다운로드가 끝난 뒤 다시 확인해 주세요.');

@@ -1,9 +1,12 @@
 import path from 'node:path';
-import { AfoError, PROFILE_EVIDENCE_LIMIT } from '../../../packages/contracts/src/index.js';
+import { randomBytes } from 'node:crypto';
+import { AfoError, ComplexRuleSchema, PROFILE_EVIDENCE_LIMIT, RelativePathSchema } from '../../../packages/contracts/src/index.js';
 import type { Correction, RuleProfile, RuleProfileV2 } from '../../../packages/contracts/src/index.js';
 import { confirmProfile, withCorrection } from '../../../packages/engine/src/index.js';
+import { complexMatches, conditionMatches } from '../../../packages/engine/src/smart.js';
 import { disableProfile, enableProfile, loadProfile, profileFromConfirmed, removeCorrection, resetProfile, saveConfirmedProfile, setRuleEnabled }
   from '../../../packages/filesystem/src/profiles.js';
+import { upsertComplexRule, removeComplexRule } from '../../../packages/filesystem/src/profiles.js';
 import type { CorruptProfile } from '../../../packages/filesystem/src/profiles.js';
 
 /** CLI adapter for the saved personal rule profile (#18). Policy stays in engine/filesystem; this file only maps commands. */
@@ -53,6 +56,7 @@ async function active(stateDir: string): Promise<RuleProfileV2> {
 }
 
 export interface RulesIo { json: boolean; stateDir: () => string; draft: (file: string) => Promise<RuleProfile>;
+  input?: (file: string) => Promise<unknown>; sampleSize?: string | undefined; sampleModified?: string | undefined;
   select?: string | undefined; confirm?: string | undefined; isTTY: boolean; ask: (question: string) => Promise<string>;
   warn: (line: string) => void }
 
@@ -65,6 +69,7 @@ export async function saveDraft(draft: RuleProfile, ids: string[], stateDir: str
   // Saved corrections are explicit user choices; replacing the reference rules does not silently drop them.
   const kept = before !== null && !isCorrupt(before) ? before.corrections : [];
   let next = await profileFromConfirmed(confirmed);
+  if (before !== null && !isCorrupt(before) && before.complexRules?.length) next = { ...next, complexRules: before.complexRules };
   for (const c of kept) next = withCorrection(next, c);
   return { saved: await saveConfirmedProfile(next, { stateDir, ...expected(before) }), before, kept };
 }
@@ -79,14 +84,54 @@ export async function rulesCommand(sub: string | undefined, arg: string | undefi
   };
   if (sub !== 'save' && io.select !== undefined) throw usage('--select는 rules save에서만 씁니다.');
   if (sub !== 'reset' && io.confirm !== undefined) throw usage('--confirm은 rules reset에서만 씁니다.');
+  if (sub !== 'test' && (io.sampleSize !== undefined || io.sampleModified !== undefined)) throw usage('--size·--modified는 rules test에서만 씁니다.');
   switch (sub) {
+    case 'example': {
+      needs(0);
+      return JSON.stringify({ name: '물리 보고서', enabled: true, match: 'all', priority: 10, targetDirectory: '과제/물리',
+        conditions: [{ field: 'extension', operator: 'equals', value: '.pdf' }, { field: 'name', operator: 'contains', value: '물리' }] }, null, 2);
+    }
+    case 'add': case 'edit': {
+      if (!arg || !io.input) throw usage(`rules ${sub} <규칙 JSON> 형식으로 쓰세요. rules example으로 예시를 만들 수 있습니다.`);
+      const raw = await io.input(arg);
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw usage('규칙 JSON 객체가 필요합니다.');
+      const before = await loadProfile({ stateDir });
+      const rule = ComplexRuleSchema.parse({ ...raw, id: 'id' in raw ? raw.id : randomBytes(8).toString('hex') });
+      if (sub === 'edit' && (before === null || isCorrupt(before) || !(before.complexRules ?? []).some((r) => r.id === rule.id))) throw usage('edit에는 저장된 복합 규칙의 ID가 필요합니다.');
+      const saved = await upsertComplexRule(rule, { stateDir, ...expected(before) });
+      return out(io, { action: sub, rule, profile: saved }, [`복합 규칙 '${rule.name}'을 저장했습니다. 다음 분석부터 적용합니다. (ID ${rule.id}, revision ${saved.revision})`]);
+    }
+    case 'remove': {
+      needs(1); const before = await active(stateDir);
+      const after = await removeComplexRule(arg!, { stateDir, expectedRevision: before.revision });
+      return out(io, { action: 'remove', profile: after }, [`복합 규칙 ${arg}을 삭제했습니다.`]);
+    }
+    case 'test': {
+      needs(1); const name = RelativePathSchema.parse(arg!); const before = await active(stateDir);
+      const size = io.sampleSize === undefined ? 0 : Number(io.sampleSize);
+      if (!Number.isSafeInteger(size) || size < 0) throw usage('--size는 0 이상의 바이트 수입니다.');
+      let modifiedNs = '0';
+      if (io.sampleModified !== undefined) {
+        if (!/^\d{4}-\d{2}-\d{2}$/u.test(io.sampleModified)) throw usage('--modified는 YYYY-MM-DD 형식입니다.');
+        const date = new Date(`${io.sampleModified}T12:00:00`);
+        if (!Number.isFinite(date.getTime()) || `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}` !== io.sampleModified) throw usage('--modified 날짜가 올바르지 않습니다.');
+        modifiedNs = String(BigInt(date.getTime()) * 1_000_000n);
+      }
+      const metadata = io.sampleSize !== undefined || io.sampleModified !== undefined ? {
+        ...(io.sampleSize !== undefined ? { size } : {}), ...(io.sampleModified !== undefined ? { modifiedNs } : {}) } : undefined;
+      const matches = (before.complexRules ?? []).map((rule) => ({ id: rule.id, name: rule.name, matched: complexMatches(rule, name, metadata),
+        conditions: rule.conditions.map((condition) => ({ condition, matched: conditionMatches(condition, name, metadata) })) }));
+      return out(io, { sample: name, metadataProvided: metadata !== undefined, matches }, ['가상 입력으로 규칙을 테스트합니다. 실제 파일을 읽거나 바꾸지 않습니다.',
+        ...matches.map((m) => `${m.matched ? '일치' : '불일치'} ${m.name} (${m.id})`)]);
+    }
     case 'list': {
       needs(0);
       const p = await loadProfile({ stateDir });
       if (p === null) return out(io, { state: 'none' }, ['저장된 개인 규칙이 없습니다. 미리보기는 기본 분류를 사용합니다.']);
       if (isCorrupt(p)) return out(io, { state: 'corrupt', reason: p.reason },
         [`경고: 저장된 개인 규칙 프로필이 손상돼 적용하지 않습니다: ${p.reason}`, corruptHint]);
-      return out(io, { state: 'active', profile: p }, profileLines(p));
+      return out(io, { state: 'active', profile: p }, [...profileLines(p), `복합 규칙 ${(p.complexRules ?? []).length}개`,
+        ...(p.complexRules ?? []).map((r) => `  [${r.enabled ? '켜짐' : '꺼짐'}] ${r.id} ${r.name} (${r.match}, 우선순위 ${r.priority}) → ${r.targetDirectory}\n    ${JSON.stringify(r.conditions)}`)]);
     }
     case 'save': {
       if (arg === undefined) throw usage('rules save <초안 JSON> --select <규칙ID,...> 형식으로 쓰세요.');
@@ -130,13 +175,13 @@ export async function rulesCommand(sub: string | undefined, arg: string | undefi
       if (before === null) return out(io, { action: 'reset', changed: false }, ['저장된 개인 규칙이 없어 바꿀 것이 없습니다.']);
       if (io.confirm === undefined) {
         if (!io.isTTY) throw usage('비대화형 실행에서는 --confirm reset이 있어야 초기화합니다. 아무것도 바꾸지 않았습니다.');
-        const what = isCorrupt(before) ? '손상된 프로필(따로 보관됨)' : `규칙 ${before.rules.length}개와 저장한 수정 ${before.corrections.length}개`;
+        const what = isCorrupt(before) ? '손상된 프로필(따로 보관됨)' : `규칙 ${before.rules.length}개${before.complexRules?.length ? `·복합 규칙 ${before.complexRules.length}개` : ''}와 저장한 수정 ${before.corrections.length}개`;
         const answer = await io.ask(`저장된 ${what}를 모두 잊습니다. 계속할까요? [y/N] `);
         if (!/^(y|yes|예|ㅇ)$/iu.test(answer.trim())) throw new CliError('초기화를 취소했습니다. 아무것도 바꾸지 않았습니다.', 4);
       }
       await resetProfile({ stateDir, ...expected(before) });
       return out(io, { action: 'reset', changed: true }, ['개인 규칙 프로필을 초기화했습니다. 다음 preview부터 기본 분류를 사용합니다. 작업·참고 폴더의 파일은 바꾸지 않았습니다.']);
     }
-    default: throw usage('rules 하위 명령: list | save | enable | disable | enable-all | disable-all | forget | reset');
+    default: throw usage('rules 하위 명령: list | example | add | edit | remove | test | save | enable | disable | enable-all | disable-all | forget | reset');
   }
 }

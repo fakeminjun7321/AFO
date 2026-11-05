@@ -24,7 +24,24 @@ export const pageHtml = String.raw`<!doctype html>
     <label class="field"><span>참고 폴더(선택, 읽기만 함)</span><input id="reference" type="text" spellcheck="false" autocomplete="off" placeholder="비워 두면 사용하지 않음"></label>
     <label class="check"><input id="noSaved" type="checkbox"> 저장된 개인 규칙을 쓰지 않고 기본 분류로 보기</label>
   </details>
+  <details class="advanced"><summary>문서·사진·이름 충돌 분석 옵션</summary>
+    <div class="option-grid">
+      <label class="check"><input id="keepBoth" type="checkbox"> 이름이 겹치면 두 파일 모두 보관할 새 이름 제안</label>
+      <label class="check"><input id="content" type="checkbox"> 문서 본문으로 과목·종류 분류 제안</label>
+      <label class="check"><input id="ocr" type="checkbox"> 이미지·스캔 PDF의 글자 읽기(OCR)</label>
+      <label class="field"><span>사진 촬영일로 모으기</span><select id="photoDates" aria-label="사진 촬영일로 모으기"><option value="">사용하지 않음</option><option value="year">촬영 연도</option><option value="month">촬영 연도·월</option></select></label>
+      <label class="check"><input id="similarPhotos" type="checkbox"> 유사 사진 비교 후보 찾기(자동 삭제 안 함)</label>
+      <label class="field"><span>유사 사진 형태 차이 허용(낮을수록 엄격)</span><input id="similarThreshold" type="number" min="0" max="16" value="6"></label>
+      <label class="check"><input id="useAi" type="checkbox"> 로컬 AI도 사용(Ollama, 선택)</label>
+      <label class="field"><span>로컬 AI 서버 주소</span><input id="aiUrl" value="http://127.0.0.1:11434" spellcheck="false"></label>
+      <label class="field"><span>설치된 모델 이름</span><input id="aiModel" list="aiModels" spellcheck="false" placeholder="모델 목록에서 선택하거나 입력"><datalist id="aiModels"></datalist></label>
+      <button id="loadModels" type="button">모델 목록 읽기</button>
+    </div>
+    <p class="small muted">본문·OCR·사진 분석은 선택했을 때만 읽습니다. 촬영일이 없으면 수정일로 대체하지 않습니다. 문서 100개·사진 300개·AI 20개/분석, 파일당 20 MiB 한도입니다.</p>
+    <details><summary>본문·이미지 분석 지원 형식</summary><div id="formatsList" class="small">불러오는 중…</div></details>
+  </details>
   <div class="actions"><button id="analyze" class="primary" type="button">분석</button></div>
+  <button id="cancelAnalysis" type="button" hidden>분석 취소</button>
   <p id="status" class="status" role="status" aria-live="polite"></p>
 </section>
 <nav class="tabs" role="tablist" aria-label="화면">
@@ -89,12 +106,15 @@ details.hint{margin:8px 0 4px;font-size:13px;color:var(--muted)}details.hint sum
 .foot{padding:0 clamp(16px,4vw,40px) 28px;color:var(--muted);font-size:12px}
 @media (max-width:640px){.controls{grid-template-columns:1fr}.actions button{flex:1}}`;
 
+export const smartCss = String.raw`.advanced{flex:1 0 100%;padding:10px 0}.advanced>summary{font-weight:650;cursor:pointer}.option-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:18px 0}.option-grid .check{align-self:center}.rule-editor{margin:18px 0;padding:16px;border:1px solid var(--line);border-radius:8px}.rule-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:14px 0}.rule-condition{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.rule-condition input{flex:1;min-width:120px}.file-edit{min-width:180px;display:grid;gap:5px}.file-edit input{width:100%;font-size:12px}.photo-pair{display:grid;grid-template-columns:1fr 1fr;gap:16px;border-top:1px solid var(--line);padding:18px 0}.photo-pair img{width:100%;height:150px;object-fit:contain;background:#f0efeb;border-radius:6px}.photo-pair p{overflow-wrap:anywhere}.insight-text{max-width:440px;white-space:pre-wrap;overflow-wrap:anywhere}button[hidden]{display:none}@media(max-width:600px){.photo-pair{gap:8px}.photo-pair img{height:100px}.rule-editor{padding:10px}.rule-condition select{max-width:100%}}`;
+
 export const appJs = String.raw`(function () {
   'use strict';
   var token = new URLSearchParams(location.hash.slice(1)).get('token') || '';
   var state = { info: null, tab: 'preview', preview: null, plan: null, busy: false, filter: '', action: 'all',
     deleteMode: 'trash', deleteDuplicates: false, runDetail: null,
-    confirm: null, confirmChecked: false, done: {}, result: null, runConfirm: null, lastUndo: null };
+    confirm: null, confirmChecked: false, done: {}, result: null, runConfirm: null, lastUndo: null,
+    renames: {}, overrides: {}, skips: {}, lastFolder: null, ruleDraft: null, analysisController: null };
   var SHOW = 20;
   var LIMIT = 500;
   var $ = function (id) { return document.getElementById(id); };
@@ -153,6 +173,7 @@ export const appJs = String.raw`(function () {
   function setStatus(text, isError) { var s = $('status'); s.textContent = text || ''; s.className = 'status' + (isError ? ' err' : ''); }
   function api(method, url, body) {
     var opts = { method: method, headers: { 'x-afo-token': token } };
+    if (url === '/api/preview' || url === '/api/plan') { state.analysisController = new AbortController(); opts.signal = state.analysisController.signal; $('cancelAnalysis').hidden = false; }
     if (body !== undefined) { opts.headers['content-type'] = 'application/json'; opts.body = JSON.stringify(body); }
     return fetch(url, opts).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (data) {
@@ -161,16 +182,29 @@ export const appJs = String.raw`(function () {
       });
     });
   }
-  function errText(e) { return (e.code ? '[' + e.code + '] ' : '') + e.message; }
+  function errText(e) { return e.name === 'AbortError' ? '분석을 취소했습니다. 실제 파일은 바꾸지 않았습니다.' : (e.code ? '[' + e.code + '] ' : '') + e.message; }
   function options() {
     var body = { folder: $('folder').value.trim() };
+    if (state.lastFolder !== body.folder) { state.lastFolder = body.folder; state.renames = {}; state.overrides = {}; state.skips = {}; }
     var ref = $('reference').value.trim();
     if (ref) body.reference = ref;
     if ($('noSaved').checked) body.noSavedRules = true;
+    var smart = {};
+    if ($('keepBoth').checked) smart.conflicts = 'keep-both';
+    if ($('content').checked) smart.content = true;
+    if ($('ocr').checked) smart.ocr = true;
+    if ($('photoDates').value) smart.photoDates = $('photoDates').value;
+    if ($('similarPhotos').checked) { smart.similarPhotos = true; smart.similarThreshold = Number($('similarThreshold').value); }
+    if ($('useAi').checked) { smart.aiModel = $('aiModel').value.trim(); smart.aiUrl = $('aiUrl').value.trim(); }
+    if (Object.keys(smart).length) body.smart = smart;
+    body.skips = Object.keys(state.skips);
+    body.renames = Object.keys(state.renames).map(function (id) { return { fileId: id, name: state.renames[id] }; });
+    body.overrides = Object.keys(state.overrides).map(function (id) { return { fileId: id, target: state.overrides[id] }; });
     return body;
   }
   function setBusy(on, text) {
     state.busy = on;
+    if (!on) { $('cancelAnalysis').hidden = true; state.analysisController = null; }
     Array.prototype.forEach.call(document.querySelectorAll('button.run'), function (b) { b.disabled = on; });
     $('analyze').disabled = on;
     if (text !== undefined) setStatus(text);
@@ -189,15 +223,18 @@ export const appJs = String.raw`(function () {
   };
 
   function analyze() {
+    if (state.busy) return;
     var body = options();
     if (!body.folder) { setStatus('작업 폴더의 절대 경로를 입력하세요.', true); $('folder').focus(); return; }
-    setBusy(true, '분석 중… 파일 이름·크기를 읽고 같은 크기 파일의 내용 해시를 비교해요(파일은 바꾸지 않아요).');
+    setBusy(true, '분석 중… 선택한 문서·사진 옵션도 처리하고 있어요. 실제 파일은 바꾸지 않아요.');
     state.plan = null; state.confirm = null; state.result = null;
     api('POST', '/api/preview', body).then(function (data) {
-      state.preview = data; setBusy(false, '분석 완료 · ' + when(new Date().toISOString())); select('preview');
+      state.preview = data; var partial = !data.preview.scanComplete || (data.preview.smart && !data.preview.smart.complete);
+      setBusy(false, (partial ? '기본 분석 완료 · 일부 항목은 확인이 필요합니다 · ' : '분석 완료 · ') + when(new Date().toISOString())); select('preview');
     }, function (e) { setBusy(false); setStatus(errText(e), true); });
   }
   function makePlan() {
+    if (state.busy) return;
     var body = options();
     if (!body.folder) { setStatus('작업 폴더의 절대 경로를 입력하세요.', true); return; }
     body.deleteMode = state.deleteMode; body.deleteDuplicates = state.deleteDuplicates ? 'all' : 'none';
@@ -222,7 +259,7 @@ export const appJs = String.raw`(function () {
       (p.profileNotice ? ' ' + p.profileNotice.reason : '') + ' 크기는 논리 크기이며 실제 확보량이 아닙니다.'));
 
     // 정리 후 폴더 구조: 이동 제안을 목적지 폴더별로 묶는다.
-    var groups = {};
+    var groups = Object.create(null);
     items.forEach(function (i) { if (i.action === 'move' && i.destination) { var d = dirOf(i.destination); (groups[d] = groups[d] || []).push(i); } });
     var names = Object.keys(groups).sort(function (a, b) { return groups[b].length - groups[a].length || (a < b ? -1 : 1); });
     view.appendChild(card('정리하면 이렇게 모입니다', names.length ? names.map(function (d) {
@@ -243,11 +280,23 @@ export const appJs = String.raw`(function () {
     }));
     pick.addEventListener('change', function () { state.action = pick.value; render(); });
     view.appendChild(card('파일별 제안', el('div', { class: 'toolbar' }, search, pick),
-      shown.length ? table(['상태', '지금 위치', '제안 위치', '이유'], shown.slice(0, LIMIT).map(function (i) {
+      shown.length ? table(['상태', '지금 위치', '제안 위치', '이유', '이번 분석에서 수정'], shown.slice(0, LIMIT).map(function (i) {
+        var name = i.source.split('/').pop();
+        var nameInput = el('input', { value: state.renames[i.fileId] || name, 'aria-label': i.source + ' 새 파일 이름' });
+        var folderInput = el('input', { value: state.overrides[i.fileId] || (i.destination ? dirOf(i.destination) : ''), placeholder: '목적지 하위 폴더', 'aria-label': i.source + ' 목적지 폴더' });
+        var protectedFile = i.reasonCode === 'PROTECTED_REFERENCE' || i.reasonCode === 'READ_FAILED';
+        var edit = protectedFile ? el('span', { class: 'muted', text: '수정 불가' }) : el('div', { class: 'file-edit' }, nameInput, folderInput,
+          el('button', { type: 'button', disabled: state.busy, onclick: function () {
+            if (!folderInput.value.trim()) { setStatus('목적지 하위 폴더를 입력하세요.', true); return; }
+            if (nameInput.value !== name) state.renames[i.fileId] = nameInput.value; else delete state.renames[i.fileId];
+            delete state.skips[i.fileId];
+            state.overrides[i.fileId] = folderInput.value.trim(); analyze();
+          } }, '제안에 적용'), el('button',{type:'button',disabled:state.busy,onclick:function(){if(state.skips[i.fileId])delete state.skips[i.fileId];else state.skips[i.fileId]=true;analyze();}},i.reasonCode==='USER_SKIP'?'건너뛰기 취소':'이번엔 건너뛰기'));
         return el('tr', null, el('td', null, el('span', { class: 'badge ' + i.action, text: labels[i.action] })), el('td', { class: 'path', text: i.source }),
-          el('td', { class: 'path', text: i.destination || '—' }), el('td', { class: 'small', text: i.reason }));
+          el('td', { class: 'path', text: i.destination || '—' }), el('td', { class: 'small', text: i.reason }), el('td', null, edit));
       })) : empty('조건에 맞는 파일이 없습니다.'),
       shown.length > LIMIT ? el('p', { class: 'muted small', text: shown.length + '개 중 ' + LIMIT + '개만 표시합니다. 검색으로 좁히세요.' }) : null));
+    if (p.smart) renderSmart(view, p.smart);
 
     view.appendChild(card('중복 후보(내용이 같은 파일)', p.duplicates.length ? p.duplicates.map(function (g) {
       return el('div', null, el('h3', null, el('span', { class: 'mono', text: g.sha256.slice(0, 12) }), ' · 후보 ' + g.candidates.length + '개 · ' + bytes(g.logicalCandidateBytes)),
@@ -257,6 +306,32 @@ export const appJs = String.raw`(function () {
 
     if (p.skipped.length) view.appendChild(card('제외·오류 ' + p.skipped.length + '개', el('details', null, el('summary', { text: '목록 보기' }),
       table(['경로', '이유'], p.skipped.slice(0, LIMIT).map(function (s) { return el('tr', null, el('td', { class: 'path', text: s.relativePath || '(루트)' }), el('td', { class: 'small', text: s.reason })); })))));
+  }
+
+  function renderSmart(view, smart) {
+    if (smart.notices.length) view.appendChild(card('추가 분석에서 확인할 점', el('ul', { class: 'small' }, smart.notices.map(function (notice) { return el('li', { text: notice }); }))));
+    if (smart.documents.length) view.appendChild(card('본문에서 찾은 분류 제안',
+      el('p', { class: 'small muted', text: '직접 지정한 목적지·개인 규칙·사진 촬영일 설정을 우선합니다. 점수는 정확도 측정치가 아니며, 내용 제안은 문서·전자책·OCR 사진에 반영합니다.' }),
+      table(['파일', '읽기 결과', '분류 근거·제안', '본문 일부'], smart.documents.map(function (d) {
+        var statusLabels={read:'읽음',empty:'본문 없음',unsupported:'지원 안 함',failed:'읽기 실패',limited:'일부 읽음'};
+        var methodLabels={text:'텍스트','office-xml':'Office·HWPX','xml-text':'XML 문서','pdf-embedded-text':'PDF 본문','pdfkit-text':'PDF 본문','apple-vision-image-ocr':'사진 OCR','apple-vision-pdf-ocr':'PDF OCR','windows-ocr':'사진 OCR','windows-pdf-ocr':'PDF OCR'};
+        return el('tr', null, el('td', { class: 'path', text: d.source }), el('td', { class: 'small', text: (statusLabels[d.status] || d.status) + ' · ' + (methodLabels[d.method] || d.method) + ' · ' + d.characters + '자' }),
+          el('td', { class: 'small insight-text', text: d.reason + (d.suggestedDirectory ? '\n→ ' + d.suggestedDirectory : '') }),
+          el('td', null, el('details', null, el('summary', { text: '추출 내용 확인' }), el('p', { class: 'small insight-text', text: d.excerpt || '추출된 본문 없음' }))));
+      }))));
+    if (smart.photos.length) view.appendChild(card('사진 촬영일·분석 결과', table(['파일', '저장된 촬영일', '결과'], smart.photos.map(function (p) {
+      return el('tr', null, el('td', { class: 'path', text: p.source }), el('td', { text: p.capturedDate || '정보 없음' }), el('td', { class: 'small', text: p.reason }));
+    }))));
+    if (smart.options.similarPhotos) {
+      var photos = {}; smart.photos.forEach(function (p) { photos[p.source] = p; });
+      var side = function (name) { var photo = photos[name]; return el('div', null, photo && photo.thumbnail ? el('img', { src: photo.thumbnail, alt: name + ' 비교용 축소본' }) : null,
+        el('p', { class: 'small path', text: name })); };
+      view.appendChild(card('유사 사진 비교 후보', el('p', { class: 'small muted', text: '모양·밝기 해시로 찾은 비교 후보입니다. 여러 프레임 이미지는 첫 프레임만 비교합니다. 내용이 같다는 뜻이 아니며 중복 삭제 목록에 자동으로 넣지 않습니다.' }),
+        smart.similar.length ? smart.similar.slice(0, 60).map(function (pair) { return el('div', null,
+          el('p', { class: 'small', text: '형태 차이 ' + pair.distance + '/64 · 밝기 차이 ' + pair.averageDistance + '/64 (낮을수록 유사)' }),
+          el('div', { class: 'photo-pair' }, side(pair.left), side(pair.right))); }) : empty('현재 기준에 맞는 유사 사진 쌍이 없습니다.'),
+        smart.similar.length > 60 ? el('p', { class: 'small muted', text: '처음 60쌍만 표시합니다. 범위를 좁혀 다시 분석하세요.' }) : null));
+    }
   }
 
   /* ---------- 정리 계획 ---------- */
@@ -364,12 +439,94 @@ export const appJs = String.raw`(function () {
   }
 
   /* ---------- 개인 규칙 ---------- */
+  function ruleEditor(data) {
+    var profile = data.state === 'active' ? data.profile : null;
+    var revision = profile ? profile.revision : null;
+    var wrapper = el('section', null);
+    var rules = profile ? profile.complexRules || [] : [];
+    var fieldLabels={name:'파일 이름',path:'상대 경로',extension:'확장자',size:'크기',modified:'수정일'};
+    var operatorLabels={contains:'포함','not-contains':'포함하지 않음',equals:'같음','starts-with':'시작','ends-with':'끝','at-least':'이상','at-most':'이하',before:'보다 이전',after:'보다 이후'};
+    if (profile) wrapper.appendChild(el('button', { type: 'button', disabled: state.busy, onclick: function () {
+      api('POST', '/api/rules/status', { enabled: profile.status !== 'confirmed', expectedRevision: revision }).then(function () {
+        state.plan = null; setStatus('개인 규칙 사용 상태를 바꿨습니다. 다시 분석하세요.'); render();
+      }, function (e) { setStatus(errText(e), true); });
+    } }, profile.status === 'confirmed' ? '개인 규칙 전체 끄기' : '개인 규칙 전체 켜기'));
+    wrapper.appendChild(el('h3', { text: '복합 규칙 ' + rules.length + '개' }));
+    if (rules.length) wrapper.appendChild(table(['규칙', '조건', '목적지', '수정'], rules.map(function (rule) {
+      return el('tr', null, el('td', null, el('b', { text: rule.name }), el('p', { class: 'small', text: (rule.enabled ? '켜짐' : '꺼짐') + ' · 우선순위 ' + rule.priority })),
+        el('td', { class: 'small insight-text', text: (rule.match === 'all' ? '모두 일치' : '하나라도 일치') + '\n' + rule.conditions.map(function (c) { return fieldLabels[c.field] + ' ' + operatorLabels[c.operator] + ' ' + c.value + (c.field==='size'?' B':''); }).join('\n') }),
+        el('td', { class: 'path', text: rule.targetDirectory }), el('td', null,
+          el('button', { type: 'button', disabled: state.busy, onclick: function () { state.ruleDraft = JSON.parse(JSON.stringify(rule)); render(); } }, '편집'),
+          el('button', { type: 'button', disabled: state.busy, onclick: function () {
+            api('POST', '/api/rules/toggle', { id: rule.id, enabled: !rule.enabled, expectedRevision: revision }).then(function () { state.plan = null; render(); }, function (e) { setStatus(errText(e), true); });
+          } }, rule.enabled ? '끄기' : '켜기'),
+          el('button', { type: 'button', disabled: state.busy, onclick: function () {
+            api('POST', '/api/rules/complex/delete', { id: rule.id, expectedRevision: revision }).then(function () {
+              if (state.ruleDraft && state.ruleDraft.id === rule.id) state.ruleDraft = null; state.plan = null; render();
+            }, function (e) { setStatus(errText(e), true); });
+          } }, '규칙 삭제')));
+    })));
+    if (!state.ruleDraft) state.ruleDraft = { name: '', targetDirectory: '', priority: 0, match: 'all', enabled: true, conditions: [{ field: 'name', operator: 'contains', value: '' }] };
+    var draft = state.ruleDraft;
+    var editor = el('details', { class: 'rule-editor', open: !!draft.id }, el('summary', { text: draft.id ? '복합 규칙 편집' : '복합 규칙 추가' }));
+    var name = el('input', { value: draft.name, 'aria-label': '규칙 이름', placeholder: '예: 물리 보고서' });
+    var destination = el('input', { value: draft.targetDirectory, 'aria-label': '규칙 목적지', placeholder: '예: 과제/물리' });
+    var priority = el('input', { value: draft.priority, type: 'number', min: '-1000', max: '1000', 'aria-label': '규칙 우선순위' });
+    var mode = el('select', { 'aria-label': '조건 조합' }, el('option', { value: 'all', selected: draft.match === 'all' }, '모든 조건 일치(AND)'), el('option', { value: 'any', selected: draft.match === 'any' }, '하나라도 일치(OR)'));
+    var enabled = el('input', { type: 'checkbox', checked: draft.enabled, 'aria-label': '규칙 사용' });
+    name.addEventListener('input', function () { draft.name = name.value; });
+    destination.addEventListener('input', function () { draft.targetDirectory = destination.value; });
+    priority.addEventListener('input', function () { draft.priority = Number(priority.value); });
+    mode.addEventListener('change', function () { draft.match = mode.value; });
+    enabled.addEventListener('change', function () { draft.enabled = enabled.checked; });
+    editor.appendChild(el('div', { class: 'rule-fields' }, el('label', { class: 'field' }, el('span', { text: '규칙 이름' }), name),
+      el('label', { class: 'field' }, el('span', { text: '작업 폴더 안의 목적지' }), destination), el('label', { class: 'field' }, el('span', { text: '우선순위(큰 수 우선)' }), priority),
+      el('label', { class: 'field' }, el('span', { text: '조건 조합' }), mode), el('label', { class: 'check' }, enabled, '이 규칙 사용')));
+    editor.appendChild(el('p', { class: 'small muted', text: '직접 지정한 수정이 우선합니다. 같은 우선순위의 규칙이 서로 다른 폴더를 제안하면 검토 대상으로 남깁니다. 수정일은 이 컴퓨터의 달력 날짜로 비교합니다.' }));
+    var conditions = el('div'); editor.appendChild(conditions);
+    function drawConditions() {
+      conditions.replaceChildren();
+      draft.conditions.forEach(function (condition, index) {
+        var field = el('select', { 'aria-label': '조건 ' + (index + 1) + ' 대상' }, [['name','파일 이름'],['path','상대 경로'],['extension','확장자'],['size','크기(바이트)'],['modified','수정 날짜']].map(function (p) { return el('option', { value:p[0], selected:condition.field===p[0] }, p[1]); }));
+        var choices = condition.field === 'size' ? [['at-least','이상'],['at-most','이하']] : condition.field === 'modified' ? [['before','이전'],['after','이후']] : [['contains','포함'],['not-contains','포함하지 않음'],['equals','같음'],['starts-with','시작'],['ends-with','끝']];
+        var operator = el('select', { 'aria-label': '조건 ' + (index + 1) + ' 비교' }, choices.map(function (p) { return el('option', { value:p[0], selected:condition.operator===p[0] }, p[1]); }));
+        var value = el('input', { value:condition.value, type:condition.field==='size'?'number':condition.field==='modified'?'date':'text', 'aria-label':'조건 '+(index+1)+' 값', placeholder:condition.field==='extension'?'.pdf':'비교 값' });
+        field.addEventListener('change', function () { condition.field = field.value; condition.operator = field.value==='size'?'at-least':field.value==='modified'?'after':field.value==='extension'?'equals':'contains'; condition.value=''; drawConditions(); });
+        operator.addEventListener('change', function () { condition.operator = operator.value; });
+        value.addEventListener('input', function () { condition.value = value.value; });
+        conditions.appendChild(el('div', { class:'rule-condition' }, field,operator,value,el('button',{type:'button',disabled:draft.conditions.length<2,onclick:function(){draft.conditions.splice(index,1);drawConditions();}},'조건 삭제')));
+      });
+    }
+    drawConditions();
+    editor.appendChild(el('button', { type:'button', onclick:function(){if(draft.conditions.length<16){draft.conditions.push({field:'extension',operator:'equals',value:'.pdf'});drawConditions();}} }, '조건 추가'));
+    var feedback = el('p', { class:'status', role:'status' });
+    function collect() {
+      if (!draft.name.trim() || !draft.targetDirectory.trim()) throw new Error('규칙 이름과 목적지 폴더를 입력하세요.');
+      var rule = { name:draft.name.trim(),targetDirectory:draft.targetDirectory.trim(),priority:draft.priority,match:draft.match,enabled:draft.enabled,
+        conditions:draft.conditions.map(function(c){ if(String(c.value).trim()==='')throw new Error('각 조건의 비교 값을 입력하세요.');return {field:c.field,operator:c.operator,value:c.field==='size'?Number(c.value):String(c.value)};}) };
+      if(draft.id)rule.id=draft.id;return rule;
+    }
+    editor.appendChild(el('div', { class:'toolbar' }, el('button', { type:'button',class:'primary',disabled:state.busy,onclick:function(){
+      var rule;try{rule=collect();}catch(e){feedback.textContent=e.message;return;}
+      api('POST','/api/rules/complex',{rule:rule,expectedRevision:revision}).then(function(){state.ruleDraft=null;state.plan=null;setStatus('복합 규칙을 저장했습니다. 다시 분석하면 적용됩니다.');render();},function(e){feedback.textContent=errText(e);});
+    } }, '규칙 저장'), el('button',{type:'button',onclick:function(){state.ruleDraft=null;render();}},'새 규칙으로 비우기')));
+    var sampleName = el('input',{placeholder:'예: 물리_보고서.pdf','aria-label':'규칙 테스트 파일 이름'});
+    var sampleSize = el('input',{placeholder:'크기(선택)',type:'number',min:'0','aria-label':'규칙 테스트 파일 크기'});
+    var sampleDate = el('input',{type:'date','aria-label':'규칙 테스트 수정 날짜'});
+    editor.appendChild(el('details',null,el('summary',{text:'가상 파일로 조건 테스트(파일을 읽거나 바꾸지 않음)'}),el('div',{class:'rule-fields'},sampleName,sampleSize,sampleDate),
+      el('button',{type:'button',onclick:function(){
+        var body;try{body={rule:collect(),name:sampleName.value};if(sampleSize.value!=='')body.size=Number(sampleSize.value);if(sampleDate.value)body.modified=new Date(sampleDate.value+'T12:00:00').toISOString();}catch(e){feedback.textContent=e.message;return;}
+        api('POST','/api/rules/test',body).then(function(result){feedback.textContent=(result.matched?'현재 규칙과 일치합니다.':'현재 규칙과 일치하지 않습니다.')+' 조건별: '+result.conditions.map(function(c){return c.matched?'일치':'불일치';}).join(', ');},function(e){feedback.textContent=errText(e);});
+      }},'조건 테스트')));
+    editor.appendChild(feedback);wrapper.appendChild(editor);return wrapper;
+  }
   function renderRules(view) {
     var box = card('개인 규칙', el('p', { class: 'muted', text: '불러오는 중…' }));
     view.appendChild(box);
     api('GET', '/api/rules').then(function (data) {
       box.replaceChildren(el('h2', { text: '개인 규칙' }));
       var cli = cliOf();
+      if (data.state !== 'corrupt') box.appendChild(ruleEditor(data));
       if (data.state === 'none') {
         box.append(empty('저장된 개인 규칙이 없습니다. 미리보기는 기본 분류를 씁니다.'),
           el('p', { class: 'small', text: '기존에 정리해 둔 폴더를 참고해 규칙을 만들려면 터미널에서:' }),
@@ -384,13 +541,13 @@ export const appJs = String.raw`(function () {
           return el('tr', null, el('td', null, el('span', { class: 'badge ' + (r.enabled ? 'safe' : 'keep'), text: r.enabled ? '켜짐' : '꺼짐' })),
             el('td', null, el('span', { class: 'mono', text: r.extension }), r.keyword ? ' + 이름에 "' + r.keyword + '"' : '', el('div', { class: 'muted small mono', text: r.id })),
             el('td', { class: 'path', text: r.targetDirectory }), el('td', { class: 'small path', text: (r.evidenceCount || r.evidence.length) + '개 · 예: ' + r.evidence.slice(0, 3).join(', ') }));
-        })) : empty('규칙이 없습니다.'),
+        })) : empty('참고 폴더에서 가져온 규칙은 없습니다.'),
         el('h3', { text: '저장한 수정(이후에도 적용) ' + p.corrections.length + '개' }),
         p.corrections.length ? table(['ID', '조건', '목적지'], p.corrections.map(function (c) {
           return el('tr', null, el('td', { class: 'mono', text: c.id }), el('td', { class: 'path', text: c.match.type === 'file-name' ? '파일 이름 "' + c.match.name + '"' : c.match.extension + (c.match.keyword ? ' + 이름에 "' + c.match.keyword + '"' : '') }),
             el('td', { class: 'path', text: c.targetDirectory }));
-        })) : null,
-        el('p', { class: 'small muted', text: '켜기·끄기·초기화는 CLI에서 합니다: rules enable|disable <규칙ID>, rules enable-all|disable-all, rules forget <수정ID>, rules reset' }));
+        })) : document.createTextNode(''),
+        el('p', { class: 'small muted', text: '참고 폴더 규칙의 개별 켜기·끄기와 전체 초기화: rules enable|disable <규칙ID>, rules reset. 복합 규칙은 위 화면에서 편집할 수 있습니다.' }));
     }, function (e) { box.replaceChildren(el('h2', { text: '개인 규칙' }), el('p', { class: 'bad', text: errText(e) })); });
   }
 
@@ -559,12 +716,25 @@ export const appJs = String.raw`(function () {
   document.addEventListener('DOMContentLoaded', function () {
     Array.prototype.forEach.call(document.querySelectorAll('[role=tab]'), function (b) { b.addEventListener('click', function () { select(b.getAttribute('data-tab')); }); });
     $('analyze').addEventListener('click', analyze);
+    $('cancelAnalysis').addEventListener('click', function () { if (state.analysisController) state.analysisController.abort(); });
+    $('loadModels').addEventListener('click', function () {
+      var button = $('loadModels'); button.disabled = true;
+      api('POST', '/api/ai-models', { url: $('aiUrl').value.trim() }).then(function (data) {
+        $('aiModels').replaceChildren(); data.models.forEach(function (name) { $('aiModels').appendChild(el('option', { value: name })); });
+        setStatus('설치된 로컬 모델 ' + data.models.length + '개를 읽었습니다.'); button.disabled = false;
+      }, function (e) { setStatus('로컬 AI 목록을 읽지 못했습니다. Ollama 서버와 설치된 모델을 확인하세요. ' + errText(e), true); button.disabled = false; });
+    });
     $('folder').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') analyze(); });
     render();
     if (!token) return;
+    api('GET', '/api/formats').then(function (data) {
+      $('formatsList').replaceChildren(); data.formats.forEach(function (format) { $('formatsList').appendChild(el('p', null,
+        el('b', { text: format.method }), el('br'), format.extensions.join(' · '), el('br'), el('span', { class:'muted', text:format.note }))); });
+      $('formatsList').appendChild(el('p', { class:'muted', text:'구형 HWP·DOC·XLS·PPT 등은 종류별 분류만 지원합니다. 이미지 픽셀·OCR은 OS 코덱과 언어 지원이 필요합니다.' }));
+    }, function (e) { $('formatsList').textContent = errText(e); });
     api('GET', '/api/info').then(function (info) {
       state.info = info;
-      $('foot').textContent = '상태 폴더: ' + info.stateDir + ' · 정리·휴지통 보내기·되돌리기는 목록을 확인한 뒤에만 실행해요. 영구 삭제는 터미널에서만 해요.' +
+      $('foot').textContent = 'AFO v' + info.version + ' · 상태 폴더: ' + info.stateDir + ' · 정리·휴지통 보내기·되돌리기는 목록을 확인한 뒤에만 실행해요. 영구 삭제는 터미널에서만 해요.' +
         (info.exitWhenClosed ? ' 이 창을 닫으면 잠시 뒤 AFO도 저절로 끝나요.' : '');
       keepAlive();
       if (info.initialFolder) { $('folder').value = info.initialFolder; analyze(); }

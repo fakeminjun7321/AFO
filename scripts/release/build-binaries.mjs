@@ -34,6 +34,7 @@ const { version: packageVersion } = JSON.parse(await readFile(path.join(root, 'p
 const version = values['update-fixture'] ? '0.0.0' : packageVersion;
 const sha256 = (data) => createHash('sha256').update(data).digest('hex');
 const run = (file, args) => execFileSync(file, args, { stdio: ['ignore', 'pipe', 'inherit'] }).toString();
+run(process.execPath, [path.join(root, 'scripts/build-resources.mjs')]);
 
 await rm(out, { recursive: true, force: true });
 const work = path.join(out, 'work');
@@ -53,12 +54,18 @@ await build({
 });
 const seaConfig = path.join(work, 'sea-config.json');
 const blob = path.join(work, 'sea-prep.blob');
-await writeFile(seaConfig, JSON.stringify({ main: bundle, output: blob, disableExperimentalSEAWarning: true, useSnapshot: false, useCodeCache: false }));
+await writeFile(seaConfig, JSON.stringify({ main: bundle, output: blob, disableExperimentalSEAWarning: true, useSnapshot: false, useCodeCache: false,
+  assets: { 'text-worker.cjs': path.join(root, 'dist/resources/text-worker.cjs'), 'pdf-worker.mjs': path.join(root, 'dist/resources/pdf-worker.mjs'), 'pdf-data.zip': path.join(root, 'dist/resources/pdf-data.zip'),
+    ...(process.platform === 'darwin' ? { 'afo-native': path.join(root, 'dist/resources/afo-native') } : {}) } }));
 run(process.execPath, ['--experimental-sea-config', seaConfig]);
 const blobData = await readFile(blob);
 
 const sums = (await (await fetch(`https://nodejs.org/dist/${node}/SHASUMS256.txt`)).text()).split('\n');
-const notices = [[path.join(root, 'LICENSE'), 'LICENSE'], [path.join(root, 'node_modules/zod/LICENSE'), 'LICENSE-zod']];
+const notices = [[path.join(root, 'LICENSE'), 'LICENSE'], [path.join(root, 'node_modules/zod/LICENSE'), 'LICENSE-zod'],
+  [path.join(root, 'node_modules/fflate/LICENSE'), 'LICENSE-fflate'], [path.join(root, 'node_modules/exifr/LICENSE'), 'LICENSE-exifr'],
+  [path.join(root, 'node_modules/pdfjs-dist/LICENSE'), 'LICENSE-pdfjs'], [path.join(root, 'node_modules/@thednp/dommatrix/LICENSE'), 'LICENSE-dommatrix'],
+  [path.join(root, 'node_modules/pdfjs-dist/cmaps/LICENSE'), 'LICENSE-Adobe-CMaps'],
+  [path.join(root, 'node_modules/pdfjs-dist/standard_fonts/LICENSE_FOXIT'), 'LICENSE-Foxit-fonts'], [path.join(root, 'node_modules/pdfjs-dist/standard_fonts/LICENSE_LIBERATION'), 'LICENSE-Liberation-fonts']];
 const lines = [];
 for (const name of wanted) {
   const t = targets[name];

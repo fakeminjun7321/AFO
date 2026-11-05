@@ -84,7 +84,7 @@ export function buildPlan(previewInput: unknown, options: BuildPlanOptions): Ope
   }
   if (bySource.size !== scan.files.length) throw fail('PLAN_CHANGED', '미리보기와 스캔 결과의 파일 목록이 다릅니다.');
   const unreadable = new Set(scan.skipped.map((s) => s.relativePath));
-  const isProtected = (item: PreviewItem): boolean => item.reasonCode === 'PROTECTED_REFERENCE';
+  const isProtected = (item: PreviewItem): boolean => item.reasonCode === 'PROTECTED_REFERENCE' || item.reasonCode === 'USER_SKIP';
 
   // Deletions: duplicate candidates (keeper required) and explicitly chosen files (no keeper).
   const deletes = new Map<string, { keeper: string | null; reason: string }>();
@@ -166,7 +166,9 @@ export function buildPlan(previewInput: unknown, options: BuildPlanOptions): Ope
   for (const { source, item } of moves) {
     const file = bySource.get(source)!.file;
     if (blocked.has(source)) review.push({ fileId: file.id, source, status: 'review', reason: DEST_TAKEN });
-    else ops.push({ kind: 'move', fileId: file.id, source, destination: item.destination, reason: item.reason, ruleId: item.ruleId,
+    else ops.push({ kind: 'move', fileId: file.id, source, destination: item.destination,
+      reason: item.reasonCode === 'AI_CONTENT' ? '사용자가 확인한 로컬 AI 내용 분류 제안입니다.' : item.reasonCode === 'CONTENT_RULE' ? '사용자가 확인한 본문 키워드 분류 제안입니다.' : item.reason,
+      ruleId: item.ruleId,
       keeper: null, expected: expected(file) });
   }
   const operations = ops.map((op) => ({ id: digest(canonicalJson(op)).slice(0, 16), ...op }))

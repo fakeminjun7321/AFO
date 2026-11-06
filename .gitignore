@@ -9,3 +9,6 @@ __pycache__/
 dist/
 .afo/
 *.afo-profile.json
+
+# 무작위 합성 테스트 세트(scripts/gen-random-testset.mjs)
+testset/
